@@ -1,0 +1,33 @@
+[package]
+name = "kofft"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kian Ostadian <kianostad@gmail.com>"]
+description = "High-performance, no_std, MCU-friendly FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD, and batch transforms for embedded and scientific Rust."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kianostad/kofft"
+documentation = "https://docs.rs/kofft"
+homepage = "https://github.com/kianostad/kofft"
+readme = "README.md"
+categories = ["algorithms", "no-std", "science", "embedded", "signal-processing"]
+keywords = ["fft", "dsp", "no_std", "mcu", "wavelet"]
+exclude = ["proptest-regressions/*", "*.profraw", "*.profdata", "tarpaulin-report.html", "tests/*", "examples/*"]
+
+[dependencies]
+libm = "0.2"
+
+[features]
+default = ["std"]
+std = []
+parallel = ["rayon"]
+x86_64 = []
+aarch64 = []
+wasm = []
+
+[dev-dependencies]
+rand = "0.8"
+proptest = "1.4"
+
+[dependencies.rayon]
+version = "1.7"
+optional = true

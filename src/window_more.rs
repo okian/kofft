@@ -1,0 +1,79 @@
+//! More window functions: Tukey, Bartlett, Bohman, Nuttall
+//! no_std + alloc compatible
+
+extern crate alloc;
+use alloc::vec::Vec;
+use alloc::vec;
+use core::f32::consts::PI;
+
+use libm::{cosf, fabsf, sinf, floorf};
+#[allow(unused_imports)]
+use crate::fft::Float;
+
+/// Tukey window (tapered cosine)
+pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
+    let mut w = vec![0.0; len];
+    let edge = floorf(alpha * (len as f32 - 1.0) / 2.0) as usize;
+    for n in 0..len {
+        if n < edge {
+            w[n] = 0.5 * (1.0 + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 1.0)).cos());
+        } else if n < len - edge {
+            w[n] = 1.0;
+        } else {
+            w[n] = 0.5 * (1.0 + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 2.0 / alpha + 1.0)).cos());
+        }
+    }
+    w
+}
+
+/// Bartlett (triangular) window
+pub fn bartlett(len: usize) -> Vec<f32> {
+    let mut w = vec![0.0; len];
+    let n = len as f32;
+    for i in 0..len {
+        let x = (i as f32 - (n - 1.0) / 2.0) / ((n - 1.0) / 2.0);
+        w[i] = 1.0 - fabsf(x);
+    }
+    w
+}
+
+/// Bohman window
+pub fn bohman(len: usize) -> Vec<f32> {
+    let mut w = vec![0.0; len];
+    let n = len as f32;
+    for i in 0..len {
+        let x = (i as f32 / (n - 1.0)) - 0.5;
+        w[i] = (1.0 - fabsf(x)) * cosf(PI * x) + 1.0 / PI * sinf(PI * x);
+    }
+    w
+}
+
+/// Nuttall window
+pub fn nuttall(len: usize) -> Vec<f32> {
+    let mut w = vec![0.0; len];
+    let a0 = 0.355768;
+    let a1 = 0.487396;
+    let a2 = 0.144232;
+    let a3 = 0.012604;
+    for n in 0..len {
+        let x = 2.0 * PI * n as f32 / (len as f32 - 1.0);
+        w[n] = a0 - a1 * cosf(x) + a2 * cosf(2.0 * x) - a3 * cosf(3.0 * x);
+    }
+    w
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_windows() {
+        let w1 = tukey(8, 0.5);
+        let w2 = bartlett(8);
+        let w3 = bohman(8);
+        let w4 = nuttall(8);
+        assert_eq!(w1.len(), 8);
+        assert_eq!(w2.len(), 8);
+        assert_eq!(w3.len(), 8);
+        assert_eq!(w4.len(), 8);
+    }
+} 

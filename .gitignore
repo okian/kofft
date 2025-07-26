@@ -1,0 +1,26 @@
+# Rust/Cargo
+/target/
+**/*.rs.bk
+Cargo.lock
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+# OS
+.DS_Store
+Thumbs.db
+# Coverage
+coverage/
+tarpaulin-report.html
+proptest-regressions/
+# Misc
+*.old
+*.orig
+*.rej
+# Byproducts
+*.profraw
+*.profdata
