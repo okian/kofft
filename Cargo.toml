@@ -6,7 +6,8 @@ authors = ["Kian Ostad <c@kianostad.com>"]
 description = "High-performance, no_std, MCU-friendly FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD, and batch transforms for embedded and scientific Rust."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/okian/kofft"
-documentation = "https://docs.rs/kofft"
+documentation = "https://docs.rs/crates/kofft"
+homepage = "https://github.com/okian/kofft"
 readme = "README.md"
 categories = ["algorithms", "mathematics", "embedded"]
 keywords = ["fft", "dsp", "no_std", "mcu", "wavelet"]
@@ -23,10 +24,23 @@ x86_64 = []
 aarch64 = []
 wasm = []
 
+[dev-dependencies]
+rand = "0.8"
+proptest = "1.4"
+
 [dependencies.rayon]
 version = "1.7"
 optional = true
 
-[dev-dependencies]
-rand = "0.8"
-proptest = "1.4"
+[[example]]
+name = "basic_usage"
+path = "examples/basic_usage.rs"
+
+[[example]]
+name = "embedded_example"
+path = "examples/embedded_example.rs"
+required-features = []
+
+[[example]]
+name = "benchmark"
+path = "examples/benchmark.rs"

@@ -848,8 +848,34 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         // Fallback to scalar for now
-        ScalarFftImpl::<f32>::ifft(input)?;
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft(input)?;
         Ok(())
+    }
+
+    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_strided(input, stride)
+    }
+
+    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_strided(input, stride)
+    }
+
+    fn fft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn ifft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn fft_with_strategy(&self, input: &mut [Complex32], strategy: FftStrategy) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_with_strategy(input, strategy)
     }
 }
 
@@ -931,7 +957,8 @@ impl FftImpl<f32> for SimdFftAArch64Impl {
             }
         }
         if n % 4 != 0 {
-            ScalarFftImpl::<f32>::fft(input)?;
+            let scalar = ScalarFftImpl::<f32>::default();
+            scalar.fft(input)?;
             return Ok(());
         }
         unsafe {
@@ -994,8 +1021,34 @@ impl FftImpl<f32> for SimdFftAArch64Impl {
         Ok(())
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        ScalarFftImpl::<f32>::ifft(input)?;
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft(input)?;
         Ok(())
+    }
+
+    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_strided(input, stride)
+    }
+
+    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_strided(input, stride)
+    }
+
+    fn fft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn ifft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn fft_with_strategy(&self, input: &mut [Complex32], strategy: FftStrategy) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_with_strategy(input, strategy)
     }
 }
 
@@ -1128,8 +1181,34 @@ impl FftImpl<f32> for SimdFftWasmImpl {
         Ok(())
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        ScalarFftImpl::<f32>::ifft(input)?;
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft(input)?;
         Ok(())
+    }
+
+    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_strided(input, stride)
+    }
+
+    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_strided(input, stride)
+    }
+
+    fn fft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn ifft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn fft_with_strategy(&self, input: &mut [Complex32], strategy: FftStrategy) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_with_strategy(input, strategy)
     }
 }
 
@@ -1147,8 +1226,14 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     {
         return Box::new(SimdFftWasmImpl);
     }
-    // Fallback
-    Box::new(ScalarFftImpl::<f32>::default())
+    #[cfg(not(any(
+        all(feature = "x86_64", target_arch = "x86_64"),
+        all(feature = "aarch64", target_arch = "aarch64"),
+        all(feature = "wasm", target_arch = "wasm32")
+    )))]
+    {
+        return Box::new(ScalarFftImpl::<f32>::default());
+    }
 }
 
 /// Plan-based FFT: precompute twiddles and bit-reversal for repeated transforms.
