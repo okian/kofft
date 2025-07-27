@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/okian/kofft"
 documentation = "https://docs.rs/kofft"
 readme = "README.md"
-categories = ["algorithms", "no-std", "science::math", "no-std", "embedded", "embedded"]
+categories = ["algorithms", "science::math", "embedded"]
 keywords = ["fft", "dsp", "no_std", "mcu", "wavelet"]
 exclude = ["proptest-regressions/*", "*.profraw", "*.profdata", "tarpaulin-report.html", "tests/*", "examples/*"]
 
@@ -23,10 +23,10 @@ x86_64 = []
 aarch64 = []
 wasm = []
 
-[dev-dependencies]
-rand = "0.8"
-proptest = "1.4"
-
 [dependencies.rayon]
 version = "1.7"
 optional = true
+
+[dev-dependencies]
+rand = "0.8"
+proptest = "1.4"
