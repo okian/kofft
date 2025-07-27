@@ -1,100 +1,338 @@
-# kofft: Embedded/MCU-Optimized DSP/FFT Library
+# kofft
 
-## MCU/Stack-Only Usage (No Heap, No Alloc)
+[![Crates.io](https://img.shields.io/crates/v/kofft)](https://crates.io/crates/kofft)
+[![Documentation](https://docs.rs/kofft/badge.svg)](https://docs.rs/kofft)
+[![License](https://img.shields.io/crates/l/kofft)](https://github.com/kianostad/kofft/blob/main/LICENSE)
+[![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
 
-All stack-only, const-generic DSP APIs in this crate require the user to provide all output buffers. This is a limitation of Rust const generics: you cannot allocate `[T; N]` for arbitrary `N` inside a function. You must declare all buffers in your own stack frame and pass them to the function.
+High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD-optimized, and batch transforms for embedded and scientific Rust applications.
 
-### FFT (in-place, stack-only)
+## Features
+
+- **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
+- **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
+- **🔧 Multiple transform types**: FFT, DCT, DST, Hartley, Wavelet, STFT, CZT, Goertzel
+- **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
+- **🔄 Batch and multi-channel processing**
+- **🌐 WebAssembly support**
+- **📱 Parallel processing** (optional)
+
+## Quick Start
+
+### Add to Cargo.toml
+
+```toml
+[dependencies]
+kofft = "0.1.0"
+
+# For SIMD acceleration (optional)
+kofft = { version = "0.1.0", features = ["x86_64"] }  # x86_64 AVX2
+kofft = { version = "0.1.0", features = ["aarch64"] } # AArch64 NEON
+kofft = { version = "0.1.0", features = ["wasm"] }    # WebAssembly SIMD
+
+# For parallel processing
+kofft = { version = "0.1.0", features = ["parallel"] }
+```
+
+### Basic Usage
+
 ```rust
+use kofft::fft::{Complex32, ScalarFftImpl, FftImpl};
+
+// Create FFT instance
+let fft = ScalarFftImpl::<f32>::default();
+
+// Prepare data
+let mut data = vec![
+    Complex32::new(1.0, 0.0),
+    Complex32::new(2.0, 0.0),
+    Complex32::new(3.0, 0.0),
+    Complex32::new(4.0, 0.0),
+];
+
+// Compute FFT
+fft.fft(&mut data)?;
+
+// Compute inverse FFT
+fft.ifft(&mut data)?;
+```
+
+## Embedded/MCU Usage (No Heap)
+
+All stack-only APIs require you to provide output buffers. This enables `no_std` operation without any heap allocation.
+
+### FFT (Stack-Only)
+
+```rust
+use kofft::fft::{Complex32, fft_inplace_stack};
+
+// 8-point FFT (power-of-two only for stack APIs)
 let mut buf: [Complex32; 8] = [
     Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0),
     Complex32::new(3.0, 0.0), Complex32::new(4.0, 0.0),
     Complex32::new(5.0, 0.0), Complex32::new(6.0, 0.0),
     Complex32::new(7.0, 0.0), Complex32::new(8.0, 0.0),
 ];
-kofft::fft::fft_inplace_stack(&mut buf)?;
+
+fft_inplace_stack(&mut buf)?;
 ```
 
-### DCT-II (stack-only, user-provided output)
+### DCT-II (Stack-Only)
+
 ```rust
+use kofft::dct::dct2_inplace_stack;
+
 let input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let mut output: [f32; 8] = [0.0; 8];
-kofft::dct::dct2_inplace_stack(&input, &mut output);
+
+dct2_inplace_stack(&input, &mut output);
 ```
 
-### DST-II (stack-only, user-provided output)
+### DST-II (Stack-Only)
+
 ```rust
+use kofft::dst::dst2_inplace_stack;
+
 let input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let mut output: [f32; 8] = [0.0; 8];
-kofft::dst::dst2_inplace_stack(&input, &mut output);
+
+dst2_inplace_stack(&input, &mut output);
 ```
 
-### Haar Wavelet (stack-only, user-provided output as slices)
+### Haar Wavelet (Stack-Only)
+
 ```rust
+use kofft::wavelet::{haar_forward_inplace_stack, haar_inverse_inplace_stack};
+
+// Forward transform
 let input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let mut avg = [0.0; 4];
 let mut diff = [0.0; 4];
-kofft::wavelet::haar_forward_inplace_stack(&input, &mut avg[..], &mut diff[..]);
-// avg and diff must be of length N/2
-```
 
-### Haar Inverse (stack-only, user-provided output as slice)
-```rust
-let avg: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
-let diff: [f32; 4] = [5.0, 6.0, 7.0, 8.0];
+haar_forward_inplace_stack(&input, &mut avg[..], &mut diff[..]);
+
+// Inverse transform
 let mut out = [0.0; 8];
-kofft::wavelet::haar_inverse_inplace_stack(&avg[..], &diff[..], &mut out[..]);
-// out must be of length 2*N
+haar_inverse_inplace_stack(&avg[..], &diff[..], &mut out[..]);
 ```
 
-### Window Functions (unchanged)
+### Window Functions (Stack-Only)
+
 ```rust
+use kofft::window::{hann_inplace_stack, hamming_inplace_stack, blackman_inplace_stack};
+
 let mut hann: [f32; 8] = [0.0; 8];
-kofft::window::hann_inplace_stack(&mut hann);
+hann_inplace_stack(&mut hann);
+
 let mut hamming: [f32; 8] = [0.0; 8];
-kofft::window::hamming_inplace_stack(&mut hamming);
+hamming_inplace_stack(&mut hamming);
+
 let mut blackman: [f32; 8] = [0.0; 8];
-kofft::window::blackman_inplace_stack(&mut blackman);
+blackman_inplace_stack(&mut blackman);
 ```
 
----
+## Desktop/Standard Library Usage
 
-## Notes for Embedded/MCU Users
-- All stack-only APIs use const generics: the size is known at compile time, so no heap is needed.
-- Only power-of-two sizes are supported for FFT stack-only APIs.
-- All transforms are in-place: the input buffer is overwritten with the result.
-- No `alloc`, no `Vec`, no heap required for these APIs.
-- Suitable for Cortex-M, STM32, Zephyr RTOS, and any `no_std` environment.
-- For batch/multi-channel or non-power-of-two, enable the `alloc` feature and use heap-based APIs (not recommended for MCUs).
+With the `std` feature (enabled by default), you get heap-based APIs for more flexibility.
 
----
+### FFT with Standard Library
 
-## Example: Minimal MCU Project
+```rust
+use kofft::fft::{Complex32, ScalarFftImpl, FftImpl};
+
+let fft = ScalarFftImpl::<f32>::default();
+
+// Heap-based FFT
+let mut data = vec![
+    Complex32::new(1.0, 0.0),
+    Complex32::new(2.0, 0.0),
+    Complex32::new(3.0, 0.0),
+    Complex32::new(4.0, 0.0),
+];
+
+fft.fft(&mut data)?;
+
+// Or create new vector
+let result = fft.fft_vec(&data)?;
+```
+
+### Real FFT (Optimized for Real Input)
+
+```rust
+use kofft::fft::{ScalarFftImpl, FftImpl};
+
+let fft = ScalarFftImpl::<f32>::default();
+let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let mut output = vec![Complex32::zero(); input.len() / 2 + 1];
+
+fft.rfft(&input, &mut output)?;
+```
+
+### STFT (Short-Time Fourier Transform)
+
+```rust
+use kofft::stft::{stft, istft};
+use kofft::window::hann;
+
+let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let window = hann(4);
+let hop_size = 2;
+
+let mut frames = vec![vec![]; (signal.len() + hop_size - 1) / hop_size];
+stft(&signal, &window, hop_size, &mut frames)?;
+
+let mut output = vec![0.0; signal.len()];
+istft(&frames, &window, hop_size, &mut output)?;
+```
+
+### Batch Processing
+
+```rust
+use kofft::fft::{ScalarFftImpl, FftImpl};
+
+let fft = ScalarFftImpl::<f32>::default();
+let mut batches = vec![
+    vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0)],
+    vec![Complex32::new(3.0, 0.0), Complex32::new(4.0, 0.0)],
+];
+
+fft.batch(&mut batches)?;
+```
+
+## Advanced Features
+
+### SIMD Acceleration
+
+Enable platform-specific SIMD features for better performance:
+
+```toml
+# x86_64 with AVX2
+kofft = { version = "0.1.0", features = ["x86_64"] }
+
+# AArch64 with NEON
+kofft = { version = "0.1.0", features = ["aarch64"] }
+
+# WebAssembly with SIMD
+kofft = { version = "0.1.0", features = ["wasm"] }
+```
+
+### Parallel Processing
+
+```toml
+kofft = { version = "0.1.0", features = ["parallel"] }
+```
+
+```rust
+use kofft::stft::parallel;
+
+let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let window = vec![1.0, 1.0, 1.0, 1.0];
+let hop_size = 2;
+
+let mut frames = vec![vec![]; (signal.len() + hop_size - 1) / hop_size];
+parallel(&signal, &window, hop_size, &mut frames)?;
+```
+
+### Additional Transforms
+
+```rust
+use kofft::{dct, dst, hartley, wavelet, goertzel, czt, hilbert, cepstrum};
+
+// DCT variants
+let dct2_result = dct::dct2(&input);
+let dct3_result = dct::dct3(&input);
+let dct4_result = dct::dct4(&input);
+
+// DST variants
+let dst2_result = dst::dst2(&input);
+let dst3_result = dst::dst3(&input);
+let dst4_result = dst::dst4(&input);
+
+// Hartley Transform
+let hartley_result = hartley::dht(&input);
+
+// Wavelet Transform
+let (avg, diff) = wavelet::haar_forward(&input);
+let reconstructed = wavelet::haar_inverse(&avg, &diff);
+
+// Goertzel Algorithm (single frequency detection)
+let magnitude = goertzel::goertzel_f32(&input, 44100.0, 1000.0);
+
+// Chirp Z-Transform
+let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0));
+
+// Hilbert Transform
+let hilbert_result = hilbert::hilbert(&input);
+
+// Cepstrum
+let cepstrum_result = cepstrum::real_cepstrum(&input);
+```
+
+## Complete MCU Example
+
 ```rust
 #![no_std]
 use kofft::fft::{Complex32, fft_inplace_stack};
+use kofft::dct::dct2_inplace_stack;
+use kofft::window::hann_inplace_stack;
 
 #[entry]
 fn main() -> ! {
-    let mut buf: [Complex32; 8] = [
+    // FFT example
+    let mut fft_buf: [Complex32; 8] = [
         Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0),
         Complex32::new(3.0, 0.0), Complex32::new(4.0, 0.0),
         Complex32::new(5.0, 0.0), Complex32::new(6.0, 0.0),
         Complex32::new(7.0, 0.0), Complex32::new(8.0, 0.0),
     ];
-    fft_inplace_stack(&mut buf).unwrap();
-    loop {}
+    fft_inplace_stack(&mut fft_buf).unwrap();
+
+    // DCT example
+    let dct_input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let mut dct_output: [f32; 8] = [0.0; 8];
+    dct2_inplace_stack(&dct_input, &mut dct_output);
+
+    // Window function example
+    let mut window: [f32; 8] = [0.0; 8];
+    hann_inplace_stack(&mut window);
+
+    loop {
+        // Your application logic here
+    }
 }
 ```
 
----
+## Performance Notes
 
-## RAM Usage
-- Stack usage is proportional to the transform size (e.g., 8-point FFT uses 8x8 bytes = 64 bytes for `Complex32`).
-- No heap is used for stack-only APIs.
+- **Stack-only APIs**: No heap allocation, suitable for MCUs with limited RAM
+- **SIMD acceleration**: 2-4x speedup on supported platforms
+- **Power-of-two sizes**: Most efficient for FFT operations
+- **Memory usage**: Stack usage scales with transform size (e.g., 8-point FFT uses ~64 bytes for `Complex32`)
 
----
+## Platform Support
 
-## For More
-- See the source for additional transforms and batch/multi-channel APIs (heap required).
-- For questions or MCU-specific integration help, open an issue or discussion! 
+| Platform | SIMD Support | Features |
+|----------|-------------|----------|
+| x86_64   | AVX2/FMA    | `x86_64` feature |
+| AArch64  | NEON        | `aarch64` feature |
+| WebAssembly | SIMD128   | `wasm` feature |
+| Generic  | Scalar      | Default fallback |
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+## Documentation
+
+- [API Documentation](https://docs.rs/kofft)
+- [Repository](https://github.com/kianostad/kofft)
+- [Crates.io](https://crates.io/crates/kofft) 
