@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/okian/kofft"
 documentation = "https://docs.rs/kofft"
 readme = "README.md"
-categories = ["algorithms", "science::math", "embedded"]
+categories = ["algorithms", "mathematics", "embedded"]
 keywords = ["fft", "dsp", "no_std", "mcu", "wavelet"]
 exclude = ["proptest-regressions/*", "*.profraw", "*.profdata", "tarpaulin-report.html", "tests/*", "examples/*"]
 
