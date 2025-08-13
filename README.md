@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/kofft)](https://crates.io/crates/kofft)
 [![Documentation](https://docs.rs/kofft/badge.svg)](https://docs.rs/kofft)
-[![License](https://img.shields.io/crates/l/kofft)](https://github.com/kianostad/kofft/blob/main/LICENSE)
+[![License](https://img.shields.io/crates/l/kofft)](https://github.com/okian/kofft/blob/main/LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
 
 High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD-optimized, and batch transforms for embedded and scientific Rust applications.
@@ -23,15 +23,10 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 ```toml
 [dependencies]
-kofft = "0.1.0"
+kofft = "0.1.1"
 
-# For SIMD acceleration (optional)
-kofft = { version = "0.1.0", features = ["x86_64"] }  # x86_64 AVX2
-kofft = { version = "0.1.0", features = ["aarch64"] } # AArch64 NEON
-kofft = { version = "0.1.0", features = ["wasm"] }    # WebAssembly SIMD
-
-# For parallel processing
-kofft = { version = "0.1.0", features = ["parallel"] }
+# Select optional features in one line as needed. Features are additive:
+# kofft = { version = "0.1.1", features = ["x86_64", "parallel"] }
 ```
 
 ### Basic Usage
@@ -56,6 +51,25 @@ fft.fft(&mut data)?;
 // Compute inverse FFT
 fft.ifft(&mut data)?;
 ```
+
+## Examples
+
+Additional runnable examples live in the `examples/` directory. Run any with:
+
+```bash
+cargo run --example <name>
+```
+
+Available examples:
+
+- `basic_usage` – overview of common transforms
+- `embedded_example` – stack-only APIs for `no_std` environments
+- `czt` – chirp z-transform usage
+- `goertzel` – single frequency detection
+- `stft` – short-time Fourier transform (batch and streaming)
+- `hilbert` – analytic signal via Hilbert transform
+- `cepstrum` – real cepstrum and related utilities
+- `benchmark` – simple performance measurements
 
 ## Embedded/MCU Usage (No Heap)
 
@@ -185,6 +199,8 @@ let mut output = vec![0.0; signal.len()];
 istft(&frames, &window, hop_size, &mut output)?;
 ```
 
+Streaming APIs (`StftStream`, `IstftStream`) are also available.
+
 ### Batch Processing
 
 ```rust
@@ -207,19 +223,19 @@ Enable platform-specific SIMD features for better performance:
 
 ```toml
 # x86_64 with AVX2
-kofft = { version = "0.1.0", features = ["x86_64"] }
+kofft = { version = "0.1.1", features = ["x86_64"] }
 
 # AArch64 with NEON
-kofft = { version = "0.1.0", features = ["aarch64"] }
+kofft = { version = "0.1.1", features = ["aarch64"] }
 
 # WebAssembly with SIMD
-kofft = { version = "0.1.0", features = ["wasm"] }
+kofft = { version = "0.1.1", features = ["wasm"] }
 ```
 
 ### Parallel Processing
 
 ```toml
-kofft = { version = "0.1.0", features = ["parallel"] }
+kofft = { version = "0.1.1", features = ["parallel"] }
 ```
 
 ```rust
@@ -262,7 +278,7 @@ let magnitude = goertzel::goertzel_f32(&input, 44100.0, 1000.0);
 let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0));
 
 // Hilbert Transform
-let hilbert_result = hilbert::hilbert(&input);
+let hilbert_result = hilbert::hilbert_analytic(&input);
 
 // Cepstrum
 let cepstrum_result = cepstrum::real_cepstrum(&input);
@@ -334,5 +350,5 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 ## Documentation
 
 - [API Documentation](https://docs.rs/kofft)
-- [Repository](https://github.com/kianostad/kofft)
+- [Repository](https://github.com/okian/kofft)
 - [Crates.io](https://crates.io/crates/kofft) 

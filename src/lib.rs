@@ -1,10 +1,10 @@
 //! # kofft - High-performance DSP library for Rust
-//! 
-//! A comprehensive Digital Signal Processing (DSP) library featuring FFT, DCT, DST, 
+//!
+//! A comprehensive Digital Signal Processing (DSP) library featuring FFT, DCT, DST,
 //! Hartley, Wavelet, STFT, and more. Optimized for both embedded systems and desktop applications.
-//! 
+//!
 //! ## Features
-//! 
+//!
 //! - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
 //! - **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
 //! - **🔧 Multiple transform types**: FFT, DCT, DST, Hartley, Wavelet, STFT, CZT, Goertzel
@@ -12,114 +12,119 @@
 //! - **🔄 Batch and multi-channel processing**
 //! - **🌐 WebAssembly support**
 //! - **📱 Parallel processing** (optional)
-//! 
+//!
 //! ## Cargo Features
-//! 
+//!
 //! - `std` (default): Enable standard library features
 //! - `parallel`: Enable parallel processing with Rayon
 //! - `x86_64`: Enable x86_64 SIMD optimizations
 //! - `aarch64`: Enable AArch64 SIMD optimizations  
 //! - `wasm`: Enable WebAssembly SIMD optimizations
-//! 
+//!
 //! ## Performance
-//! 
+//!
 //! - **Stack-only APIs**: No heap allocation, suitable for MCUs with limited RAM
 //! - **SIMD acceleration**: 2-4x speedup on supported platforms
 //! - **Power-of-two sizes**: Most efficient for FFT operations
 //! - **Memory usage**: Stack usage scales with transform size
-//! 
+//!
 //! ## Platform Support
-//! 
+//!
 //! | Platform | SIMD Support | Features |
 //! |----------|-------------|----------|
 //! | x86_64   | AVX2/FMA    | `x86_64` feature |
 //! | AArch64  | NEON        | `aarch64` feature |
 //! | WebAssembly | SIMD128   | `wasm` feature |
 //! | Generic  | Scalar      | Default fallback |
-//! 
+//!
 //! ## Examples
-//! 
+//!
 //! Run the examples with:
 //! ```bash
 //! cargo run --example basic_usage
 //! cargo run --example embedded_example
 //! cargo run --example benchmark
 //! ```
-//! 
+//!
 //! ## License
-//! 
+//!
 //! Licensed under either of
 //! - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
 //! - MIT license ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
-//! 
+//!
 //! at your option.
 
 #![no_std]
 extern crate alloc;
 
 /// Fast Fourier Transform (FFT) implementations
-/// 
+///
 /// Provides both scalar and SIMD-optimized FFT implementations.
 /// Supports complex and real input signals.
 pub mod fft;
 
 /// N-dimensional FFT operations
-/// 
+///
 /// Multi-dimensional FFT implementations for image and volume processing.
 pub mod ndfft;
 
 /// Window functions for signal processing
-/// 
+///
 /// Common window functions including Hann, Hamming, Blackman, and Kaiser windows.
 pub mod window;
 
 /// Discrete Cosine Transform (DCT)
-/// 
+///
 /// DCT-II, DCT-III, and DCT-IV implementations for audio and image compression.
 pub mod dct;
 
 /// Discrete Sine Transform (DST)
-/// 
+///
 /// DST-II, DST-III, and DST-IV implementations.
 pub mod dst;
 
 /// Discrete Hartley Transform (DHT)
-/// 
+///
 /// Real-valued alternative to FFT with similar properties.
 pub mod hartley;
 
 /// Wavelet transforms
-/// 
+///
 /// Haar wavelet transform implementation for signal analysis.
 pub mod wavelet;
 
 /// Goertzel algorithm
-/// 
+///
 /// Efficient single-frequency detection algorithm.
 pub mod goertzel;
 
+/// Short-Time Fourier Transform (STFT)
+///
+/// Time-frequency analysis with batch and streaming APIs.
+pub mod stft;
+
 /// Chirp Z-Transform (CZT)
-/// 
+///
 /// Arbitrary frequency resolution DFT implementation.
 pub mod czt;
 
 /// Hilbert transform
-/// 
+///
 /// Analytic signal computation and phase analysis.
 pub mod hilbert;
 
 /// Cepstrum analysis
-/// 
+///
 /// Real cepstrum computation for signal analysis.
 pub mod cepstrum;
 
 /// Additional window functions
-/// 
+///
 /// Extended collection of window functions for specialized applications.
 pub mod window_more;
 
 /// Simple addition function for testing purposes
-/// 
+///
 /// This function is used in tests to verify basic functionality.
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
@@ -128,12 +133,12 @@ pub fn add(left: u64, right: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32, FftImpl, FftError};
-    use alloc::vec::Vec;
+    use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
     use alloc::vec;
+    use alloc::vec::Vec;
     use core::f32::consts;
-    use rand::{Rng, SeedableRng};
     use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     #[test]
     fn it_works() {
@@ -192,9 +197,17 @@ mod tests {
         let fft = ScalarFftImpl::<f32>::default();
         fft.fft(&mut data).unwrap();
         // The two peaks should be at 1 and n-1
-        let mut mags: Vec<f32> = data.iter().map(|c| (c.re * c.re + c.im * c.im).sqrt()).collect();
+        let mut mags: Vec<f32> = data
+            .iter()
+            .map(|c| (c.re * c.re + c.im * c.im).sqrt())
+            .collect();
         mags[1] = 0.0; // ignore DC
-        let max_idx = mags.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+        let max_idx = mags
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
         assert!(max_idx == 1 || max_idx == n - 1);
     }
 
@@ -288,12 +301,19 @@ mod tests {
         let input = vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0)];
         let mut output = vec![Complex32::zero(); 3];
         let fft = ScalarFftImpl::<f32>::default();
-        assert_eq!(fft.fft_out_of_place(&input, &mut output), Err(FftError::MismatchedLengths));
+        assert_eq!(
+            fft.fft_out_of_place(&input, &mut output),
+            Err(FftError::MismatchedLengths)
+        );
     }
 
     #[test]
     fn test_fft_nonpow2_no_std_error() {
-        let mut data = vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0), Complex32::new(3.0, 0.0)];
+        let mut data = vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+        ];
         let fft = ScalarFftImpl::<f32>::default();
         // This should work with std feature, but fail without it
         let result = fft.fft(&mut data);
@@ -367,13 +387,13 @@ mod tests {
         ];
         let orig = data.clone();
         let fft = ScalarFftImpl::<f32>::default();
-        
+
         // Multiple FFT-IFFT cycles
         for _ in 0..10 {
             fft.fft(&mut data).unwrap();
             fft.ifft(&mut data).unwrap();
         }
-        
+
         for (a, b) in data.iter().zip(orig.iter()) {
             assert!((a.re - b.re).abs() < 1e-4, "re: {} vs {}", a.re, b.re);
             assert!((a.im - b.im).abs() < 1e-4, "im: {} vs {}", a.im, b.im);
@@ -385,11 +405,11 @@ mod tests {
         let mut input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let mut freq = vec![Complex32::zero(); input.len() / 2 + 1];
         let mut output = vec![0.0; input.len()];
-        
+
         let fft = ScalarFftImpl::<f32>::default();
         fft.rfft(&mut input, &mut freq).unwrap();
         fft.irfft(&mut freq, &mut output).unwrap();
-        
+
         for (a, b) in input.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
         }
@@ -399,10 +419,10 @@ mod tests {
     fn test_rfft_hermitian_symmetry() {
         let mut input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let mut freq = vec![Complex32::zero(); input.len() / 2 + 1];
-        
+
         let fft = ScalarFftImpl::<f32>::default();
         fft.rfft(&mut input, &mut freq).unwrap();
-        
+
         // Check that the result has the expected Hermitian symmetry
         // The first element should be real
         assert!(freq[0].im.abs() < 1e-6);
@@ -417,6 +437,9 @@ mod tests {
         let mut input = vec![1.0, 2.0, 3.0, 4.0];
         let mut freq = vec![Complex32::zero(); 4]; // Wrong size
         let fft = ScalarFftImpl::<f32>::default();
-        assert_eq!(fft.rfft(&mut input, &mut freq), Err(FftError::MismatchedLengths));
+        assert_eq!(
+            fft.rfft(&mut input, &mut freq),
+            Err(FftError::MismatchedLengths)
+        );
     }
 }

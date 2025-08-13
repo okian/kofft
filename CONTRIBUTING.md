@@ -42,6 +42,9 @@ cargo test --features "std,parallel"
 # Run tests for no_std
 cargo test --no-default-features
 
+# Run an example (e.g., basic_usage, czt, goertzel)
+cargo run --example basic_usage
+
 # Check for warnings
 cargo check
 

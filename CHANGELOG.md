@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batch and multi-channel processing
 - Real FFT optimization for real input signals
 - Comprehensive test suite with property-based testing
+- STFT example covering batch and streaming usage
+- Hilbert transform and real cepstrum examples
+
+### Changed
+- Expanded documentation and examples, updating dependency instructions and repository links
+
+### Fixed
+- Resolved stack overflow in Goertzel example
+- Removed recursive trigonometric wrappers that caused FFT stack overflows
 
 ### Features
 - `no_std` support for embedded systems

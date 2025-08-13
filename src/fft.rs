@@ -25,7 +25,19 @@ impl Default for FftStrategy {
 }
 
 // Minimal float trait for generic FFT (no_std, no external deps)
-pub trait Float: Copy + Clone + PartialEq + PartialOrd + core::fmt::Debug + core::ops::Add<Output=Self> + core::ops::Sub<Output=Self> + core::ops::Mul<Output=Self> + core::ops::Div<Output=Self> + core::ops::Neg<Output=Self> + 'static {
+pub trait Float:
+    Copy
+    + Clone
+    + PartialEq
+    + PartialOrd
+    + core::fmt::Debug
+    + core::ops::Add<Output = Self>
+    + core::ops::Sub<Output = Self>
+    + core::ops::Mul<Output = Self>
+    + core::ops::Div<Output = Self>
+    + core::ops::Neg<Output = Self>
+    + 'static
+{
     fn zero() -> Self;
     fn one() -> Self;
     fn from_f32(x: f32) -> Self;
@@ -44,12 +56,24 @@ pub trait Float: Copy + Clone + PartialEq + PartialOrd + core::fmt::Debug + core
 /// - This is a known linter false positive and is safe to suppress.
 #[allow(unconditional_recursion)]
 impl Float for f32 {
-    fn zero() -> Self { 0.0 }
-    fn one() -> Self { 1.0 }
-    fn from_f32(x: f32) -> Self { x }
-    fn cos(self) -> Self { f32::cos(self) }
-    fn sin(self) -> Self { f32::sin(self) }
-    fn pi() -> Self { core::f32::consts::PI }
+    fn zero() -> Self {
+        0.0
+    }
+    fn one() -> Self {
+        1.0
+    }
+    fn from_f32(x: f32) -> Self {
+        x
+    }
+    fn cos(self) -> Self {
+        libm::cosf(self)
+    }
+    fn sin(self) -> Self {
+        libm::sinf(self)
+    }
+    fn pi() -> Self {
+        core::f32::consts::PI
+    }
 }
 
 ///
@@ -62,12 +86,24 @@ impl Float for f32 {
 /// - This is a known linter false positive and is safe to suppress.
 #[allow(unconditional_recursion)]
 impl Float for f64 {
-    fn zero() -> Self { 0.0 }
-    fn one() -> Self { 1.0 }
-    fn from_f32(x: f32) -> Self { x as f64 }
-    fn cos(self) -> Self { f64::cos(self) }
-    fn sin(self) -> Self { f64::sin(self) }
-    fn pi() -> Self { core::f64::consts::PI }
+    fn zero() -> Self {
+        0.0
+    }
+    fn one() -> Self {
+        1.0
+    }
+    fn from_f32(x: f32) -> Self {
+        x as f64
+    }
+    fn cos(self) -> Self {
+        libm::cos(self)
+    }
+    fn sin(self) -> Self {
+        libm::sin(self)
+    }
+    fn pi() -> Self {
+        core::f64::consts::PI
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -77,16 +113,32 @@ pub struct Complex<T: Float> {
 }
 
 impl<T: Float> Complex<T> {
-    pub fn new(re: T, im: T) -> Self { Self { re, im } }
-    pub fn zero() -> Self { Self { re: T::zero(), im: T::zero() } }
+    pub fn new(re: T, im: T) -> Self {
+        Self { re, im }
+    }
+    pub fn zero() -> Self {
+        Self {
+            re: T::zero(),
+            im: T::zero(),
+        }
+    }
     pub fn expi(theta: T) -> Self {
-        Self { re: theta.cos(), im: theta.sin() }
+        Self {
+            re: theta.cos(),
+            im: theta.sin(),
+        }
     }
     pub fn add(self, other: Self) -> Self {
-        Self { re: self.re + other.re, im: self.im + other.im }
+        Self {
+            re: self.re + other.re,
+            im: self.im + other.im,
+        }
     }
     pub fn sub(self, other: Self) -> Self {
-        Self { re: self.re - other.re, im: self.im - other.im }
+        Self {
+            re: self.re - other.re,
+            im: self.im - other.im,
+        }
     }
     pub fn mul(self, other: Self) -> Self {
         Self {
@@ -98,7 +150,12 @@ impl<T: Float> Complex<T> {
 
 impl<T: Float> core::ops::Neg for Complex<T> {
     type Output = Self;
-    fn neg(self) -> Self { Self { re: -self.re, im: -self.im } }
+    fn neg(self) -> Self {
+        Self {
+            re: -self.re,
+            im: -self.im,
+        }
+    }
 }
 
 pub type Complex32 = Complex<f32>;
@@ -108,14 +165,22 @@ pub type Complex64 = Complex<f64>;
 pub trait FftImpl<T: Float> {
     fn fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError>;
     fn ifft(&self, input: &mut [Complex<T>]) -> Result<(), FftError>;
-    fn fft_out_of_place(&self, input: &[Complex<T>], output: &mut [Complex<T>]) -> Result<(), FftError> {
+    fn fft_out_of_place(
+        &self,
+        input: &[Complex<T>],
+        output: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         if input.len() != output.len() {
             return Err(FftError::MismatchedLengths);
         }
         output.copy_from_slice(input);
         self.fft(output)
     }
-    fn ifft_out_of_place(&self, input: &[Complex<T>], output: &mut [Complex<T>]) -> Result<(), FftError> {
+    fn ifft_out_of_place(
+        &self,
+        input: &[Complex<T>],
+        output: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         if input.len() != output.len() {
             return Err(FftError::MismatchedLengths);
         }
@@ -127,17 +192,39 @@ pub trait FftImpl<T: Float> {
     /// In-place strided IFFT
     fn ifft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError>;
     /// Out-of-place strided FFT: input/output can have different strides
-    fn fft_out_of_place_strided(&self, input: &[Complex<T>], in_stride: usize, output: &mut [Complex<T>], out_stride: usize) -> Result<(), FftError>;
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex<T>],
+        in_stride: usize,
+        output: &mut [Complex<T>],
+        out_stride: usize,
+    ) -> Result<(), FftError>;
     /// Out-of-place strided IFFT
-    fn ifft_out_of_place_strided(&self, input: &[Complex<T>], in_stride: usize, output: &mut [Complex<T>], out_stride: usize) -> Result<(), FftError>;
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex<T>],
+        in_stride: usize,
+        output: &mut [Complex<T>],
+        out_stride: usize,
+    ) -> Result<(), FftError>;
     /// Plan-based strategy selection (Radix2, Radix4, Auto)
-    fn fft_with_strategy(&self, input: &mut [Complex<T>], strategy: FftStrategy) -> Result<(), FftError>;
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex<T>],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError>;
 }
 
-pub struct ScalarFftImpl<T: Float> { _phantom: core::marker::PhantomData<T> }
+pub struct ScalarFftImpl<T: Float> {
+    _phantom: core::marker::PhantomData<T>,
+}
 
 impl<T: Float> Default for ScalarFftImpl<T> {
-    fn default() -> Self { Self { _phantom: core::marker::PhantomData } }
+    fn default() -> Self {
+        Self {
+            _phantom: core::marker::PhantomData,
+        }
+    }
 }
 
 impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
@@ -199,20 +286,32 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 let w = Complex::expi(-angle);
                 a.push(input[i].mul(w));
             }
-            for _ in n..m { a.push(Complex::zero()); }
+            for _ in n..m {
+                a.push(Complex::zero());
+            }
             for i in 0..n {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 b.push(Complex::expi(angle));
             }
-            for _ in n..m { b.push(Complex::zero()); }
-            for i in 1..n { b[m - i] = b[i]; }
+            for _ in n..m {
+                b.push(Complex::zero());
+            }
+            for i in 1..n {
+                b[m - i] = b[i];
+            }
             let fft = ScalarFftImpl::<T>::default();
             fft.fft(&mut a)?;
             fft.fft(&mut b)?;
-            for i in 0..m { a[i] = a[i].mul(b[i]); }
-            for c in a.iter_mut() { c.im = -c.im; }
+            for i in 0..m {
+                a[i] = a[i].mul(b[i]);
+            }
+            for c in a.iter_mut() {
+                c.im = -c.im;
+            }
             fft.fft(&mut a)?;
-            for c in a.iter_mut() { c.im = -c.im; }
+            for c in a.iter_mut() {
+                c.im = -c.im;
+            }
             let scale = T::one() / T::from_f32(m as f32);
             for c in a.iter_mut() {
                 c.re = c.re * scale;
@@ -270,7 +369,13 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         Ok(())
     }
-    fn fft_out_of_place_strided(&self, input: &[Complex<T>], in_stride: usize, output: &mut [Complex<T>], out_stride: usize) -> Result<(), FftError> {
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex<T>],
+        in_stride: usize,
+        output: &mut [Complex<T>],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let n = input.len() / in_stride;
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
@@ -285,7 +390,13 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         Ok(())
     }
-    fn ifft_out_of_place_strided(&self, input: &[Complex<T>], in_stride: usize, output: &mut [Complex<T>], out_stride: usize) -> Result<(), FftError> {
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex<T>],
+        in_stride: usize,
+        output: &mut [Complex<T>],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let n = input.len() / in_stride;
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
@@ -300,13 +411,17 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         Ok(())
     }
-    fn fft_with_strategy(&self, input: &mut [Complex<T>], strategy: FftStrategy) -> Result<(), FftError> {
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex<T>],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
         }
         if n == 1 {
-            return Ok(())
+            return Ok(());
         }
         match strategy {
             FftStrategy::Radix2 => self.fft(input),
@@ -420,7 +535,11 @@ impl ScalarFftImpl<f32> {
         Ok(())
     }
     #[cfg(feature = "std")]
-    pub fn fft_radix2_with_twiddles(&self, input: &mut [Complex32], twiddles: &TwiddleFactorBuffer) -> Result<(), FftError> {
+    pub fn fft_radix2_with_twiddles(
+        &self,
+        input: &mut [Complex32],
+        twiddles: &TwiddleFactorBuffer,
+    ) -> Result<(), FftError> {
         let n = input.len();
         let mut j = 0;
         for i in 1..n {
@@ -454,7 +573,11 @@ impl ScalarFftImpl<f32> {
         Ok(())
     }
     #[cfg(feature = "std")]
-    pub fn fft_radix4_with_twiddles(&self, input: &mut [Complex32], twiddles: &TwiddleFactorBuffer) -> Result<(), FftError> {
+    pub fn fft_radix4_with_twiddles(
+        &self,
+        input: &mut [Complex32],
+        twiddles: &TwiddleFactorBuffer,
+    ) -> Result<(), FftError> {
         let n = input.len();
         if n.count_ones() % 2 != 0 {
             // Not a power of 4, fallback to radix-2
@@ -507,7 +630,11 @@ impl ScalarFftImpl<f32> {
         Ok(())
     }
     #[cfg(feature = "std")]
-    pub fn fft_mixed_radix_with_twiddles(&self, input: &mut [Complex32], twiddles: &TwiddleFactorBuffer) -> Result<(), FftError> {
+    pub fn fft_mixed_radix_with_twiddles(
+        &self,
+        input: &mut [Complex32],
+        twiddles: &TwiddleFactorBuffer,
+    ) -> Result<(), FftError> {
         let n = input.len();
         let factors = factorize(n);
         if factors.iter().all(|&f| f == 2 || f == 4) {
@@ -863,17 +990,33 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         scalar.ifft_strided(input, stride)
     }
 
-    fn fft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
     }
 
-    fn ifft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
     }
 
-    fn fft_with_strategy(&self, input: &mut [Complex32], strategy: FftStrategy) -> Result<(), FftError> {
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_with_strategy(input, strategy)
     }
@@ -1036,17 +1179,33 @@ impl FftImpl<f32> for SimdFftAArch64Impl {
         scalar.ifft_strided(input, stride)
     }
 
-    fn fft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
     }
 
-    fn ifft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
     }
 
-    fn fft_with_strategy(&self, input: &mut [Complex32], strategy: FftStrategy) -> Result<(), FftError> {
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_with_strategy(input, strategy)
     }
@@ -1160,8 +1319,14 @@ impl FftImpl<f32> for SimdFftWasmImpl {
                         let out2_im = f32x4_sub(u_im, vw_im);
                         v128_store(&mut input[i + j].re as *mut f32 as *mut v128, out_re);
                         v128_store(&mut input[i + j].im as *mut f32 as *mut v128, out_im);
-                        v128_store(&mut input[i + j + half].re as *mut f32 as *mut v128, out2_re);
-                        v128_store(&mut input[i + j + half].im as *mut f32 as *mut v128, out2_im);
+                        v128_store(
+                            &mut input[i + j + half].re as *mut f32 as *mut v128,
+                            out2_re,
+                        );
+                        v128_store(
+                            &mut input[i + j + half].im as *mut f32 as *mut v128,
+                            out2_im,
+                        );
                         for _ in 0..simd_width {
                             w = w.mul(wlen);
                         }
@@ -1196,17 +1361,33 @@ impl FftImpl<f32> for SimdFftWasmImpl {
         scalar.ifft_strided(input, stride)
     }
 
-    fn fft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
     }
 
-    fn ifft_out_of_place_strided(&self, input: &[Complex32], in_stride: usize, output: &mut [Complex32], out_stride: usize) -> Result<(), FftError> {
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
     }
 
-    fn fft_with_strategy(&self, input: &mut [Complex32], strategy: FftStrategy) -> Result<(), FftError> {
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_with_strategy(input, strategy)
     }
@@ -1254,7 +1435,12 @@ impl<T: Float> FftPlan<T> {
         } else {
             None
         };
-        Self { n, strategy, twiddles, fft: ScalarFftImpl::<T>::default() }
+        Self {
+            n,
+            strategy,
+            twiddles,
+            fft: ScalarFftImpl::<T>::default(),
+        }
     }
     /// In-place FFT using the plan
     pub fn fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
@@ -1267,13 +1453,15 @@ impl<T: Float> FftPlan<T> {
             match self.strategy {
                 FftStrategy::Radix2 => {
                     if let Some(tw) = &self.twiddles {
-                        return ScalarFftImpl::<f32>::default().fft_radix2_with_twiddles(input32, tw)
+                        return ScalarFftImpl::<f32>::default()
+                            .fft_radix2_with_twiddles(input32, tw)
                             .map_err(|e| e);
                     }
                 }
                 FftStrategy::Radix4 => {
                     if let Some(tw) = &self.twiddles {
-                        return ScalarFftImpl::<f32>::default().fft_radix4_with_twiddles(input32, tw)
+                        return ScalarFftImpl::<f32>::default()
+                            .fft_radix4_with_twiddles(input32, tw)
                             .map_err(|e| e);
                     }
                 }
@@ -1287,7 +1475,9 @@ impl<T: Float> FftPlan<T> {
         if input.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
-        for c in input.iter_mut() { c.im = -c.im; }
+        for c in input.iter_mut() {
+            c.im = -c.im;
+        }
         self.fft(input)?;
         let scale = T::one() / T::from_f32(self.n as f32);
         for c in input.iter_mut() {
@@ -1298,7 +1488,11 @@ impl<T: Float> FftPlan<T> {
         Ok(())
     }
     /// Out-of-place FFT using the plan
-    pub fn fft_out_of_place(&self, input: &[Complex<T>], output: &mut [Complex<T>]) -> Result<(), FftError> {
+    pub fn fft_out_of_place(
+        &self,
+        input: &[Complex<T>],
+        output: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         if input.len() != self.n || output.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
@@ -1306,7 +1500,11 @@ impl<T: Float> FftPlan<T> {
         self.fft(output)
     }
     /// Out-of-place IFFT using the plan
-    pub fn ifft_out_of_place(&self, input: &[Complex<T>], output: &mut [Complex<T>]) -> Result<(), FftError> {
+    pub fn ifft_out_of_place(
+        &self,
+        input: &[Complex<T>],
+        output: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         if input.len() != self.n || output.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
@@ -1316,7 +1514,10 @@ impl<T: Float> FftPlan<T> {
 }
 
 /// Batch FFT: process a batch of mutable slices in-place
-pub fn batch<T: Float, F: FftImpl<T>>(fft: &F, batches: &mut [Vec<Complex<T>>]) -> Result<(), FftError> {
+pub fn batch<T: Float, F: FftImpl<T>>(
+    fft: &F,
+    batches: &mut [Vec<Complex<T>>],
+) -> Result<(), FftError> {
     for batch in batches.iter_mut() {
         fft.fft(batch)?;
     }
@@ -1324,7 +1525,10 @@ pub fn batch<T: Float, F: FftImpl<T>>(fft: &F, batches: &mut [Vec<Complex<T>>]) 
 }
 
 /// Batch IFFT: process a batch of mutable slices in-place
-pub fn batch_inverse<T: Float, F: FftImpl<T>>(fft: &F, batches: &mut [Vec<Complex<T>>]) -> Result<(), FftError> {
+pub fn batch_inverse<T: Float, F: FftImpl<T>>(
+    fft: &F,
+    batches: &mut [Vec<Complex<T>>],
+) -> Result<(), FftError> {
     for batch in batches.iter_mut() {
         fft.ifft(batch)?;
     }
@@ -1332,12 +1536,18 @@ pub fn batch_inverse<T: Float, F: FftImpl<T>>(fft: &F, batches: &mut [Vec<Comple
 }
 
 /// Multi-channel FFT: process multiple real channels (e.g. audio)
-pub fn multi_channel<T: Float, F: FftImpl<T>>(fft: &F, channels: &mut [Vec<Complex<T>>]) -> Result<(), FftError> {
+pub fn multi_channel<T: Float, F: FftImpl<T>>(
+    fft: &F,
+    channels: &mut [Vec<Complex<T>>],
+) -> Result<(), FftError> {
     batch(fft, channels)
 }
 
 /// Multi-channel IFFT: process multiple real channels (e.g. audio)
-pub fn multi_channel_inverse<T: Float, F: FftImpl<T>>(fft: &F, channels: &mut [Vec<Complex<T>>]) -> Result<(), FftError> {
+pub fn multi_channel_inverse<T: Float, F: FftImpl<T>>(
+    fft: &F,
+    channels: &mut [Vec<Complex<T>>],
+) -> Result<(), FftError> {
     batch_inverse(fft, channels)
 }
 
@@ -1416,14 +1626,14 @@ pub fn ifft_inplace_stack<const N: usize>(buf: &mut [Complex<f32>; N]) -> Result
     Ok(())
 }
 
-// Reference DFT/IDFT is now in dft.rs 
+// Reference DFT/IDFT is now in dft.rs
 
 #[cfg(test)]
 mod coverage_tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32, FftImpl, FftPlan, FftStrategy};
-    use alloc::vec;
+    use crate::fft::{Complex32, FftImpl, FftPlan, FftStrategy, ScalarFftImpl};
     use alloc::format;
+    use alloc::vec;
     use proptest::prelude::*;
 
     #[test]
@@ -1456,7 +1666,12 @@ mod coverage_tests {
     #[test]
     fn test_strided_fft_ifft() {
         let fft = ScalarFftImpl::<f32>::default();
-        let mut data = vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0), Complex32::new(3.0, 0.0), Complex32::new(4.0, 0.0)];
+        let mut data = vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+            Complex32::new(4.0, 0.0),
+        ];
         let orig = data.clone();
         fft.fft_strided(&mut data, 2).unwrap();
         fft.ifft_strided(&mut data, 2).unwrap();
@@ -1468,17 +1683,29 @@ mod coverage_tests {
     #[test]
     fn test_out_of_place_strided() {
         let fft = ScalarFftImpl::<f32>::default();
-        let input = vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0), Complex32::new(3.0, 0.0), Complex32::new(4.0, 0.0)];
+        let input = vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+            Complex32::new(4.0, 0.0),
+        ];
         let mut output = vec![Complex32::zero(); 4];
-        fft.fft_out_of_place_strided(&input, 2, &mut output, 2).unwrap();
+        fft.fft_out_of_place_strided(&input, 2, &mut output, 2)
+            .unwrap();
         let mut output2 = output.clone();
-        fft.ifft_out_of_place_strided(&output, 2, &mut output2, 2).unwrap();
+        fft.ifft_out_of_place_strided(&output, 2, &mut output2, 2)
+            .unwrap();
     }
 
     #[test]
     fn test_plan_based_fft_ifft() {
         let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
-        let mut data = vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0), Complex32::new(3.0, 0.0), Complex32::new(4.0, 0.0)];
+        let mut data = vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+            Complex32::new(4.0, 0.0),
+        ];
         let orig = data.clone();
         plan.fft(&mut data).unwrap();
         plan.ifft(&mut data).unwrap();
@@ -1520,4 +1747,4 @@ mod coverage_tests {
         // Should error in no_std, but may work with std (Bluestein)
         let _ = fft.fft(&mut data);
     }
-} 
+}
