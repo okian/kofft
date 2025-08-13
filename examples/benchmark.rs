@@ -1,9 +1,9 @@
 //! Benchmark example for kofft
-//! 
+//!
 //! This example compares the performance of different implementations
 //! and features of the kofft library.
 
-use kofft::fft::{Complex32, ScalarFftImpl, FftImpl};
+use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 use std::time::Instant;
 
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
 
     for &size in &sizes {
         // Generate test data
-        let mut data: Vec<Complex32> = (0..size)
+        let data: Vec<Complex32> = (0..size)
             .map(|i| Complex32::new((i as f32 * 0.1).sin(), (i as f32 * 0.1).cos()))
             .collect();
 
@@ -50,7 +50,7 @@ fn main() {
     // Compare FFT vs IFFT performance
     println!("FFT vs IFFT Performance Comparison");
     let size = 1024;
-    let mut data: Vec<Complex32> = (0..size)
+    let data: Vec<Complex32> = (0..size)
         .map(|i| Complex32::new((i as f32 * 0.1).sin(), (i as f32 * 0.1).cos()))
         .collect();
 
@@ -72,19 +72,23 @@ fn main() {
     }
     let ifft_duration = start.elapsed();
 
-    println!("FFT:  {} iterations in {:?} ({:.0} FFT/s)", 
-             iterations, fft_duration, 
-             iterations as f64 / (fft_duration.as_micros() as f64 / 1_000_000.0));
-    println!("IFFT: {} iterations in {:?} ({:.0} IFFT/s)", 
-             iterations, ifft_duration,
-             iterations as f64 / (ifft_duration.as_micros() as f64 / 1_000_000.0));
+    println!(
+        "FFT:  {} iterations in {:?} ({:.0} FFT/s)",
+        iterations,
+        fft_duration,
+        iterations as f64 / (fft_duration.as_micros() as f64 / 1_000_000.0)
+    );
+    println!(
+        "IFFT: {} iterations in {:?} ({:.0} IFFT/s)",
+        iterations,
+        ifft_duration,
+        iterations as f64 / (ifft_duration.as_micros() as f64 / 1_000_000.0)
+    );
     println!();
 
     // Real FFT performance
     println!("Real FFT Performance");
-    let mut real_input: Vec<f32> = (0..1024)
-        .map(|i| (i as f32 * 0.1).sin())
-        .collect();
+    let mut real_input: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.1).sin()).collect();
     let mut real_output = vec![Complex32::zero(); real_input.len() / 2 + 1];
 
     let start = Instant::now();
@@ -93,9 +97,12 @@ fn main() {
     }
     let rfft_duration = start.elapsed();
 
-    println!("RFFT: {} iterations in {:?} ({:.0} RFFT/s)", 
-             iterations, rfft_duration,
-             iterations as f64 / (rfft_duration.as_micros() as f64 / 1_000_000.0));
+    println!(
+        "RFFT: {} iterations in {:?} ({:.0} RFFT/s)",
+        iterations,
+        rfft_duration,
+        iterations as f64 / (rfft_duration.as_micros() as f64 / 1_000_000.0)
+    );
     println!();
 
     // Memory usage comparison
@@ -106,7 +113,7 @@ fn main() {
     let sizes = [64, 128, 256, 512, 1024];
     for &size in &sizes {
         let complex_memory = size * 8; // Complex32 = 8 bytes
-        let real_memory = size * 4;    // f32 = 4 bytes
+        let real_memory = size * 4; // f32 = 4 bytes
         let rfft_memory = (size / 2 + 1) * 8; // RFFT output
 
         println!("Complex FFT\t\t{}\t\t{}", size, complex_memory);
@@ -140,4 +147,4 @@ fn main() {
     println!("Stack-only APIs\t\tYes\t\t\tZero allocation");
 
     println!("\n=== Benchmark completed! ===");
-} 
+}
