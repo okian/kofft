@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parallel processing capabilities
 - Comprehensive documentation and examples
 
+### Changed
+- Exposed the STFT module and added hop-size validation and streaming helpers
+- Hardened FFT helpers with stride checks, new error cases, and a radix-4 path
+- Verified matrix dimensions for multi-dimensional FFT utilities
+
 ## [0.1.0] - 2024-12-19
 
 ### Added

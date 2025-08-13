@@ -21,7 +21,7 @@ fn main() {
 
     for &size in &sizes {
         // Generate test data
-        let mut data: Vec<Complex32> = (0..size)
+        let data: Vec<Complex32> = (0..size)
             .map(|i| Complex32::new((i as f32 * 0.1).sin(), (i as f32 * 0.1).cos()))
             .collect();
 
@@ -50,7 +50,7 @@ fn main() {
     // Compare FFT vs IFFT performance
     println!("FFT vs IFFT Performance Comparison");
     let size = 1024;
-    let mut data: Vec<Complex32> = (0..size)
+    let data: Vec<Complex32> = (0..size)
         .map(|i| Complex32::new((i as f32 * 0.1).sin(), (i as f32 * 0.1).cos()))
         .collect();
 

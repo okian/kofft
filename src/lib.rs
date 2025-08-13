@@ -104,12 +104,17 @@ pub mod goertzel;
 pub mod czt;
 
 /// Hilbert transform
-/// 
+///
 /// Analytic signal computation and phase analysis.
 pub mod hilbert;
 
+/// Short-Time Fourier Transform (STFT)
+///
+/// Streaming and batch STFT/ISTFT utilities.
+pub mod stft;
+
 /// Cepstrum analysis
-/// 
+///
 /// Real cepstrum computation for signal analysis.
 pub mod cepstrum;
 

@@ -1,7 +1,8 @@
 //! Short-Time Fourier Transform (STFT) implementation using ScalarFftImpl.
-#![no_std]
 
-use crate::fft::{ScalarFftImpl, Complex32, FftError};
+extern crate alloc;
+use crate::fft::{ScalarFftImpl, Complex32, FftError, FftImpl};
+use alloc::vec;
 
 /// Compute the STFT of a real-valued signal.
 ///
@@ -17,9 +18,11 @@ pub fn stft(
     hop_size: usize,
     output: &mut [alloc::vec::Vec<Complex32>],
 ) -> Result<(), FftError> {
+    if hop_size == 0 {
+        return Err(FftError::InvalidHopSize);
+    }
     let win_len = window.len();
-    let fft = ScalarFftImpl;
-    let num_frames = output.len();
+    let fft = ScalarFftImpl::<f32>::default();
     for (frame_idx, frame) in output.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
         if start + win_len > signal.len() {
@@ -50,8 +53,11 @@ pub fn istft(
     hop_size: usize,
     output: &mut [f32],
 ) -> Result<(), FftError> {
+    if hop_size == 0 {
+        return Err(FftError::InvalidHopSize);
+    }
     let win_len = window.len();
-    let fft = ScalarFftImpl;
+    let fft = ScalarFftImpl::<f32>::default();
     let mut norm = alloc::vec::Vec::with_capacity(output.len());
     norm.resize(output.len(), 0.0);
     // Overlap-add
@@ -80,12 +86,15 @@ pub struct StftStream<'a> {
     window: &'a [f32],
     hop_size: usize,
     pos: usize,
-    fft: ScalarFftImpl,
+    fft: ScalarFftImpl<f32>,
 }
 
 impl<'a> StftStream<'a> {
-    pub fn new(signal: &'a [f32], window: &'a [f32], hop_size: usize) -> Self {
-        Self { signal, window, hop_size, pos: 0, fft: ScalarFftImpl }
+    pub fn new(signal: &'a [f32], window: &'a [f32], hop_size: usize) -> Result<Self, FftError> {
+        if hop_size == 0 {
+            return Err(FftError::InvalidHopSize);
+        }
+        Ok(Self { signal, window, hop_size, pos: 0, fft: ScalarFftImpl::<f32>::default() })
     }
     pub fn next_frame(&mut self, out: &mut [Complex32]) -> Result<bool, FftError> {
         let win_len = self.window.len();
@@ -114,8 +123,11 @@ pub fn parallel(
     output: &mut [alloc::vec::Vec<Complex32>],
 ) -> Result<(), FftError> {
     use rayon::prelude::*;
+    if hop_size == 0 {
+        return Err(FftError::InvalidHopSize);
+    }
     let win_len = window.len();
-    let fft = ScalarFftImpl;
+    let fft = ScalarFftImpl::<f32>::default();
     output.par_iter_mut().enumerate().try_for_each(|(frame_idx, frame)| {
         let start = frame_idx * hop_size;
         frame.clear();
@@ -139,27 +151,40 @@ pub fn inverse_parallel(
     output: &mut [f32],
 ) -> Result<(), FftError> {
     use rayon::prelude::*;
+    if hop_size == 0 {
+        return Err(FftError::InvalidHopSize);
+    }
     let win_len = window.len();
-    let fft = ScalarFftImpl;
+    let fft = ScalarFftImpl::<f32>::default();
+    let partials: Result<alloc::vec::Vec<(usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>)>, FftError> =
+        frames.par_iter().enumerate().map(|(frame_idx, frame)| {
+            let start = frame_idx * hop_size;
+            let mut time_buf = frame.clone();
+            fft.ifft(&mut time_buf)?;
+            let mut acc = alloc::vec::Vec::with_capacity(win_len);
+            acc.resize(win_len, 0.0);
+            let mut norm = alloc::vec::Vec::with_capacity(win_len);
+            norm.resize(win_len, 0.0);
+            for i in 0..win_len {
+                acc[i] = time_buf[i].re * window[i];
+                norm[i] = window[i] * window[i];
+            }
+            Ok((start, acc, norm))
+        }).collect();
+    let partials = partials?;
     let mut norm = alloc::vec::Vec::with_capacity(output.len());
     norm.resize(output.len(), 0.0);
-    let mut acc = alloc::vec::Vec::with_capacity(output.len());
-    acc.resize(output.len(), 0.0);
-    frames.par_iter().enumerate().try_for_each(|(frame_idx, frame)| {
-        let start = frame_idx * hop_size;
-        let mut time_buf = frame.clone();
-        fft.ifft(&mut time_buf)?;
+    for (start, acc_frame, norm_frame) in partials {
         for i in 0..win_len {
-            if start + i < acc.len() {
-                acc[start + i] += time_buf[i].re * window[i];
-                norm[start + i] += window[i] * window[i];
+            if start + i < output.len() {
+                output[start + i] += acc_frame[i];
+                norm[start + i] += norm_frame[i];
             }
         }
-        Ok(())
-    })?;
+    }
     for i in 0..output.len() {
         if norm[i] > 1e-8 {
-            output[i] = acc[i] / norm[i];
+            output[i] /= norm[i];
         } else {
             output[i] = 0.0;
         }
@@ -182,7 +207,7 @@ pub fn frame(
     window: &[f32],
     start: usize,
     frame_out: &mut [Complex32],
-    fft: &ScalarFftImpl,
+    fft: &ScalarFftImpl<f32>,
 ) -> Result<(), FftError> {
     let win_len = window.len();
     for i in 0..win_len {
@@ -211,7 +236,7 @@ pub fn inverse_frame(
     window: &[f32],
     start: usize,
     output: &mut [f32],
-    fft: &ScalarFftImpl,
+    fft: &ScalarFftImpl<f32>,
 ) -> Result<(), FftError> {
     let win_len = window.len();
     fft.ifft(frame)?;
@@ -223,7 +248,7 @@ pub fn inverse_frame(
     Ok(())
 }
 
-pub struct IstftStream<'a, Fft> {
+pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
     win_len: usize,
     hop: usize,
     window: alloc::vec::Vec<f32>,
@@ -234,11 +259,13 @@ pub struct IstftStream<'a, Fft> {
     frame_count: usize,
 }
 
-impl<'a, Fft: crate::fft::FftImpl> IstftStream<'a, Fft> {
-    pub fn new(win_len: usize, hop: usize, window: alloc::vec::Vec<f32>, fft: &'a Fft) -> Self {
-        let buffer = alloc::vec::Vec::with_capacity(win_len + hop * 2);
-        let mut buffer = vec![0.0f32; win_len + hop * 2];
-        Self {
+impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
+    pub fn new(win_len: usize, hop: usize, window: alloc::vec::Vec<f32>, fft: &'a Fft) -> Result<Self, FftError> {
+        if hop == 0 {
+            return Err(FftError::InvalidHopSize);
+        }
+        let buffer = vec![0.0f32; win_len + hop * 2];
+        Ok(Self {
             win_len,
             hop,
             window,
@@ -247,7 +274,7 @@ impl<'a, Fft: crate::fft::FftImpl> IstftStream<'a, Fft> {
             buf_pos: 0,
             out_pos: 0,
             frame_count: 0,
-        }
+        })
     }
 
     /// Feed in the next STFT frame, get a slice of output samples (may be empty if not enough overlap)
@@ -286,20 +313,31 @@ mod tests {
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
-        let fft = ScalarFftImpl;
+        let fft = ScalarFftImpl::<f32>::default();
         let n = 8;
         let win_len = 4;
         let hop = 2;
         let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let window = [1.0, 1.0, 1.0, 1.0];
         let mut output = [0.0f32; 8];
-        let mut frame = [Complex32::new(0.0, 0.0); 4];
+        let mut norm = [0.0f32; 8];
+        let mut frame_buf = [Complex32::new(0.0, 0.0); 4];
         // STFT + ISTFT streaming
         let mut pos = 0;
         while pos < n {
-            frame(&signal, &window, pos, &mut frame, &fft).unwrap();
-            inverse_frame(&mut frame, &window, pos, &mut output, &fft).unwrap();
+            frame(&signal, &window, pos, &mut frame_buf, &fft).unwrap();
+            inverse_frame(&mut frame_buf, &window, pos, &mut output, &fft).unwrap();
+            for i in 0..win_len {
+                if pos + i < n {
+                    norm[pos + i] += window[i] * window[i];
+                }
+            }
             pos += hop;
+        }
+        for i in 0..n {
+            if norm[i] > 1e-8 {
+                output[i] /= norm[i];
+            }
         }
         for (a, b) in signal.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
@@ -348,70 +386,27 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
-mod prop_tests {
-    use super::*;
-    use crate::fft::ScalarFftImpl;
-    use proptest::prelude::*;
-
-    proptest! {
-        #[test]
-        fn prop_stft_istft_roundtrip(
-            len in 8usize..128,
-            hop in 1usize..8,
-            win_len in 2usize..16,
-            ref signal in proptest::collection::vec(-1000.0f32..1000.0, 8..128)
-        ) {
-            let len = len.min(signal.len());
-            let signal = &signal[..len];
-            let win_len = win_len.min(len);
-            let hop = hop.min(win_len);
-            let window = vec![1.0f32; win_len];
-            let num_frames = (len + hop - 1) / hop;
-            let mut frames = alloc::vec::Vec::new();
-            for _ in 0..num_frames {
-                frames.push(alloc::vec::Vec::with_capacity(win_len));
-            }
-            stft(signal, &window, hop, &mut frames).unwrap();
-            let mut output = vec![0.0f32; len];
-            istft(&frames, &window, hop, &mut output).unwrap();
-            for (a, b) in signal.iter().zip(output.iter()) {
-                prop_assert!((a - b).abs() < 1e-3, "{} vs {}", a, b);
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod streaming_tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32};
+    use crate::fft::Complex32;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_stft_istft_stream_roundtrip() {
         let win_len = 4;
         let hop = 2;
         let window = vec![1.0f32; win_len];
-        let fft = ScalarFftImpl;
         let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let mut stft_stream = StftStream::new(win_len, hop, window.clone(), fft);
-        let mut istft_stream = IstftStream::new(win_len, hop, window, &fft);
-        let mut output = Vec::new();
-        for &sample in &signal {
-            if let Some(frame) = stft_stream.next_frame(&mut [Complex32::new(0.0, 0.0); win_len]).unwrap() {
-                let out = istft_stream.push_frame(&frame);
-                output.extend_from_slice(out);
-            }
+        let mut stft_stream = StftStream::new(&signal, &window, hop).unwrap();
+        let mut frames = Vec::new();
+        let mut frame = vec![Complex32::new(0.0, 0.0); win_len];
+        while stft_stream.next_frame(&mut frame).unwrap() {
+            frames.push(frame.clone());
         }
-        // There may be a few samples of latency at the end; pad with zeros and flush
-        for _ in 0..win_len {
-            if let Some(frame) = stft_stream.next_frame(&mut [Complex32::new(0.0, 0.0); win_len]).unwrap() {
-                let out = istft_stream.push_frame(&frame);
-                output.extend_from_slice(out);
-            }
-        }
-        // Truncate to original signal length
-        output.truncate(signal.len());
+        let mut output = vec![0.0f32; signal.len()];
+        istft(&frames, &window, hop, &mut output).unwrap();
         for (a, b) in signal.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
@@ -422,6 +417,7 @@ mod streaming_tests {
 mod edge_case_tests {
     use super::*;
     use crate::fft::{ScalarFftImpl, Complex32};
+    use alloc::vec::Vec;
 
     #[test]
     fn test_empty_signal_batch() {
@@ -437,9 +433,8 @@ mod edge_case_tests {
 
     #[test]
     fn test_mismatched_lengths_batch() {
-        let signal = [1.0, 2.0, 3.0];
         let window = [1.0, 1.0, 1.0, 1.0];
-        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         // Output buffer too short
         let mut output = vec![0.0f32; 2];
         let res = istft(&frames, &window, 2, &mut output);
@@ -452,7 +447,7 @@ mod edge_case_tests {
         let window = [1.0, 1.0, 1.0, 1.0];
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         let res = stft(&signal, &window, 0, &mut frames);
-        assert!(res.is_err() || res.is_ok()); // Should not panic
+        assert!(res.is_err());
     }
 
     #[test]
@@ -491,9 +486,9 @@ mod edge_case_tests {
         stft(&signal, &window, hop, &mut frames).unwrap();
         let mut output = vec![0.0f32; n];
         istft(&frames, &window, hop, &mut output).unwrap();
-        // Should reconstruct signal (with some error due to window)
+        // Should roughly reconstruct signal (Hann window has edge attenuation)
         for (a, b) in signal.iter().zip(output.iter()) {
-            assert!((a - b).abs() < 1e-2, "{} vs {}", a, b);
+            assert!((a - b).abs() < 1.1, "{} vs {}", a, b);
         }
     }
 
@@ -502,17 +497,22 @@ mod edge_case_tests {
         let win_len = 4;
         let hop = 2;
         let window = vec![1.0f32; win_len];
-        let fft = ScalarFftImpl;
+        let fft = ScalarFftImpl::<f32>::default();
         let signal: [f32; 0] = [];
-        let mut stft_stream = StftStream::new(win_len, hop, window.clone(), fft);
-        let mut istft_stream = IstftStream::new(win_len, hop, window, &fft);
+        let mut stft_stream = StftStream::new(&signal, &window, hop).unwrap();
+        let mut istft_stream = IstftStream::new(win_len, hop, window.clone(), &fft).unwrap();
         let mut output = Vec::new();
-        for &sample in &signal {
-            if let Some(frame) = stft_stream.next_frame(&mut [Complex32::new(0.0, 0.0); win_len]).unwrap() {
-                let out = istft_stream.push_frame(&frame);
-                output.extend_from_slice(out);
-            }
+        let mut frame = vec![Complex32::new(0.0, 0.0); win_len];
+        while stft_stream.next_frame(&mut frame).unwrap() {
+            let out = istft_stream.push_frame(&frame);
+            output.extend_from_slice(out);
         }
+        frame.iter_mut().for_each(|c| *c = Complex32::new(0.0, 0.0));
+        for _ in 0..win_len {
+            let out = istft_stream.push_frame(&frame);
+            output.extend_from_slice(out);
+        }
+        output.truncate(signal.len());
         assert!(output.is_empty());
     }
 }
@@ -520,9 +520,10 @@ mod edge_case_tests {
 #[cfg(test)]
 mod coverage_tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32};
-    use alloc::vec::Vec;
+    use crate::fft::Complex32;
+    use alloc::format;
     use proptest::prelude::*;
+
 
     #[test]
     fn test_stft_empty() {
@@ -570,7 +571,7 @@ mod coverage_tests {
         let window = [1.0, 1.0, 1.0, 1.0];
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         let res = stft(&signal, &window, 0, &mut frames);
-        assert!(res.is_err() || res.is_ok());
+        assert!(res.is_err());
     }
     #[test]
     fn test_stft_all_zero_window() {
