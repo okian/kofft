@@ -1,0 +1,22 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.26.5'
+          args: '--out Xml'
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: cobertura.xml
