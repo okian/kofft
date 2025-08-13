@@ -4,6 +4,9 @@
 [![Documentation](https://docs.rs/kofft/badge.svg)](https://docs.rs/kofft)
 [![License](https://img.shields.io/crates/l/kofft)](https://github.com/kianostad/kofft/blob/main/LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
+[![Test](https://github.com/kianostad/kofft/actions/workflows/test.yml/badge.svg)](https://github.com/kianostad/kofft/actions/workflows/test.yml)
+[![Lint](https://github.com/kianostad/kofft/actions/workflows/lint.yml/badge.svg)](https://github.com/kianostad/kofft/actions/workflows/lint.yml)
+[![codecov](https://codecov.io/gh/kianostad/kofft/branch/main/graph/badge.svg)](https://codecov.io/gh/kianostad/kofft)
 
 High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD-optimized, and batch transforms for embedded and scientific Rust applications.
 
