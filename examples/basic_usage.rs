@@ -3,7 +3,8 @@
 //! This example demonstrates the core features of the kofft library
 //! including FFT, DCT, window functions, and more.
 
-use kofft::fft::{Complex32, ScalarFftImpl, FftImpl};
+use kofft::{Complex32, FftPlanner};
+use kofft::fft::{ScalarFftImpl, FftImpl};
 use kofft::dct::dct2;
 use kofft::window::{hann, hamming};
 use kofft::wavelet::haar_forward;
@@ -14,7 +15,8 @@ fn main() {
 
     // 1. Basic FFT
     println!("1. Fast Fourier Transform (FFT)");
-    let fft = ScalarFftImpl::<f32>::default();
+    let planner = FftPlanner::<f32>::new();
+    let fft = ScalarFftImpl::with_planner(planner);
     
     let mut data = vec![
         Complex32::new(1.0, 0.0),
@@ -27,7 +29,16 @@ fn main() {
     
     fft.fft(&mut data).unwrap();
     println!("   FFT: {:?}", data.iter().map(|c| format!("{:.2}+{:.2}i", c.re, c.im)).collect::<Vec<_>>());
-    
+
+    // Reuse the same FFT plan on another buffer
+    let mut other = vec![
+        Complex32::new(5.0, 0.0),
+        Complex32::new(6.0, 0.0),
+        Complex32::new(7.0, 0.0),
+        Complex32::new(8.0, 0.0),
+    ];
+    fft.fft(&mut other).unwrap();
+
     fft.ifft(&mut data).unwrap();
     println!("   IFFT: {:?}", data.iter().map(|c| c.re).collect::<Vec<_>>());
     println!();

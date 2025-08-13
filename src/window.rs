@@ -132,4 +132,19 @@ mod tests {
         assert_eq!(w.len(), 8);
         assert!(w.iter().all(|&x| x.is_finite()));
     }
-} 
+
+    #[test]
+    fn test_stack_windows() {
+        let mut hann_buf = [0.0f32; 8];
+        hann_inplace_stack(&mut hann_buf);
+        assert!((hann_buf[0] - 0.0).abs() < 1e-6);
+
+        let mut hamming_buf = [0.0f32; 8];
+        hamming_inplace_stack(&mut hamming_buf);
+        assert!(hamming_buf.iter().all(|&x| x >= 0.0 && x <= 1.0));
+
+        let mut blackman_buf = [0.0f32; 8];
+        blackman_inplace_stack(&mut blackman_buf);
+        assert!(blackman_buf.iter().all(|&x| x >= -1e-6 && x <= 1.0));
+    }
+}
