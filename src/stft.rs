@@ -1,7 +1,7 @@
 //! Short-Time Fourier Transform (STFT) implementation using ScalarFftImpl.
 
 extern crate alloc;
-use crate::fft::{ScalarFftImpl, Complex32, FftError, FftImpl};
+use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
 use alloc::vec;
 
 /// Compute the STFT of a real-valued signal.
@@ -94,7 +94,13 @@ impl<'a> StftStream<'a> {
         if hop_size == 0 {
             return Err(FftError::InvalidHopSize);
         }
-        Ok(Self { signal, window, hop_size, pos: 0, fft: ScalarFftImpl::<f32>::default() })
+        Ok(Self {
+            signal,
+            window,
+            hop_size,
+            pos: 0,
+            fft: ScalarFftImpl::<f32>::default(),
+        })
     }
     pub fn next_frame(&mut self, out: &mut [Complex32]) -> Result<bool, FftError> {
         let win_len = self.window.len();
@@ -116,6 +122,26 @@ impl<'a> StftStream<'a> {
 }
 
 #[cfg(feature = "parallel")]
+/// Compute the Short-Time Fourier Transform (STFT) of `signal` using Rayon for parallelism.
+///
+/// Requires the `parallel` feature, which enables the [`rayon`](https://crates.io/crates/rayon) dependency.
+///
+/// * `signal` - input real-valued signal
+/// * `window` - analysis window
+/// * `hop_size` - hop size between adjacent frames
+/// * `output` - pre-allocated buffer for FFT frames
+///
+/// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero.
+///
+/// # Examples
+/// ```
+/// use kofft::stft::parallel;
+/// use kofft::window::hann;
+/// let signal = vec![0.0; 8];
+/// let window = hann(4);
+/// let mut frames = vec![vec![]; 4];
+/// parallel(&signal, &window, 2, &mut frames).unwrap();
+/// ```
 pub fn parallel(
     signal: &[f32],
     window: &[f32],
@@ -128,22 +154,45 @@ pub fn parallel(
     }
     let win_len = window.len();
     let fft = ScalarFftImpl::<f32>::default();
-    output.par_iter_mut().enumerate().try_for_each(|(frame_idx, frame)| {
-        let start = frame_idx * hop_size;
-        frame.clear();
-        for i in 0..win_len {
-            let x = if start + i < signal.len() {
-                signal[start + i] * window[i]
-            } else {
-                0.0
-            };
-            frame.push(Complex32::new(x, 0.0));
-        }
-        fft.fft(frame)
-    })
+    output
+        .par_iter_mut()
+        .enumerate()
+        .try_for_each(|(frame_idx, frame)| {
+            let start = frame_idx * hop_size;
+            frame.clear();
+            for i in 0..win_len {
+                let x = if start + i < signal.len() {
+                    signal[start + i] * window[i]
+                } else {
+                    0.0
+                };
+                frame.push(Complex32::new(x, 0.0));
+            }
+            fft.fft(frame)
+        })
 }
 
 #[cfg(feature = "parallel")]
+/// Inverse STFT using Rayon for parallel synthesis.
+///
+/// Requires the `parallel` feature, which enables the [`rayon`](https://crates.io/crates/rayon) dependency.
+///
+/// * `frames` - frequency-domain frames
+/// * `window` - synthesis window
+/// * `hop_size` - hop size between frames
+/// * `output` - buffer to receive the reconstructed signal
+///
+/// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero.
+///
+/// # Examples
+/// ```
+/// use kofft::stft::inverse_parallel;
+/// use kofft::window::hann;
+/// let window = hann(4);
+/// let frames = vec![vec![kofft::Complex32::zero(); 4]; 4];
+/// let mut out = vec![0.0; 8];
+/// inverse_parallel(&frames, &window, 2, &mut out).unwrap();
+/// ```
 pub fn inverse_parallel(
     frames: &[alloc::vec::Vec<Complex32>],
     window: &[f32],
@@ -156,8 +205,13 @@ pub fn inverse_parallel(
     }
     let win_len = window.len();
     let fft = ScalarFftImpl::<f32>::default();
-    let partials: Result<alloc::vec::Vec<(usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>)>, FftError> =
-        frames.par_iter().enumerate().map(|(frame_idx, frame)| {
+    let partials: Result<
+        alloc::vec::Vec<(usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>)>,
+        FftError,
+    > = frames
+        .par_iter()
+        .enumerate()
+        .map(|(frame_idx, frame)| {
             let start = frame_idx * hop_size;
             let mut time_buf = frame.clone();
             fft.ifft(&mut time_buf)?;
@@ -170,7 +224,8 @@ pub fn inverse_parallel(
                 norm[i] = window[i] * window[i];
             }
             Ok((start, acc, norm))
-        }).collect();
+        })
+        .collect();
     let partials = partials?;
     let mut norm = alloc::vec::Vec::with_capacity(output.len());
     norm.resize(output.len(), 0.0);
@@ -260,7 +315,12 @@ pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
 }
 
 impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
-    pub fn new(win_len: usize, hop: usize, window: alloc::vec::Vec<f32>, fft: &'a Fft) -> Result<Self, FftError> {
+    pub fn new(
+        win_len: usize,
+        hop: usize,
+        window: alloc::vec::Vec<f32>,
+        fft: &'a Fft,
+    ) -> Result<Self, FftError> {
         if hop == 0 {
             return Err(FftError::InvalidHopSize);
         }
@@ -309,7 +369,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32};
+    use crate::fft::{Complex32, ScalarFftImpl};
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
@@ -386,7 +446,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod streaming_tests {
     use super::*;
@@ -416,7 +475,7 @@ mod streaming_tests {
 #[cfg(test)]
 mod edge_case_tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32};
+    use crate::fft::{Complex32, ScalarFftImpl};
     use alloc::vec::Vec;
 
     #[test]
@@ -524,7 +583,6 @@ mod coverage_tests {
     use alloc::format;
     use proptest::prelude::*;
 
-
     #[test]
     fn test_stft_empty() {
         let signal: [f32; 0] = [];
@@ -553,7 +611,9 @@ mod coverage_tests {
         stft(&signal, &window, 4, &mut frames).unwrap();
         let mut output = vec![0.0f32; 8];
         istft(&frames, &window, 4, &mut output).unwrap();
-        for &x in &output { assert_eq!(x, 0.0); }
+        for &x in &output {
+            assert_eq!(x, 0.0);
+        }
     }
     #[test]
     fn test_stft_all_ones() {
@@ -563,7 +623,9 @@ mod coverage_tests {
         stft(&signal, &window, 4, &mut frames).unwrap();
         let mut output = vec![0.0f32; 8];
         istft(&frames, &window, 4, &mut output).unwrap();
-        for &x in &output { assert!(x > 0.0); }
+        for &x in &output {
+            assert!(x > 0.0);
+        }
     }
     #[test]
     fn test_stft_zero_hop() {
@@ -587,7 +649,9 @@ mod coverage_tests {
         }
         let mut output = vec![0.0f32; 4];
         istft(&frames, &window, 2, &mut output).unwrap();
-        for &x in &output { assert_eq!(x, 0.0); }
+        for &x in &output {
+            assert_eq!(x, 0.0);
+        }
     }
     proptest! {
         #[test]

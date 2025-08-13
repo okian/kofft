@@ -44,3 +44,11 @@ required-features = []
 [[example]]
 name = "benchmark"
 path = "examples/benchmark.rs"
+
+[[example]]
+name = "stft_usage"
+path = "examples/stft_usage.rs"
+
+[[example]]
+name = "ndfft_usage"
+path = "examples/ndfft_usage.rs"

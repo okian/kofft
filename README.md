@@ -26,18 +26,17 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 ```toml
 [dependencies]
-kofft = "0.1.0"
-
-# For SIMD acceleration (optional)
-kofft = { version = "0.1.0", features = ["x86_64"] }  # x86_64 AVX2
-kofft = { version = "0.1.0", features = ["aarch64"] } # AArch64 NEON
-kofft = { version = "0.1.0", features = ["wasm"] }    # WebAssembly SIMD
-
-# For parallel processing
-kofft = { version = "0.1.0", features = ["parallel"] }
+kofft = { version = "0.1.1", features = [
+    # "x86_64",   # enable AVX2 on x86_64
+    # "aarch64",  # enable NEON on AArch64
+    # "wasm",     # enable WebAssembly SIMD
+    # "parallel", # enable Rayon-based parallel helpers
+] }
 ```
 
 ### Basic Usage
+
+For an overview of the Fast Fourier Transform (FFT), see [Wikipedia](https://en.wikipedia.org/wiki/Fast_Fourier_transform).
 
 ```rust
 use kofft::{Complex32, FftPlanner};
@@ -175,6 +174,8 @@ fft.rfft(&input, &mut output)?;
 
 ### STFT (Short-Time Fourier Transform)
 
+For background on STFT, see [Wikipedia](https://en.wikipedia.org/wiki/Short-time_Fourier_transform).
+
 ```rust
 use kofft::stft::{stft, istft};
 use kofft::window::hann;
@@ -204,28 +205,39 @@ let mut batches = vec![
 fft.batch(&mut batches)?;
 ```
 
+## Examples
+
+Run the included examples with:
+
+```bash
+cargo run --example basic_usage
+cargo run --example stft_usage
+cargo run --example ndfft_usage
+cargo run --example embedded_example
+cargo run --example benchmark
+```
+
 ## Advanced Features
+
+Enable optional features in `Cargo.toml`:
+
+```toml
+[dependencies]
+kofft = { version = "0.1.1", features = [
+    # "x86_64",   # AVX2 on x86_64
+    # "aarch64",  # NEON on AArch64
+    # "wasm",     # WebAssembly SIMD
+    # "parallel", # Rayon-based parallel helpers
+] }
+```
 
 ### SIMD Acceleration
 
-Enable platform-specific SIMD features for better performance:
-
-```toml
-# x86_64 with AVX2
-kofft = { version = "0.1.0", features = ["x86_64"] }
-
-# AArch64 with NEON
-kofft = { version = "0.1.0", features = ["aarch64"] }
-
-# WebAssembly with SIMD
-kofft = { version = "0.1.0", features = ["wasm"] }
-```
+Enable one of the CPU-specific SIMD features above for better performance.
 
 ### Parallel Processing
 
-```toml
-kofft = { version = "0.1.0", features = ["parallel"] }
-```
+Enable the `parallel` feature (using Rayon) as shown above:
 
 ```rust
 use kofft::stft::parallel;
@@ -240,6 +252,15 @@ parallel(&signal, &window, hop_size, &mut frames)?;
 
 ### Additional Transforms
 
+- **DCT** – Discrete Cosine Transform ([Wikipedia](https://en.wikipedia.org/wiki/Discrete_cosine_transform))
+- **DST** – Discrete Sine Transform ([Wikipedia](https://en.wikipedia.org/wiki/Discrete_sine_transform))
+- **Hartley Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Discrete_Hartley_transform))
+- **Wavelet Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Wavelet_transform))
+- **Goertzel Algorithm** – ([Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm))
+- **Chirp Z-Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Chirp_Z-transform))
+- **Hilbert Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Hilbert_transform))
+- **Cepstrum** – ([Wikipedia](https://en.wikipedia.org/wiki/Cepstrum))
+
 ```rust
 use kofft::{dct, dst, hartley, wavelet, goertzel, czt, hilbert, cepstrum};
 
@@ -249,9 +270,9 @@ let dct3_result = dct::dct3(&input);
 let dct4_result = dct::dct4(&input);
 
 // DST variants
+let dst1_result = dst::dst1(&input);
 let dst2_result = dst::dst2(&input);
 let dst3_result = dst::dst3(&input);
-let dst4_result = dst::dst4(&input);
 
 // Hartley Transform
 let hartley_result = hartley::dht(&input);
@@ -267,7 +288,7 @@ let magnitude = goertzel::goertzel_f32(&input, 44100.0, 1000.0);
 let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0));
 
 // Hilbert Transform
-let hilbert_result = hilbert::hilbert(&input);
+let hilbert_result = hilbert::hilbert_analytic(&input);
 
 // Cepstrum
 let cepstrum_result = cepstrum::real_cepstrum(&input);
