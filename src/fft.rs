@@ -9,6 +9,8 @@ pub enum FftError {
     EmptyInput,
     NonPowerOfTwoNoStd,
     MismatchedLengths,
+    InvalidStride,
+    InvalidHopSize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,6 +249,9 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         Ok(())
     }
     fn fft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+        if stride == 0 || input.len() % stride != 0 {
+            return Err(FftError::InvalidStride);
+        }
         let n = input.len() / stride;
         let mut buf = alloc::vec::Vec::with_capacity(n);
         for i in 0..n {
@@ -259,6 +264,9 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         Ok(())
     }
     fn ifft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+        if stride == 0 || input.len() % stride != 0 {
+            return Err(FftError::InvalidStride);
+        }
         let n = input.len() / stride;
         let mut buf = alloc::vec::Vec::with_capacity(n);
         for i in 0..n {
@@ -271,6 +279,12 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         Ok(())
     }
     fn fft_out_of_place_strided(&self, input: &[Complex<T>], in_stride: usize, output: &mut [Complex<T>], out_stride: usize) -> Result<(), FftError> {
+        if in_stride == 0 || out_stride == 0 {
+            return Err(FftError::InvalidStride);
+        }
+        if input.len() % in_stride != 0 || output.len() % out_stride != 0 {
+            return Err(FftError::InvalidStride);
+        }
         let n = input.len() / in_stride;
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
@@ -286,6 +300,12 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         Ok(())
     }
     fn ifft_out_of_place_strided(&self, input: &[Complex<T>], in_stride: usize, output: &mut [Complex<T>], out_stride: usize) -> Result<(), FftError> {
+        if in_stride == 0 || out_stride == 0 {
+            return Err(FftError::InvalidStride);
+        }
+        if input.len() % in_stride != 0 || output.len() % out_stride != 0 {
+            return Err(FftError::InvalidStride);
+        }
         let n = input.len() / in_stride;
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
@@ -310,7 +330,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         match strategy {
             FftStrategy::Radix2 => self.fft(input),
-            FftStrategy::Radix4 => self.fft(input), // fallback to generic for now
+            FftStrategy::Radix4 => self.fft_radix4(input),
             FftStrategy::Auto => self.fft(input),
         }
     }
@@ -327,6 +347,75 @@ impl<T: Float> ScalarFftImpl<T> {
         let mut out = alloc::vec::Vec::from(input);
         self.ifft(&mut out)?;
         Ok(out)
+    }
+
+    pub fn fft_radix4(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+        let n = input.len();
+        if n.count_ones() % 2 != 0 {
+            // Fallback to generic FFT if not power of four
+            return self.fft(input);
+        }
+        // Bit-reversal for radix-4
+        let mut j = 0usize;
+        for i in 1..n {
+            let mut bit = n >> 2;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 2;
+            }
+            j ^= bit;
+            if i < j {
+                input.swap(i, j);
+            }
+        }
+        let mut len = 4;
+        while len <= n {
+            let ang = T::from_f32(-2.0) * T::pi() / T::from_f32(len as f32);
+            let wlen = Complex::<T>::expi(ang);
+            let wlen2 = wlen.mul(wlen);
+            let wlen3 = wlen2.mul(wlen);
+            let mut i = 0;
+            while i < n {
+                if len == 4 {
+                    let u0 = input[i];
+                    let u1 = input[i + 1];
+                    let u2 = input[i + 2];
+                    let u3 = input[i + 3];
+                    let t0 = u0.add(u2);
+                    let t1 = u0.sub(u2);
+                    let t2 = u1.add(u3);
+                    let t3 = (u1.sub(u3)).mul(Complex::new(T::zero(), -T::one()));
+                    input[i] = t0.add(t2);
+                    input[i + 1] = t1.add(t3);
+                    input[i + 2] = t0.sub(t2);
+                    input[i + 3] = t1.sub(t3);
+                } else {
+                    let mut w1 = Complex::new(T::one(), T::zero());
+                    let mut w2 = w1.mul(wlen2);
+                    let mut w3 = w1.mul(wlen3);
+                    for j in 0..(len / 4) {
+                        let a = input[i + j];
+                        let b = input[i + j + len / 4].mul(w1);
+                        let c = input[i + j + len / 2].mul(w2);
+                        let d = input[i + j + 3 * len / 4].mul(w3);
+                        let t0 = a.add(c);
+                        let t1 = a.sub(c);
+                        let t2 = b.add(d);
+                        let t3 = (b.sub(d)).mul(Complex::new(T::zero(), -T::one()));
+                        input[i + j] = t0.add(t2);
+                        input[i + j + len / 4] = t1.add(t3);
+                        input[i + j + len / 2] = t0.sub(t2);
+                        input[i + j + 3 * len / 4] = t1.sub(t3);
+                        w1 = w1.mul(wlen);
+                        w2 = w2.mul(wlen);
+                        w3 = w3.mul(wlen);
+                    }
+                }
+                i += len;
+            }
+            len <<= 2;
+        }
+        Ok(())
     }
 }
 
@@ -594,76 +683,6 @@ impl ScalarFftImpl<f32> {
                 i += len;
             }
             len <<= 1;
-        }
-        // For very large n, consider block/tiled FFTs for cache locality (future optimization)
-        Ok(())
-    }
-    fn fft_radix4(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        let n = input.len();
-        if n.count_ones() % 2 != 0 {
-            // Not a power of 4, fallback to radix-2
-            return self.fft_radix2(input);
-        }
-        // Bit-reversal for radix-4
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 4;
-        while len <= n {
-            let ang = -2.0 * PI / (len as f32);
-            let wlen = Complex32::expi(ang);
-            let wlen2 = wlen.mul(wlen);
-            let wlen3 = wlen2.mul(wlen);
-            let mut i = 0;
-            while i < n {
-                if len == 4 {
-                    // Unrolled butterfly for len=4
-                    let u0 = input[i];
-                    let u1 = input[i + 1];
-                    let u2 = input[i + 2];
-                    let u3 = input[i + 3];
-                    let t0 = u0.add(u2);
-                    let t1 = u0.sub(u2);
-                    let t2 = u1.add(u3);
-                    let t3 = (u1.sub(u3)).mul(Complex32::new(0.0, -1.0));
-                    input[i] = t0.add(t2);
-                    input[i + 1] = t1.add(t3);
-                    input[i + 2] = t0.sub(t2);
-                    input[i + 3] = t1.sub(t3);
-                } else {
-                    let mut w1 = Complex32::new(1.0, 0.0);
-                    let mut w2 = w1.mul(wlen2);
-                    let mut w3 = w1.mul(wlen3);
-                    for j in 0..(len / 4) {
-                        let a = input[i + j];
-                        let b = input[i + j + len / 4].mul(w1);
-                        let c = input[i + j + len / 2].mul(w2);
-                        let d = input[i + j + 3 * len / 4].mul(w3);
-                        let t0 = a.add(c);
-                        let t1 = a.sub(c);
-                        let t2 = b.add(d);
-                        let t3 = (b.sub(d)).mul(Complex32::new(0.0, -1.0));
-                        input[i + j] = t0.add(t2);
-                        input[i + j + len / 4] = t1.add(t3);
-                        input[i + j + len / 2] = t0.sub(t2);
-                        input[i + j + 3 * len / 4] = t1.sub(t3);
-                        w1 = w1.mul(wlen);
-                        w2 = w2.mul(wlen);
-                        w3 = w3.mul(wlen);
-                    }
-                }
-                i += len;
-            }
-            len <<= 2;
         }
         // For very large n, consider block/tiled FFTs for cache locality (future optimization)
         Ok(())

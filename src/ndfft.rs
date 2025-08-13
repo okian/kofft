@@ -18,14 +18,17 @@ pub fn fft2d_inplace<T: Float>(
 ) -> Result<(), FftError> {
     let rows = data.len();
     if rows == 0 { return Ok(()); }
-    let _cols: usize = if rows > 0 { data[0].len() } else { 0 };
+    let cols = data[0].len();
+    if data.iter().any(|row| row.len() != cols) {
+        return Err(FftError::MismatchedLengths);
+    }
     // FFT on rows
     for row in data.iter_mut() {
         fft.fft(row)?;
     }
     // FFT on columns
     let mut col = vec![Complex::<T>::zero(); rows];
-    for c in 0.._cols {
+    for c in 0..cols {
         for r in 0..rows {
             col[r] = data[r][c];
         }
@@ -46,11 +49,21 @@ pub fn fft3d_inplace<T: Float>(
     if depth == 0 { return Ok(()); }
     let rows = data[0].len();
     if rows == 0 { return Ok(()); }
-    let _cols: usize = if rows > 0 { data[0][0].len() } else { 0 };
+    if data.iter().any(|plane| plane.len() != rows) {
+        return Err(FftError::MismatchedLengths);
+    }
+    let cols = if rows > 0 { data[0][0].len() } else { 0 };
+    for plane in data.iter() {
+        for row in plane.iter() {
+            if row.len() != cols {
+                return Err(FftError::MismatchedLengths);
+            }
+        }
+    }
     // FFT on depth (z axis)
     let mut tube = vec![Complex::<T>::zero(); depth];
     for r in 0..rows {
-        for c in 0.._cols {
+        for c in 0..cols {
             for d in 0..depth {
                 tube[d] = data[d][r][c];
             }
@@ -63,7 +76,7 @@ pub fn fft3d_inplace<T: Float>(
     // FFT on rows (y axis)
     let mut row = vec![Complex::<T>::zero(); rows];
     for d in 0..depth {
-        for c in 0.._cols {
+        for c in 0..cols {
             for r in 0..rows {
                 row[r] = data[d][r][c];
             }
@@ -74,14 +87,14 @@ pub fn fft3d_inplace<T: Float>(
         }
     }
     // FFT on columns (x axis)
-    let mut col = vec![Complex::<T>::zero(); _cols];
+    let mut col = vec![Complex::<T>::zero(); cols];
     for d in 0..depth {
         for r in 0..rows {
-            for c in 0.._cols {
+            for c in 0..cols {
                 col[c] = data[d][r][c];
             }
             fft.fft(&mut col)?;
-            for c in 0.._cols {
+            for c in 0..cols {
                 data[d][r][c] = col[c];
             }
         }
