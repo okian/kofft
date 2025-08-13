@@ -4,9 +4,7 @@
 [![Documentation](https://docs.rs/kofft/badge.svg)](https://docs.rs/kofft)
 [![License](https://img.shields.io/crates/l/kofft)](https://github.com/kianostad/kofft/blob/main/LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
-[![Test](https://github.com/kianostad/kofft/actions/workflows/test.yml/badge.svg)](https://github.com/kianostad/kofft/actions/workflows/test.yml)
-[![Lint](https://github.com/kianostad/kofft/actions/workflows/lint.yml/badge.svg)](https://github.com/kianostad/kofft/actions/workflows/lint.yml)
-[![codecov](https://codecov.io/gh/kianostad/kofft/branch/main/graph/badge.svg)](https://codecov.io/gh/kianostad/kofft)
+[![codecov](https://codecov.io/github/okian/kofft/graph/badge.svg?token=51ZZSPJFB9)](https://codecov.io/github/okian/kofft)
 
 High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD-optimized, and batch transforms for embedded and scientific Rust applications.
 
@@ -348,8 +346,8 @@ fn main() -> ! {
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
 
 at your option.
 
@@ -361,4 +359,5 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 - [API Documentation](https://docs.rs/kofft)
 - [Repository](https://github.com/kianostad/kofft)
-- [Crates.io](https://crates.io/crates/kofft) 
+- [Crates.io](https://crates.io/crates/kofft)
+
