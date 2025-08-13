@@ -61,6 +61,7 @@ extern crate alloc;
 /// 
 /// Provides both scalar and SIMD-optimized FFT implementations.
 /// Supports complex and real input signals.
+pub mod num;
 pub mod fft;
 
 /// N-dimensional FFT operations
@@ -122,6 +123,9 @@ pub mod cepstrum;
 /// 
 /// Extended collection of window functions for specialized applications.
 pub mod window_more;
+
+pub use num::{Float, Complex, Complex32, Complex64};
+pub use fft::FftPlanner;
 
 /// Simple addition function for testing purposes
 /// 

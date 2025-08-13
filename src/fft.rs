@@ -3,6 +3,31 @@ use core::f32::consts::PI;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
+use alloc::rc::Rc;
+use core::cell::RefCell;
+
+pub use crate::num::{Float, Complex, Complex32, Complex64};
+
+pub struct FftPlanner<T: Float> {
+    cache: BTreeMap<usize, Rc<Vec<Complex<T>>>>,
+}
+
+impl<T: Float> FftPlanner<T> {
+    pub fn new() -> Self { Self { cache: BTreeMap::new() } }
+    pub fn get_twiddles(&mut self, n: usize) -> Rc<Vec<Complex<T>>> {
+        self.cache.entry(n).or_insert_with(|| {
+            Rc::new(
+                (0..n)
+                    .map(|k| {
+                        let angle = -T::from_f32(2.0) * T::pi() * T::from_f32(k as f32) / T::from_f32(n as f32);
+                        Complex::expi(angle)
+                    })
+                    .collect(),
+            )
+        }).clone()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FftError {
@@ -25,86 +50,6 @@ impl Default for FftStrategy {
         FftStrategy::Auto
     }
 }
-
-// Minimal float trait for generic FFT (no_std, no external deps)
-pub trait Float: Copy + Clone + PartialEq + PartialOrd + core::fmt::Debug + core::ops::Add<Output=Self> + core::ops::Sub<Output=Self> + core::ops::Mul<Output=Self> + core::ops::Div<Output=Self> + core::ops::Neg<Output=Self> + 'static {
-    fn zero() -> Self;
-    fn one() -> Self;
-    fn from_f32(x: f32) -> Self;
-    fn cos(self) -> Self;
-    fn sin(self) -> Self;
-    fn pi() -> Self;
-}
-
-///
-/// # Note
-/// The #[allow(unconditional_recursion)] attribute is used here because rustc/Clippy
-/// sometimes issues a false positive warning when calling inherent methods (e.g., f32::cos(self))
-/// inside a trait implementation with the same method name. This is not actual recursion:
-/// - f32::cos(self) and f64::cos(self) call the standard library's inherent method, not the trait method.
-/// - All tests pass and no stack overflow occurs.
-/// - This is a known linter false positive and is safe to suppress.
-#[allow(unconditional_recursion)]
-impl Float for f32 {
-    fn zero() -> Self { 0.0 }
-    fn one() -> Self { 1.0 }
-    fn from_f32(x: f32) -> Self { x }
-    fn cos(self) -> Self { f32::cos(self) }
-    fn sin(self) -> Self { f32::sin(self) }
-    fn pi() -> Self { core::f32::consts::PI }
-}
-
-///
-/// # Note
-/// The #[allow(unconditional_recursion)] attribute is used here because rustc/Clippy
-/// sometimes issues a false positive warning when calling inherent methods (e.g., f64::cos(self))
-/// inside a trait implementation with the same method name. This is not actual recursion:
-/// - f64::cos(self) calls the standard library's inherent method, not the trait method.
-/// - All tests pass and no stack overflow occurs.
-/// - This is a known linter false positive and is safe to suppress.
-#[allow(unconditional_recursion)]
-impl Float for f64 {
-    fn zero() -> Self { 0.0 }
-    fn one() -> Self { 1.0 }
-    fn from_f32(x: f32) -> Self { x as f64 }
-    fn cos(self) -> Self { f64::cos(self) }
-    fn sin(self) -> Self { f64::sin(self) }
-    fn pi() -> Self { core::f64::consts::PI }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Complex<T: Float> {
-    pub re: T,
-    pub im: T,
-}
-
-impl<T: Float> Complex<T> {
-    pub fn new(re: T, im: T) -> Self { Self { re, im } }
-    pub fn zero() -> Self { Self { re: T::zero(), im: T::zero() } }
-    pub fn expi(theta: T) -> Self {
-        Self { re: theta.cos(), im: theta.sin() }
-    }
-    pub fn add(self, other: Self) -> Self {
-        Self { re: self.re + other.re, im: self.im + other.im }
-    }
-    pub fn sub(self, other: Self) -> Self {
-        Self { re: self.re - other.re, im: self.im - other.im }
-    }
-    pub fn mul(self, other: Self) -> Self {
-        Self {
-            re: self.re * other.re - self.im * other.im,
-            im: self.re * other.im + self.im * other.re,
-        }
-    }
-}
-
-impl<T: Float> core::ops::Neg for Complex<T> {
-    type Output = Self;
-    fn neg(self) -> Self { Self { re: -self.re, im: -self.im } }
-}
-
-pub type Complex32 = Complex<f32>;
-pub type Complex64 = Complex<f64>;
 
 // Refactor FftImpl and ScalarFftImpl to be generic over T: Float
 pub trait FftImpl<T: Float> {
@@ -136,10 +81,16 @@ pub trait FftImpl<T: Float> {
     fn fft_with_strategy(&self, input: &mut [Complex<T>], strategy: FftStrategy) -> Result<(), FftError>;
 }
 
-pub struct ScalarFftImpl<T: Float> { _phantom: core::marker::PhantomData<T> }
+pub struct ScalarFftImpl<T: Float> { planner: RefCell<FftPlanner<T>> }
 
 impl<T: Float> Default for ScalarFftImpl<T> {
-    fn default() -> Self { Self { _phantom: core::marker::PhantomData } }
+    fn default() -> Self { Self { planner: RefCell::new(FftPlanner::new()) } }
+}
+
+impl<T: Float> ScalarFftImpl<T> {
+    pub fn with_planner(planner: FftPlanner<T>) -> Self {
+        Self { planner: RefCell::new(planner) }
+    }
 }
 
 impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
@@ -165,10 +116,11 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                     input.swap(i, j);
                 }
             }
+            let twiddles = self.planner.borrow_mut().get_twiddles(n);
             let mut len = 2;
             while len <= n {
-                let ang = -T::from_f32(2.0) * T::pi() / T::from_f32(len as f32);
-                let wlen = Complex::expi(ang);
+                let stride = n / len;
+                let wlen = twiddles[stride];
                 let mut i = 0;
                 while i < n {
                     let mut w = Complex::new(T::one(), T::zero());
@@ -1539,4 +1491,81 @@ mod coverage_tests {
         // Should error in no_std, but may work with std (Bluestein)
         let _ = fft.fft(&mut data);
     }
-} 
+
+    #[test]
+    fn test_bluestein_roundtrip() {
+        let fft = ScalarFftImpl::<f32>::default();
+        // length 6 triggers Bluestein algorithm
+        let mut data = vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+            Complex32::new(4.0, 0.0),
+            Complex32::new(5.0, 0.0),
+            Complex32::new(6.0, 0.0),
+        ];
+        let orig = data.clone();
+        fft.fft(&mut data).unwrap();
+        fft.ifft(&mut data).unwrap();
+        for (a, b) in orig.iter().zip(data.iter()) {
+            assert!((a.re - b.re).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_fft_with_strategy_variants() {
+        let fft = ScalarFftImpl::<f32>::default();
+        // length 16 exercises radix-4 implementation
+        let mut data = (1..=16)
+            .map(|i| Complex32::new(i as f32, 0.0))
+            .collect::<Vec<_>>();
+        // Explicit radix-4 strategy
+        fft.fft_with_strategy(&mut data, FftStrategy::Radix4).unwrap();
+        // Auto strategy on power-of-two length
+        fft.fft_with_strategy(&mut data, FftStrategy::Auto).unwrap();
+    }
+
+    #[test]
+    fn test_invalid_strides() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut data = vec![Complex32::new(1.0, 0.0); 3];
+        // stride 0
+        assert!(fft.fft_strided(&mut data, 0).is_err());
+        // length not divisible by stride
+        assert!(fft.fft_strided(&mut data, 2).is_err());
+
+        let input = vec![Complex32::new(1.0, 0.0); 4];
+        let mut output = vec![Complex32::zero(); 4];
+        // invalid strides for out-of-place APIs
+        assert!(fft
+            .fft_out_of_place_strided(&input, 0, &mut output, 1)
+            .is_err());
+        assert!(fft
+            .ifft_out_of_place_strided(&input, 1, &mut output[..3], 1)
+            .is_err());
+        // invalid stride for ifft_strided
+        assert!(fft.ifft_strided(&mut data, 0).is_err());
+        // out-of-place length mismatch
+        assert!(fft
+            .fft_out_of_place_strided(&input[..3], 1, &mut output, 1)
+            .is_err());
+    }
+
+    #[test]
+    fn test_fft_vec_helpers() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let input = vec![Complex32::new(1.0, 0.0); 4];
+        let out = fft.fft_vec(&input).unwrap();
+        let back = fft.ifft_vec(&out).unwrap();
+        for (a, b) in input.iter().zip(back.iter()) {
+            assert!((a.re - b.re).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_fft_with_strategy_empty() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut data: Vec<Complex32> = Vec::new();
+        assert!(fft.fft_with_strategy(&mut data, FftStrategy::Auto).is_err());
+    }
+}

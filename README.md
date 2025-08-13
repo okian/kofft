@@ -37,10 +37,12 @@ kofft = { version = "0.1.0", features = ["parallel"] }
 ### Basic Usage
 
 ```rust
-use kofft::fft::{Complex32, ScalarFftImpl, FftImpl};
+use kofft::{Complex32, FftPlanner};
+use kofft::fft::{ScalarFftImpl, FftImpl};
 
-// Create FFT instance
-let fft = ScalarFftImpl::<f32>::default();
+// Create FFT instance with planner (caches twiddle factors)
+let planner = FftPlanner::<f32>::new();
+let fft = ScalarFftImpl::with_planner(planner);
 
 // Prepare data
 let mut data = vec![
