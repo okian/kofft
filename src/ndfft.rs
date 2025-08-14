@@ -1,5 +1,5 @@
 //! Multi-dimensional FFT (2D/3D) for kofft
-//! 
+//!
 //! - 2D FFT for f32 Complex32 arrays (row-column algorithm)
 //! - In-place and out-of-place APIs
 //! - no_std + alloc compatible
@@ -7,11 +7,11 @@
 //! - Future: 3D FFT, real input, streaming
 
 extern crate alloc;
-use alloc::vec::Vec;
 #[cfg(test)]
 use alloc::vec;
+use alloc::vec::Vec;
 
-use crate::fft::{ScalarFftImpl, Complex, FftError, Float, FftImpl};
+use crate::fft::{Complex, FftError, FftImpl, Float, ScalarFftImpl};
 
 /// 2D FFT in-place (row-column algorithm)
 /// Perform a 2D FFT in-place using a row-column algorithm.
@@ -24,21 +24,29 @@ pub fn fft2d_inplace<T: Float>(
     col: &mut [Complex<T>],
 ) -> Result<(), FftError> {
     let rows = data.len();
-    if rows == 0 { return Ok(()); }
+    if rows == 0 {
+        return Ok(());
+    }
     let cols = data[0].len();
     if data.iter().any(|row| row.len() != cols) {
         return Err(FftError::MismatchedLengths);
     }
-    if col.len() != rows { return Err(FftError::MismatchedLengths); }
+    if col.len() != rows {
+        return Err(FftError::MismatchedLengths);
+    }
     // FFT on rows
     for row in data.iter_mut() {
         fft.fft(row)?;
     }
     // FFT on columns
     for c in 0..cols {
-        for r in 0..rows { col[r] = data[r][c]; }
+        for (col_val, row) in col.iter_mut().zip(data.iter()) {
+            *col_val = row[c];
+        }
         fft.fft(col)?;
-        for r in 0..rows { data[r][c] = col[r]; }
+        for (row, &col_val) in data.iter_mut().zip(col.iter()) {
+            row[c] = col_val;
+        }
     }
     Ok(())
 }
@@ -56,9 +64,13 @@ pub fn fft3d_inplace<T: Float>(
     col: &mut [Complex<T>],
 ) -> Result<(), FftError> {
     let depth = data.len();
-    if depth == 0 { return Ok(()); }
+    if depth == 0 {
+        return Ok(());
+    }
     let rows = data[0].len();
-    if rows == 0 { return Ok(()); }
+    if rows == 0 {
+        return Ok(());
+    }
     if data.iter().any(|plane| plane.len() != rows) {
         return Err(FftError::MismatchedLengths);
     }
@@ -76,25 +88,33 @@ pub fn fft3d_inplace<T: Float>(
     // FFT on depth (z axis)
     for r in 0..rows {
         for c in 0..cols {
-            for d in 0..depth { tube[d] = data[d][r][c]; }
+            for (tube_val, plane) in tube.iter_mut().zip(data.iter()) {
+                *tube_val = plane[r][c];
+            }
             fft.fft(tube)?;
-            for d in 0..depth { data[d][r][c] = tube[d]; }
+            for (plane, &tube_val) in data.iter_mut().zip(tube.iter()) {
+                plane[r][c] = tube_val;
+            }
         }
     }
     // FFT on rows (y axis)
-    for d in 0..depth {
+    for plane in data.iter_mut() {
         for c in 0..cols {
-            for r in 0..rows { row[r] = data[d][r][c]; }
+            for (row_val, row_data) in row.iter_mut().zip(plane.iter()) {
+                *row_val = row_data[c];
+            }
             fft.fft(row)?;
-            for r in 0..rows { data[d][r][c] = row[r]; }
+            for (row_data, &row_val) in plane.iter_mut().zip(row.iter()) {
+                row_data[c] = row_val;
+            }
         }
     }
     // FFT on columns (x axis)
-    for d in 0..depth {
-        for r in 0..rows {
-            for c in 0..cols { col[c] = data[d][r][c]; }
+    for plane in data.iter_mut() {
+        for row_slice in plane.iter_mut() {
+            col[..cols].copy_from_slice(&row_slice[..cols]);
             fft.fft(col)?;
-            for c in 0..cols { data[d][r][c] = col[c]; }
+            row_slice[..cols].copy_from_slice(&col[..cols]);
         }
     }
     Ok(())
@@ -105,7 +125,7 @@ pub fn fft3d_inplace<T: Float>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex, FftError};
+    use crate::fft::{Complex, FftError, ScalarFftImpl};
 
     #[test]
     fn test_fft2d_roundtrip_f32() {
@@ -120,17 +140,25 @@ mod tests {
         // Inverse FFT (apply ifft twice)
         let rows = data.len();
         let _cols = if rows > 0 { data[0].len() } else { 0 };
-        for row in data.iter_mut() { fft.ifft(row).unwrap(); }
+        for row in data.iter_mut() {
+            fft.ifft(row).unwrap();
+        }
         let mut col = vec![Complex::zero(); 2];
         for c in 0..2 {
-            for r in 0..2 { col[r] = data[r][c]; }
+            for r in 0..2 {
+                col[r] = data[r][c];
+            }
             fft.ifft(&mut col).unwrap();
-            for r in 0..2 { data[r][c] = col[r]; }
+            for r in 0..2 {
+                data[r][c] = col[r];
+            }
         }
         let mut max_err = 0.0;
         for (a, b) in data.iter().flatten().zip(orig.iter().flatten()) {
             let err = (a.re - b.re).abs().max((a.im - b.im).abs());
-            if err > max_err { max_err = err; }
+            if err > max_err {
+                max_err = err;
+            }
             assert!(err < 1e-3, "a = {:?}, b = {:?}, err = {}", a, b, err);
         }
     }
@@ -148,17 +176,25 @@ mod tests {
         // Inverse FFT (apply ifft twice)
         let rows = data.len();
         let _cols = if rows > 0 { data[0].len() } else { 0 };
-        for row in data.iter_mut() { fft.ifft(row).unwrap(); }
+        for row in data.iter_mut() {
+            fft.ifft(row).unwrap();
+        }
         let mut col = vec![Complex::zero(); 2];
         for c in 0..2 {
-            for r in 0..2 { col[r] = data[r][c]; }
+            for r in 0..2 {
+                col[r] = data[r][c];
+            }
             fft.ifft(&mut col).unwrap();
-            for r in 0..2 { data[r][c] = col[r]; }
+            for r in 0..2 {
+                data[r][c] = col[r];
+            }
         }
         let mut max_err = 0.0;
         for (a, b) in data.iter().flatten().zip(orig.iter().flatten()) {
             let err = (a.re - b.re).abs().max((a.im - b.im).abs());
-            if err > max_err { max_err = err; }
+            if err > max_err {
+                max_err = err;
+            }
             assert!(err < 1e-10, "a = {:?}, b = {:?}, err = {}", a, b, err);
         }
     }
@@ -190,25 +226,37 @@ mod tests {
         let mut tube = vec![Complex::zero(); depth];
         for r in 0..rows {
             for c in 0.._cols {
-                for d in 0..depth { tube[d] = data[d][r][c]; }
+                for d in 0..depth {
+                    tube[d] = data[d][r][c];
+                }
                 fft.ifft(&mut tube).unwrap();
-                for d in 0..depth { data[d][r][c] = tube[d]; }
+                for d in 0..depth {
+                    data[d][r][c] = tube[d];
+                }
             }
         }
         let mut row = vec![Complex::zero(); rows];
         for d in 0..depth {
             for c in 0.._cols {
-                for r in 0..rows { row[r] = data[d][r][c]; }
+                for r in 0..rows {
+                    row[r] = data[d][r][c];
+                }
                 fft.ifft(&mut row).unwrap();
-                for r in 0..rows { data[d][r][c] = row[r]; }
+                for r in 0..rows {
+                    data[d][r][c] = row[r];
+                }
             }
         }
         let mut col = vec![Complex::zero(); _cols];
         for d in 0..depth {
             for r in 0..rows {
-                for c in 0.._cols { col[c] = data[d][r][c]; }
+                for c in 0.._cols {
+                    col[c] = data[d][r][c];
+                }
                 fft.ifft(&mut col).unwrap();
-                for c in 0.._cols { data[d][r][c] = col[c]; }
+                for c in 0.._cols {
+                    data[d][r][c] = col[c];
+                }
             }
         }
         let mut max_err = 0.0;
@@ -216,7 +264,9 @@ mod tests {
             for (a_row, b_row) in a_plane.iter().zip(b_plane.iter()) {
                 for (a, b) in a_row.iter().zip(b_row.iter()) {
                     let err = (a.re - b.re).abs().max((a.im - b.im).abs());
-                    if err > max_err { max_err = err; }
+                    if err > max_err {
+                        max_err = err;
+                    }
                     assert!(err < 1e-3, "a = {:?}, b = {:?}, err = {}", a, b, err);
                 }
             }
@@ -250,25 +300,37 @@ mod tests {
         let mut tube = vec![Complex::zero(); depth];
         for r in 0..rows {
             for c in 0.._cols {
-                for d in 0..depth { tube[d] = data[d][r][c]; }
+                for d in 0..depth {
+                    tube[d] = data[d][r][c];
+                }
                 fft.ifft(&mut tube).unwrap();
-                for d in 0..depth { data[d][r][c] = tube[d]; }
+                for d in 0..depth {
+                    data[d][r][c] = tube[d];
+                }
             }
         }
         let mut row = vec![Complex::zero(); rows];
         for d in 0..depth {
             for c in 0.._cols {
-                for r in 0..rows { row[r] = data[d][r][c]; }
+                for r in 0..rows {
+                    row[r] = data[d][r][c];
+                }
                 fft.ifft(&mut row).unwrap();
-                for r in 0..rows { data[d][r][c] = row[r]; }
+                for r in 0..rows {
+                    data[d][r][c] = row[r];
+                }
             }
         }
         let mut col = vec![Complex::zero(); _cols];
         for d in 0..depth {
             for r in 0..rows {
-                for c in 0.._cols { col[c] = data[d][r][c]; }
+                for c in 0.._cols {
+                    col[c] = data[d][r][c];
+                }
                 fft.ifft(&mut col).unwrap();
-                for c in 0.._cols { data[d][r][c] = col[c]; }
+                for c in 0.._cols {
+                    data[d][r][c] = col[c];
+                }
             }
         }
         let mut max_err = 0.0;
@@ -276,7 +338,9 @@ mod tests {
             for (a_row, b_row) in a_plane.iter().zip(b_plane.iter()) {
                 for (a, b) in a_row.iter().zip(b_row.iter()) {
                     let err = (a.re - b.re).abs().max((a.im - b.im).abs());
-                    if err > max_err { max_err = err; }
+                    if err > max_err {
+                        max_err = err;
+                    }
                     assert!(err < 1e-10, "a = {:?}, b = {:?}, err = {}", a, b, err);
                 }
             }
@@ -317,12 +381,12 @@ mod tests {
 #[cfg(test)]
 mod coverage_tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex32};
+    use crate::fft::{Complex32, ScalarFftImpl};
     use alloc::vec::Vec;
-    
+
     use alloc::format;
-    use proptest::proptest;
     use proptest::prop_assert;
+    use proptest::proptest;
 
     #[test]
     fn test_fft2d_empty() {
@@ -340,7 +404,9 @@ mod coverage_tests {
         let nonzero = orig[0].iter().filter(|c| c.re != 0.0).count();
         let mean = orig[0].iter().map(|c| c.re.abs()).sum::<f32>() / orig[0].len() as f32;
         let max = orig[0].iter().map(|c| c.re.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let mut scratch = vec![Complex::zero(); data.len()];
         fft2d_inplace(&mut data, &fft, &mut scratch).unwrap();
         fft2d_inplace(&mut data, &fft, &mut scratch).unwrap(); // roundtrip
@@ -352,12 +418,17 @@ mod coverage_tests {
     #[test]
     fn test_fft2d_single_col() {
         let fft = ScalarFftImpl::<f32>::default();
-        let mut data = vec![vec![Complex32::new(1.0, 0.0)], vec![Complex32::new(2.0, 0.0)]];
+        let mut data = vec![
+            vec![Complex32::new(1.0, 0.0)],
+            vec![Complex32::new(2.0, 0.0)],
+        ];
         let orig = data.clone();
         let nonzero = orig.iter().filter(|row| row[0].re != 0.0).count();
         let mean = orig.iter().map(|row| row[0].re.abs()).sum::<f32>() / orig.len() as f32;
         let max = orig.iter().map(|row| row[0].re.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let mut scratch = vec![Complex::zero(); data.len()];
         fft2d_inplace(&mut data, &fft, &mut scratch).unwrap();
         fft2d_inplace(&mut data, &fft, &mut scratch).unwrap(); // roundtrip
@@ -390,8 +461,12 @@ mod coverage_tests {
         let nonzero = flat.iter().filter(|&&v| v != 0.0).count();
         let mean = flat.iter().map(|&v| v.abs()).sum::<f32>() / flat.len() as f32;
         let max = flat.iter().map(|&v| v.abs()).fold(0.0, f32::max);
-        if max > 500.0 { return; } // skip pathological large values
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if max > 500.0 {
+            return;
+        } // skip pathological large values
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let mut scratch = vec![Complex::zero(); data.len()];
         fft2d_inplace(&mut data, &fft, &mut scratch).unwrap();
         fft2d_inplace(&mut data, &fft, &mut scratch).unwrap();
@@ -405,12 +480,17 @@ mod coverage_tests {
     #[test]
     fn test_fft3d_single_depth() {
         let fft = ScalarFftImpl::<f32>::default();
-        let mut data = vec![vec![vec![Complex32::new(1.0, 0.0), Complex32::new(2.0, 0.0)]]];
+        let mut data = vec![vec![vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+        ]]];
         let orig = data.clone();
         let nonzero = orig[0][0].iter().filter(|c| c.re != 0.0).count();
         let mean = orig[0][0].iter().map(|c| c.re.abs()).sum::<f32>() / orig[0][0].len() as f32;
         let max = orig[0][0].iter().map(|c| c.re.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let depth = data.len();
         let rows = data[0].len();
         let cols = data[0][0].len();
@@ -459,4 +539,4 @@ mod coverage_tests {
         let mut col = vec![Complex::zero(); 0];
         assert!(fft3d_inplace(&mut data, &fft, &mut tube, &mut row, &mut col).is_ok());
     }
-} 
+}

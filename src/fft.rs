@@ -28,6 +28,12 @@ pub struct FftPlanner<T: Float> {
     stage_cache: BTreeMap<(usize, usize), Rc<Vec<Complex<T>>>>,
 }
 
+impl<T: Float> Default for FftPlanner<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
@@ -84,8 +90,6 @@ impl<T: Float> FftPlanner<T> {
             } else {
                 FftStrategy::Radix2
             }
-        } else if has_two && has_other {
-            FftStrategy::Auto
         } else {
             FftStrategy::Auto
         }
@@ -102,17 +106,12 @@ pub enum FftError {
     InvalidValue,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FftStrategy {
     Radix2,
     Radix4,
+    #[default]
     Auto,
-}
-
-impl Default for FftStrategy {
-    fn default() -> Self {
-        FftStrategy::Auto
-    }
 }
 
 // Refactor FftImpl and ScalarFftImpl to be generic over T: Float
@@ -199,7 +198,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         if (n & (n - 1)) == 0 {
-            // Power of two: use radix-4 where possible, then radix-2
+            // Power of two: radix-2 FFT
             let mut j = 0;
             for i in 1..n {
                 let mut bit = n >> 1;
@@ -212,37 +211,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                     input.swap(i, j);
                 }
             }
-            // Largest power of four dividing n
-            let pow4_stages = n.trailing_zeros() / 2;
-            let mut len = 4usize;
-            let max_radix4 = 1usize << (pow4_stages * 2);
-
-            // Radix-4 stages
-            while len <= max_radix4 {
-                let stage = self.planner.borrow_mut().get_stage_twiddles(n, len);
-                let mut i = 0;
-                while i < n {
-                    for j in 0..(len / 4) {
-                        let w1 = stage[j];
-                        let w2 = stage[2 * j];
-                        let w3 = stage[3 * j];
-                        let a = input[i + j];
-                        let b = input[i + j + len / 2].mul(w1);
-                        let c = input[i + j + len / 4].mul(w2);
-                        let d = input[i + j + len / 2 + len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + len / 2 + len / 4] = x3;
-                    }
-                    i += len;
-                }
-                len *= 4;
-            }
-
-            // Remaining radix-2 stages
-            let mut len = max_radix4 * 2;
+            let mut len = 2;
             while len <= n {
                 let stage = self.planner.borrow_mut().get_stage_twiddles(n, len);
                 #[cfg(feature = "parallel")]
@@ -307,29 +276,25 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             let m = (2 * n - 1).next_power_of_two();
             let mut a = Vec::with_capacity(m);
             let mut b = Vec::with_capacity(m);
-            for i in 0..n {
+            for (i, &val) in input.iter().take(n).enumerate() {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 let w = Complex::expi(-angle);
-                a.push(input[i].mul(w));
+                a.push(val.mul(w));
             }
-            for _ in n..m {
-                a.push(Complex::zero());
-            }
+            a.resize(m, Complex::zero());
             for i in 0..n {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 b.push(Complex::expi(angle));
             }
-            for _ in n..m {
-                b.push(Complex::zero());
-            }
+            b.resize(m, Complex::zero());
             for i in 1..n {
                 b[m - i] = b[i];
             }
             let fft = ScalarFftImpl::<T>::default();
             fft.fft(&mut a)?;
             fft.fft(&mut b)?;
-            for i in 0..m {
-                a[i] = a[i].mul(b[i]);
+            for (ai, &bi) in a.iter_mut().zip(&b) {
+                *ai = ai.mul(bi);
             }
             for c in a.iter_mut() {
                 c.im = -c.im;
@@ -343,10 +308,10 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 c.re = c.re * scale;
                 c.im = c.im * scale;
             }
-            for i in 0..n {
+            for (i, out) in input.iter_mut().take(n).enumerate() {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 let w = Complex::expi(-angle);
-                input[i] = a[i].mul(w);
+                *out = a[i].mul(w);
             }
             Ok(())
         }
@@ -533,7 +498,13 @@ impl TwiddleFactorBuffer {
         Self { n, twiddles }
     }
     pub fn get(&self, k: usize) -> Complex32 {
-        self.twiddles[k % (self.n / 2)]
+        let half = self.n / 2;
+        let base = self.twiddles[k % half];
+        if k >= half {
+            Complex32::new(-base.re, -base.im)
+        } else {
+            base
+        }
     }
 }
 
@@ -574,7 +545,7 @@ fn butterfly4<T: Float>(
 }
 
 #[inline(always)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 fn butterfly8<T: Float>(
     x0: Complex<T>,
     x1: Complex<T>,
@@ -630,14 +601,12 @@ impl ScalarFftImpl<f32> {
         while len <= n {
             let mut i = 0;
             while i < n {
-                let mut w_idx = 0;
-                for j in 0..(len / 2) {
+                for (w_idx, j) in (0..(len / 2)).enumerate() {
                     let w = twiddles.get(w_idx * n / len);
                     let u = input[i + j];
                     let v = input[i + j + len / 2].mul(w);
                     input[i + j] = u.add(v);
                     input[i + j + len / 2] = u.sub(v);
-                    w_idx += 1;
                 }
                 i += len;
             }
@@ -651,8 +620,47 @@ impl ScalarFftImpl<f32> {
         input: &mut [Complex32],
         twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
-        // Use radix-2 implementation for now
-        self.fft_radix2_with_twiddles(input, twiddles)
+        let n = input.len();
+        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
+            // Not a power of 4, fallback to radix-2
+            return self.fft_radix2_with_twiddles(input, twiddles);
+        }
+        // Bit-reversal for radix-4
+        let mut j = 0;
+        for i in 1..n {
+            let mut bit = n >> 2;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 2;
+            }
+            j ^= bit;
+            if i < j {
+                input.swap(i, j);
+            }
+        }
+        let mut len = 4;
+        while len <= n {
+            let mut i = 0;
+            while i < n {
+                for (w_idx, j) in (0..(len / 4)).enumerate() {
+                    let w1 = twiddles.get(w_idx * n / len);
+                    let w2 = twiddles.get(w_idx * 2 * n / len);
+                    let w3 = twiddles.get(w_idx * 3 * n / len);
+                    let a = input[i + j];
+                    let b = input[i + j + len / 4].mul(w1);
+                    let c = input[i + j + len / 2].mul(w2);
+                    let d = input[i + j + 3 * len / 4].mul(w3);
+                    let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                    input[i + j] = x0;
+                    input[i + j + len / 4] = x1;
+                    input[i + j + len / 2] = x2;
+                    input[i + j + 3 * len / 4] = x3;
+                }
+                i += len;
+            }
+            len <<= 2;
+        }
+        Ok(())
     }
     #[cfg(feature = "std")]
     pub fn fft_mixed_radix_with_twiddles(
@@ -664,9 +672,9 @@ impl ScalarFftImpl<f32> {
         let factors = factorize(n);
         if factors.iter().all(|&f| f == 2 || f == 4) {
             if factors.iter().all(|&f| f == 4) {
-                return self.fft_radix4_with_twiddles(input, twiddles);
+                self.fft_radix4_with_twiddles(input, twiddles)
             } else {
-                return self.fft_radix2_with_twiddles(input, twiddles);
+                self.fft_radix2_with_twiddles(input, twiddles)
             }
         } else {
             self.fft(input)
@@ -684,9 +692,9 @@ impl ScalarFftImpl<f32> {
         if factors.iter().all(|&f| f == 2 || f == 4) {
             // Use radix-2/radix-4 as appropriate
             if factors.iter().all(|&f| f == 4) {
-                return self.fft_radix4(input);
+                self.fft_radix4(input)
             } else {
-                return self.fft_radix2(input);
+                self.fft_radix2(input)
             }
         } else {
             // Fallback to Bluestein's for unsupported factors
@@ -1600,7 +1608,7 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     }
     #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
     {
-        return Box::new(SimdFftSseImpl);
+        Box::new(SimdFftSseImpl)
     }
     #[cfg(all(
         target_arch = "aarch64",
@@ -1667,25 +1675,8 @@ impl<T: Float> FftPlan<T> {
             return Err(FftError::MismatchedLengths);
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
-            // Use twiddles for f32
-            let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-            match self.strategy {
-                FftStrategy::Radix2 => {
-                    if let Some(tw) = &self.twiddles {
-                        return ScalarFftImpl::<f32>::default()
-                            .fft_radix2_with_twiddles(input32, tw)
-                            .map_err(|e| e);
-                    }
-                }
-                FftStrategy::Radix4 => {
-                    if let Some(tw) = &self.twiddles {
-                        return ScalarFftImpl::<f32>::default()
-                            .fft_radix4_with_twiddles(input32, tw)
-                            .map_err(|e| e);
-                    }
-                }
-                FftStrategy::Auto => {}
-            }
+            // Use generic implementation without specialized twiddles
+            let _input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
         }
         self.fft.fft_with_strategy(input, self.strategy)
     }
@@ -2080,8 +2071,8 @@ mod coverage_tests {
         let buf = TwiddleFactorBuffer::new(8);
         let t1 = buf.get(1);
         let t1_wrap = buf.get(1 + 4);
-        assert!((t1.re - t1_wrap.re).abs() < 1e-6);
-        assert!((t1.im - t1_wrap.im).abs() < 1e-6);
+        assert!((t1.re + t1_wrap.re).abs() < 1e-6);
+        assert!((t1.im + t1_wrap.im).abs() < 1e-6);
 
         let factors = factorize(360);
         assert_eq!(factors, vec![2, 2, 2, 3, 3, 5]);

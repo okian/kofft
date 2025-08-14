@@ -43,12 +43,15 @@ impl<T: Float> Complex<T> {
     pub fn expi(theta: T) -> Self {
         Self { re: theta.cos(), im: theta.sin() }
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Self {
         Self { re: self.re + other.re, im: self.im + other.im }
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Self {
         Self { re: self.re - other.re, im: self.im - other.im }
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn mul(self, other: Self) -> Self {
         Self {
             re: self.re * other.re - self.im * other.im,
@@ -60,6 +63,30 @@ impl<T: Float> Complex<T> {
 impl<T: Float> core::ops::Neg for Complex<T> {
     type Output = Self;
     fn neg(self) -> Self { Self { re: -self.re, im: -self.im } }
+}
+
+impl<T: Float> core::ops::Add for Complex<T> {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self { re: self.re + other.re, im: self.im + other.im }
+    }
+}
+
+impl<T: Float> core::ops::Sub for Complex<T> {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        Self { re: self.re - other.re, im: self.im - other.im }
+    }
+}
+
+impl<T: Float> core::ops::Mul for Complex<T> {
+    type Output = Self;
+    fn mul(self, other: Self) -> Self {
+        Self {
+            re: self.re * other.re - self.im * other.im,
+            im: self.re * other.im + self.im * other.re,
+        }
+    }
 }
 
 pub type Complex32 = Complex<f32>;
