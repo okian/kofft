@@ -5,13 +5,19 @@
 //! [`crate::fft`]. It also exposes stack-only helpers analogous to
 //! [`crate::fft::fft_inplace_stack`] for embedded/`no_std` environments.
 
-use alloc::{sync::Arc, vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 
 use core::any::TypeId;
 
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
-use hashbrown::HashMap;
+
+#[cfg(feature = "compile-time-rfft")]
+mod precomputed {
+    use crate::fft::{Complex32, Complex64};
+    pub const F32: &[(usize, &'static [Complex32])] = &[];
+    pub const F64: &[(usize, &'static [Complex64])] = &[];
+}
 
 fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
     let angle = -T::pi() / T::from_f32(m as f32);
@@ -28,7 +34,7 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
 
 /// Planner that caches RFFT twiddle tables by transform length.
 pub struct RfftPlanner<T: Float> {
-    cache: HashMap<usize, Arc<[Complex<T>]>>,
+    cache: Vec<(usize, Arc<[Complex<T>]>)>,
 }
 
 impl<T: Float> Default for RfftPlanner<T> {
@@ -38,20 +44,51 @@ impl<T: Float> Default for RfftPlanner<T> {
 }
 
 impl<T: Float> RfftPlanner<T> {
+    /// Common transform lengths that are precomputed during planner
+    /// construction. These cover typical power-of-two sizes used in audio
+    /// and DSP applications and provide a sensible baseline without any
+    /// runtime allocation.
+    const PRECOMPUTED: &'static [usize] = &[2, 4, 8, 16, 32, 64, 128, 256];
+
     /// Create a new [`RfftPlanner`].
     pub fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
+        let mut cache: Vec<(usize, Arc<[Complex<T>]>)> = Vec::new();
+
+        #[cfg(feature = "compile-time-rfft")]
+        {
+            use core::mem::transmute;
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                for &(m, table) in precomputed::F32 {
+                    let tbl: &'static [Complex<T>] = unsafe { transmute(table) };
+                    cache.push((m, Arc::from(tbl)));
+                }
+            } else if TypeId::of::<T>() == TypeId::of::<f64>() {
+                for &(m, table) in precomputed::F64 {
+                    let tbl: &'static [Complex<T>] = unsafe { transmute(table) };
+                    cache.push((m, Arc::from(tbl)));
+                }
+            }
         }
+
+        for &m in Self::PRECOMPUTED {
+            if cache.iter().all(|(len, _)| *len != m) {
+                let vec = build_twiddle_table::<T>(m);
+                cache.push((m, Arc::from(vec)));
+            }
+        }
+
+        Self { cache }
     }
 
     /// Retrieve or build the twiddle table for length `m`.
     pub fn get_twiddles(&mut self, m: usize) -> &[Complex<T>] {
-        if !self.cache.contains_key(&m) {
+        if let Some(pos) = self.cache.iter().position(|(len, _)| *len == m) {
+            self.cache[pos].1.as_ref()
+        } else {
             let vec = build_twiddle_table::<T>(m);
-            self.cache.insert(m, Arc::<[Complex<T>]>::from(vec));
+            self.cache.push((m, Arc::from(vec)));
+            self.cache.last().unwrap().1.as_ref()
         }
-        self.cache.get(&m).unwrap().as_ref()
     }
 
     /// Compute a real-input FFT using cached twiddle tables.

@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use hashbrown::HashMap;
+use once_cell::unsync::OnceCell;
 
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -23,6 +23,8 @@ use rayon::prelude::*;
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use std::sync::OnceLock;
 
 /// Override for the parallel FFT threshold.
 ///
@@ -31,11 +33,47 @@ use num_cpus;
 static PARALLEL_FFT_THRESHOLD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "parallel")]
+static PARALLEL_FFT_CACHE_BYTES_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "parallel")]
+static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+static CPU_COUNT: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_THRESHOLD: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_CACHE_BYTES: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_PER_CORE_WORK: OnceLock<Option<usize>> = OnceLock::new();
+
+#[cfg(feature = "parallel")]
 /// Set a custom minimum FFT length to use parallel processing.
+///
+/// The heuristic parallelizes when each core would handle at least
+/// `max(L1_cache_bytes/size_of::<Complex32>(), per_core_work)` elements. These
+/// parameters can be tuned via [`set_parallel_fft_l1_cache`] and
+/// [`set_parallel_fft_per_core_work`].
 ///
 /// Passing `0` reverts to the built-in heuristic.
 pub fn set_parallel_fft_threshold(threshold: usize) {
     PARALLEL_FFT_THRESHOLD_OVERRIDE.store(threshold, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Set the assumed L1 data cache size per core in bytes for the parallel FFT heuristic.
+///
+/// Passing `0` reverts to the built-in default or environment variable.
+pub fn set_parallel_fft_l1_cache(bytes: usize) {
+    PARALLEL_FFT_CACHE_BYTES_OVERRIDE.store(bytes, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Set the minimum number of complex points each core must process before using
+/// parallel FFTs. This approximates per-core throughput.
+///
+/// Passing `0` reverts to the built-in default or environment variable.
+pub fn set_parallel_fft_per_core_work(points: usize) {
+    PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.store(points, Ordering::Relaxed);
 }
 
 #[cfg(feature = "parallel")]
@@ -44,16 +82,15 @@ fn should_parallelize_fft(n: usize) -> bool {
     let threshold = if override_thr == 0 {
         #[cfg(feature = "std")]
         {
-            if let Ok(val) = std::env::var("KOFFT_PAR_FFT_THRESHOLD") {
-                if let Ok(parsed) = val.parse::<usize>() {
-                    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(parsed, Ordering::Relaxed);
-                    parsed
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
+            ENV_PAR_FFT_THRESHOLD
+                .get_or_init(|| {
+                    std::env::var("KOFFT_PAR_FFT_THRESHOLD")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                })
+                .as_ref()
+                .copied()
+                .unwrap_or(0)
         }
         #[cfg(not(feature = "std"))]
         {
@@ -70,7 +107,7 @@ fn should_parallelize_fft(n: usize) -> bool {
     let cores = {
         #[cfg(feature = "std")]
         {
-            num_cpus::get().max(1)
+            *CPU_COUNT.get_or_init(|| num_cpus::get().max(1))
         }
         #[cfg(not(feature = "std"))]
         {
@@ -78,18 +115,69 @@ fn should_parallelize_fft(n: usize) -> bool {
         }
     };
 
-    // Require roughly 32KiB (4096 f32 complex numbers) of work per core.
-    n / cores >= 4096
+    let cache_bytes = {
+        let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+        if override_bytes != 0 {
+            override_bytes
+        } else {
+            #[cfg(feature = "std")]
+            {
+                ENV_PAR_FFT_CACHE_BYTES
+                    .get_or_init(|| {
+                        std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(32 * 1024)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                32 * 1024
+            }
+        }
+    };
+
+    let per_core_work = {
+        let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+        if override_work != 0 {
+            override_work
+        } else {
+            #[cfg(feature = "std")]
+            {
+                ENV_PAR_FFT_PER_CORE_WORK
+                    .get_or_init(|| {
+                        std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(4096)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                4096
+            }
+        }
+    };
+
+    let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
+    let cache_elems = cache_bytes / bytes_per_elem;
+    let per_core_min = core::cmp::max(cache_elems, per_core_work);
+
+    n >= per_core_min * cores
 }
 
-pub use crate::num::{Complex, Complex32, Complex64, Float};
+pub use crate::num::{Complex, Complex32, Complex64, Float, SplitComplex, copy_from_complex, copy_to_complex};
 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
-    cache: HashMap<usize, Arc<[Complex<T>]>>,
-    bitrev_cache: HashMap<usize, Arc<[usize]>>,
-    bluestein_cache: HashMap<usize, BluesteinPair<T>>,
+    cache: Vec<OnceCell<Arc<[Complex<T>]>>>,
+    bitrev_cache: Vec<OnceCell<Arc<[usize]>>>,
+    bluestein_cache: Vec<OnceCell<BluesteinPair<T>>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -101,41 +189,49 @@ impl<T: Float> Default for FftPlanner<T> {
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
-            cache: HashMap::new(),
-            bitrev_cache: HashMap::new(),
-            bluestein_cache: HashMap::new(),
+            cache: Vec::new(),
+            bitrev_cache: Vec::new(),
+            bluestein_cache: Vec::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
-        self.cache.entry(n).or_insert_with(|| {
-            let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
-            let (sin, cos) = angle.sin_cos();
-            let w = Complex::new(cos, sin);
-            // Allocate buffer of length `n` and fill it in-place. The buffer
-            // length equals `n`, so indexing is safe and could be optimized
-            // with `get_unchecked` if desired.
-            let mut vec = vec![Complex::zero(); n];
-            let mut current = Complex::new(T::one(), T::zero());
-            for elem in vec.iter_mut() {
-                *elem = current;
-                current = current * w;
-            }
-            Arc::<[Complex<T>]>::from(vec)
-        });
-        self.cache.get(&n).unwrap().as_ref()
+        if self.cache.len() <= n {
+            self.cache.resize_with(n + 1, OnceCell::new);
+        }
+        self.cache[n]
+            .get_or_init(|| {
+                let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
+                let (sin, cos) = angle.sin_cos();
+                let w = Complex::new(cos, sin);
+                // Allocate buffer of length `n` and fill it in-place. The buffer
+                // length equals `n`, so indexing is safe and could be optimized
+                // with `get_unchecked` if desired.
+                let mut vec = vec![Complex::zero(); n];
+                let mut current = Complex::new(T::one(), T::zero());
+                for elem in vec.iter_mut() {
+                    *elem = current;
+                    current = current * w;
+                }
+                Arc::<[Complex<T>]>::from(vec)
+            })
+            .as_ref()
     }
 
     pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
-        if !self.bitrev_cache.contains_key(&n) {
-            let vec = compute_bitrev_table(n);
-            self.bitrev_cache.insert(n, Arc::<[usize]>::from(vec));
+        if self.bitrev_cache.len() <= n {
+            self.bitrev_cache.resize_with(n + 1, OnceCell::new);
         }
-        Arc::clone(self.bitrev_cache.get(&n).unwrap())
+        Arc::clone(
+            self.bitrev_cache[n].get_or_init(|| Arc::<[usize]>::from(compute_bitrev_table(n))),
+        )
     }
 
     #[cfg(feature = "std")]
     pub fn get_bluestein(&mut self, n: usize) -> BluesteinPair<T> {
-        if !self.bluestein_cache.contains_key(&n) {
+        if self.bluestein_cache.len() <= n {
+            self.bluestein_cache.resize_with(n + 1, OnceCell::new);
+        }
+        let pair = self.bluestein_cache[n].get_or_init(|| {
             let m = (2 * n - 1).next_power_of_two();
             let mut chirp: Vec<Complex<T>> = Vec::with_capacity(n);
             let mut b: Vec<Complex<T>> = Vec::with_capacity(m);
@@ -153,12 +249,9 @@ impl<T: Float> FftPlanner<T> {
             fft.fft(&mut b_fft).unwrap();
             let chirp_arc: Arc<[Complex<T>]> = Arc::from(chirp);
             let b_fft_arc: Arc<[Complex<T>]> = Arc::from(b_fft);
-            self.bluestein_cache
-                .insert(n, (Arc::clone(&chirp_arc), Arc::clone(&b_fft_arc)));
-            return (chirp_arc, b_fft_arc);
-        }
-        let (chirp, fft_b) = self.bluestein_cache.get(&n).unwrap();
-        (Arc::clone(chirp), Arc::clone(fft_b))
+            (chirp_arc, b_fft_arc)
+        });
+        (Arc::clone(&pair.0), Arc::clone(&pair.1))
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
@@ -289,6 +382,38 @@ pub trait FftImpl<T: Float> {
         let mut scratch = alloc::vec::Vec::with_capacity(n);
         scratch.resize(n, Complex::zero());
         self.ifft_strided(input, stride, &mut scratch)
+    }
+
+    fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        let mut buf = alloc::vec::Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.fft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
+    }
+
+    fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        let mut buf = alloc::vec::Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.ifft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
     }
 }
 
@@ -2012,6 +2137,20 @@ impl<T: Float> FftPlan<T> {
         output.copy_from_slice(input);
         self.ifft(output)
     }
+
+    pub fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != self.n || im.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.fft_split(re, im)
+    }
+
+    pub fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != self.n || im.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.ifft_split(re, im)
+    }
 }
 
 /// Compute FFT using the default planner. When the `parallel` feature is
@@ -2026,6 +2165,14 @@ pub fn fft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> 
 /// the same manner as [`fft_parallel`].
 pub fn ifft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> {
     ScalarFftImpl::<T>::default().ifft(input)
+}
+
+pub fn fft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().fft_split(re, im)
+}
+
+pub fn ifft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().ifft_split(re, im)
 }
 
 /// Batch FFT: process a batch of mutable slices in-place

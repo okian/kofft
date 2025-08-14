@@ -12,6 +12,18 @@ fn planner_twiddles_f32_f64() {
     assert!((t32[1].re - expected32.re).abs() < 1e-6);
     assert!((t32[1].im - expected32.im).abs() < 1e-6);
 
+    // Ensure bit-reversal table is correct
+    let bitrev = p32.get_bitrev(8);
+    assert_eq!(&*bitrev, &[0, 4, 2, 6, 1, 5, 3, 7]);
+
+    // Ensure Bluestein cache lengths are correct for non-power-of-two
+    #[cfg(feature = "std")]
+    {
+        let (chirp, fft_b) = p32.get_bluestein(5);
+        assert_eq!(chirp.len(), 5);
+        assert_eq!(fft_b.len(), 16);
+    }
+
     let mut p64 = FftPlanner::<f64>::new();
     let t64 = p64.get_twiddles(8);
     let expected64 = Complex64::expi(-2.0 * std::f64::consts::PI / 8.0);

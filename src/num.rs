@@ -1,4 +1,5 @@
 use core::f32::consts::PI as PI32;
+use alloc::vec::Vec;
 
 // Minimal float trait for generic FFT (no_std, no external deps)
 pub trait Float:
@@ -194,6 +195,59 @@ impl<T: Float> core::ops::Mul for Complex<T> {
 
 pub type Complex32 = Complex<f32>;
 pub type Complex64 = Complex<f64>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SplitComplex<T: Float> {
+    pub re: Vec<T>,
+    pub im: Vec<T>,
+}
+
+impl<T: Float> SplitComplex<T> {
+    pub fn new(re: Vec<T>, im: Vec<T>) -> Self {
+        assert_eq!(re.len(), im.len());
+        Self { re, im }
+    }
+    pub fn len(&self) -> usize {
+        self.re.len()
+    }
+    pub fn from_complex_vec(v: &[Complex<T>]) -> Self {
+        let mut re = Vec::with_capacity(v.len());
+        let mut im = Vec::with_capacity(v.len());
+        for c in v {
+            re.push(c.re);
+            im.push(c.im);
+        }
+        Self { re, im }
+    }
+    pub fn to_complex_vec(&self) -> Vec<Complex<T>> {
+        let mut out = Vec::with_capacity(self.re.len());
+        for i in 0..self.re.len() {
+            out.push(Complex::new(self.re[i], self.im[i]));
+        }
+        out
+    }
+}
+
+pub type SplitComplex32 = SplitComplex<f32>;
+pub type SplitComplex64 = SplitComplex<f64>;
+
+pub fn copy_from_complex<T: Float>(input: &[Complex<T>], re: &mut [T], im: &mut [T]) {
+    assert_eq!(input.len(), re.len());
+    assert_eq!(input.len(), im.len());
+    for i in 0..input.len() {
+        re[i] = input[i].re;
+        im[i] = input[i].im;
+    }
+}
+
+pub fn copy_to_complex<T: Float>(re: &[T], im: &[T], out: &mut [Complex<T>]) {
+    assert_eq!(re.len(), im.len());
+    assert_eq!(re.len(), out.len());
+    for i in 0..re.len() {
+        out[i].re = re[i];
+        out[i].im = im[i];
+    }
+}
 
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
