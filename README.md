@@ -12,7 +12,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
 - **⚡ SIMD acceleration** (x86_64 AVX2 & SSE, AArch64 NEON, WebAssembly SIMD)
-- **🧮 Radix-4 and mixed-radix FFTs** for power-of-two and composite sizes
+- **🧮 Split-radix FFTs** for power-of-two sizes, with radix-2/4 and mixed-radix support
 - **🔧 Multiple transform types**: FFT, DCT (Types I-IV), DST (Types I-IV), Hartley, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**
@@ -78,11 +78,15 @@ threads via [Rayon](https://crates.io/crates/rayon). Use the `fft_parallel` and
 `ifft_parallel` helpers which safely fall back to single-threaded execution when
 Rayon is not available.
 
-By default, kofft parallelizes an FFT when each CPU core would process roughly
-4,096 points (~32&nbsp;KiB for `f32`). The heuristic scales with the number of
-detected cores (via [`num_cpus`](https://crates.io/crates/num_cpus)) and can be
-overridden by setting the `KOFFT_PAR_FFT_THRESHOLD` environment variable or by
-calling `kofft::fft::set_parallel_fft_threshold` at runtime.
+By default, kofft parallelizes an FFT when each CPU core would process at least
+`max(L1_cache_bytes / size_of::<Complex32>(), per_core_work)` elements. The
+defaults assume a 32&nbsp;KiB L1 cache and require roughly 4,096 points per core.
+The heuristic scales with the number of detected cores (via
+[`num_cpus`](https://crates.io/crates/num_cpus)) and can be tuned using the
+`KOFFT_PAR_FFT_THRESHOLD`, `KOFFT_PAR_FFT_CACHE_BYTES`, or
+`KOFFT_PAR_FFT_PER_CORE_WORK` environment variables, or by calling
+`kofft::fft::set_parallel_fft_threshold`, `set_parallel_fft_l1_cache`, or
+`set_parallel_fft_per_core_work` at runtime.
 
 ```rust
 use kofft::fft::{fft_parallel, ifft_parallel, Complex32};

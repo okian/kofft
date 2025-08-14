@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use hashbrown::HashMap;
+use once_cell::unsync::OnceCell;
 
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -23,6 +23,8 @@ use rayon::prelude::*;
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use std::sync::OnceLock;
 
 /// Override for the parallel FFT threshold.
 ///
@@ -31,11 +33,47 @@ use num_cpus;
 static PARALLEL_FFT_THRESHOLD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "parallel")]
+static PARALLEL_FFT_CACHE_BYTES_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "parallel")]
+static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+static CPU_COUNT: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_THRESHOLD: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_CACHE_BYTES: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_PER_CORE_WORK: OnceLock<Option<usize>> = OnceLock::new();
+
+#[cfg(feature = "parallel")]
 /// Set a custom minimum FFT length to use parallel processing.
+///
+/// The heuristic parallelizes when each core would handle at least
+/// `max(L1_cache_bytes/size_of::<Complex32>(), per_core_work)` elements. These
+/// parameters can be tuned via [`set_parallel_fft_l1_cache`] and
+/// [`set_parallel_fft_per_core_work`].
 ///
 /// Passing `0` reverts to the built-in heuristic.
 pub fn set_parallel_fft_threshold(threshold: usize) {
     PARALLEL_FFT_THRESHOLD_OVERRIDE.store(threshold, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Set the assumed L1 data cache size per core in bytes for the parallel FFT heuristic.
+///
+/// Passing `0` reverts to the built-in default or environment variable.
+pub fn set_parallel_fft_l1_cache(bytes: usize) {
+    PARALLEL_FFT_CACHE_BYTES_OVERRIDE.store(bytes, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Set the minimum number of complex points each core must process before using
+/// parallel FFTs. This approximates per-core throughput.
+///
+/// Passing `0` reverts to the built-in default or environment variable.
+pub fn set_parallel_fft_per_core_work(points: usize) {
+    PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.store(points, Ordering::Relaxed);
 }
 
 #[cfg(feature = "parallel")]
@@ -44,16 +82,15 @@ fn should_parallelize_fft(n: usize) -> bool {
     let threshold = if override_thr == 0 {
         #[cfg(feature = "std")]
         {
-            if let Ok(val) = std::env::var("KOFFT_PAR_FFT_THRESHOLD") {
-                if let Ok(parsed) = val.parse::<usize>() {
-                    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(parsed, Ordering::Relaxed);
-                    parsed
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
+            ENV_PAR_FFT_THRESHOLD
+                .get_or_init(|| {
+                    std::env::var("KOFFT_PAR_FFT_THRESHOLD")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                })
+                .as_ref()
+                .copied()
+                .unwrap_or(0)
         }
         #[cfg(not(feature = "std"))]
         {
@@ -70,7 +107,7 @@ fn should_parallelize_fft(n: usize) -> bool {
     let cores = {
         #[cfg(feature = "std")]
         {
-            num_cpus::get().max(1)
+            *CPU_COUNT.get_or_init(|| num_cpus::get().max(1))
         }
         #[cfg(not(feature = "std"))]
         {
@@ -78,18 +115,69 @@ fn should_parallelize_fft(n: usize) -> bool {
         }
     };
 
-    // Require roughly 32KiB (4096 f32 complex numbers) of work per core.
-    n / cores >= 4096
+    let cache_bytes = {
+        let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+        if override_bytes != 0 {
+            override_bytes
+        } else {
+            #[cfg(feature = "std")]
+            {
+                ENV_PAR_FFT_CACHE_BYTES
+                    .get_or_init(|| {
+                        std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(32 * 1024)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                32 * 1024
+            }
+        }
+    };
+
+    let per_core_work = {
+        let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+        if override_work != 0 {
+            override_work
+        } else {
+            #[cfg(feature = "std")]
+            {
+                ENV_PAR_FFT_PER_CORE_WORK
+                    .get_or_init(|| {
+                        std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(4096)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                4096
+            }
+        }
+    };
+
+    let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
+    let cache_elems = cache_bytes / bytes_per_elem;
+    let per_core_min = core::cmp::max(cache_elems, per_core_work);
+
+    n >= per_core_min * cores
 }
 
-pub use crate::num::{Complex, Complex32, Complex64, Float};
+pub use crate::num::{Complex, Complex32, Complex64, Float, SplitComplex, copy_from_complex, copy_to_complex};
 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
-    cache: HashMap<usize, Arc<[Complex<T>]>>,
-    bitrev_cache: HashMap<usize, Arc<[usize]>>,
-    bluestein_cache: HashMap<usize, BluesteinPair<T>>,
+    cache: Vec<OnceCell<Arc<[Complex<T>]>>>,
+    bitrev_cache: Vec<OnceCell<Arc<[usize]>>>,
+    bluestein_cache: Vec<OnceCell<BluesteinPair<T>>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -101,41 +189,49 @@ impl<T: Float> Default for FftPlanner<T> {
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
-            cache: HashMap::new(),
-            bitrev_cache: HashMap::new(),
-            bluestein_cache: HashMap::new(),
+            cache: Vec::new(),
+            bitrev_cache: Vec::new(),
+            bluestein_cache: Vec::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
-        self.cache.entry(n).or_insert_with(|| {
-            let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
-            let (sin, cos) = angle.sin_cos();
-            let w = Complex::new(cos, sin);
-            // Allocate buffer of length `n` and fill it in-place. The buffer
-            // length equals `n`, so indexing is safe and could be optimized
-            // with `get_unchecked` if desired.
-            let mut vec = vec![Complex::zero(); n];
-            let mut current = Complex::new(T::one(), T::zero());
-            for elem in vec.iter_mut() {
-                *elem = current;
-                current = current * w;
-            }
-            Arc::<[Complex<T>]>::from(vec)
-        });
-        self.cache.get(&n).unwrap().as_ref()
+        if self.cache.len() <= n {
+            self.cache.resize_with(n + 1, OnceCell::new);
+        }
+        self.cache[n]
+            .get_or_init(|| {
+                let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
+                let (sin, cos) = angle.sin_cos();
+                let w = Complex::new(cos, sin);
+                // Allocate buffer of length `n` and fill it in-place. The buffer
+                // length equals `n`, so indexing is safe and could be optimized
+                // with `get_unchecked` if desired.
+                let mut vec = vec![Complex::zero(); n];
+                let mut current = Complex::new(T::one(), T::zero());
+                for elem in vec.iter_mut() {
+                    *elem = current;
+                    current = current * w;
+                }
+                Arc::<[Complex<T>]>::from(vec)
+            })
+            .as_ref()
     }
 
     pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
-        if !self.bitrev_cache.contains_key(&n) {
-            let vec = compute_bitrev_table(n);
-            self.bitrev_cache.insert(n, Arc::<[usize]>::from(vec));
+        if self.bitrev_cache.len() <= n {
+            self.bitrev_cache.resize_with(n + 1, OnceCell::new);
         }
-        Arc::clone(self.bitrev_cache.get(&n).unwrap())
+        Arc::clone(
+            self.bitrev_cache[n].get_or_init(|| Arc::<[usize]>::from(compute_bitrev_table(n))),
+        )
     }
 
     #[cfg(feature = "std")]
     pub fn get_bluestein(&mut self, n: usize) -> BluesteinPair<T> {
-        if !self.bluestein_cache.contains_key(&n) {
+        if self.bluestein_cache.len() <= n {
+            self.bluestein_cache.resize_with(n + 1, OnceCell::new);
+        }
+        let pair = self.bluestein_cache[n].get_or_init(|| {
             let m = (2 * n - 1).next_power_of_two();
             let mut chirp: Vec<Complex<T>> = Vec::with_capacity(n);
             let mut b: Vec<Complex<T>> = Vec::with_capacity(m);
@@ -153,34 +249,17 @@ impl<T: Float> FftPlanner<T> {
             fft.fft(&mut b_fft).unwrap();
             let chirp_arc: Arc<[Complex<T>]> = Arc::from(chirp);
             let b_fft_arc: Arc<[Complex<T>]> = Arc::from(b_fft);
-            self.bluestein_cache
-                .insert(n, (Arc::clone(&chirp_arc), Arc::clone(&b_fft_arc)));
-            return (chirp_arc, b_fft_arc);
-        }
-        let (chirp, fft_b) = self.bluestein_cache.get(&n).unwrap();
-        (Arc::clone(chirp), Arc::clone(fft_b))
+            (chirp_arc, b_fft_arc)
+        });
+        (Arc::clone(&pair.0), Arc::clone(&pair.1))
     }
 
-    /// Determine an FFT strategy based on the factorization of `n`.
+    /// Determine an FFT strategy based on the input length.
     ///
-    /// Returns `Radix4` for sizes that are pure powers of four, `Radix2` for
-    /// other powers of two, and `Auto` when both twos and other factors are
-    /// present.
+    /// Returns `SplitRadix` for power-of-two sizes and `Auto` otherwise.
     pub fn plan_strategy(&mut self, n: usize) -> FftStrategy {
-        if n < 2 {
-            return FftStrategy::Auto;
-        }
-        let factors = factorize(n);
-        let count_two = factors.iter().filter(|&&f| f == 2).count();
-        let has_two = count_two > 0;
-        let has_other = factors.iter().any(|&f| f != 2);
-
-        if has_two && !has_other {
-            if count_two % 2 == 0 {
-                FftStrategy::Radix4
-            } else {
-                FftStrategy::Radix2
-            }
+        if n.is_power_of_two() && n > 1 {
+            FftStrategy::SplitRadix
         } else {
             FftStrategy::Auto
         }
@@ -208,6 +287,7 @@ pub enum FftError {
 pub enum FftStrategy {
     Radix2,
     Radix4,
+    SplitRadix,
     #[default]
     Auto,
 }
@@ -270,7 +350,7 @@ pub trait FftImpl<T: Float> {
         output: &mut [Complex<T>],
         out_stride: usize,
     ) -> Result<(), FftError>;
-    /// Plan-based strategy selection (Radix2, Radix4, Auto)
+    /// Plan-based strategy selection (Radix2, Radix4, SplitRadix, Auto)
     fn fft_with_strategy(
         &self,
         input: &mut [Complex<T>],
@@ -289,6 +369,38 @@ pub trait FftImpl<T: Float> {
         let mut scratch = alloc::vec::Vec::with_capacity(n);
         scratch.resize(n, Complex::zero());
         self.ifft_strided(input, stride, &mut scratch)
+    }
+
+    fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        let mut buf = alloc::vec::Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.fft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
+    }
+
+    fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        let mut buf = alloc::vec::Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.ifft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
     }
 }
 
@@ -310,6 +422,53 @@ impl<T: Float> ScalarFftImpl<T> {
             planner: RefCell::new(planner),
         }
     }
+
+    pub fn split_radix_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+        fn recurse<T: Float>(planner: &mut FftPlanner<T>, data: &mut [Complex<T>]) {
+            let n = data.len();
+            if n <= 1 {
+                return;
+            }
+            if n == 2 {
+                let a = data[0];
+                let b = data[1];
+                data[0] = a.add(b);
+                data[1] = a.sub(b);
+                return;
+            }
+            let mut even: Vec<Complex<T>> = data.iter().step_by(2).cloned().collect();
+            let mut odd1: Vec<Complex<T>> = data.iter().skip(1).step_by(4).cloned().collect();
+            let mut odd3: Vec<Complex<T>> = data.iter().skip(3).step_by(4).cloned().collect();
+            recurse(planner, &mut even);
+            recurse(planner, &mut odd1);
+            recurse(planner, &mut odd3);
+            let tw = planner.get_twiddles(n);
+            let j = Complex::new(T::zero(), -T::one());
+            for k in 0..n / 4 {
+                let e0 = even[k];
+                let e1 = even[k + n / 4];
+                let t1 = tw[k].mul(odd1[k]);
+                let t2 = tw[(3 * k) % n].mul(odd3[k]);
+                let t1p2 = t1.add(t2);
+                let t1m2 = t1.sub(t2);
+                data[k] = e0.add(t1p2);
+                data[k + n / 2] = e0.sub(t1p2);
+                let t = t1m2.mul(j);
+                data[k + n / 4] = e1.add(t);
+                data[k + n / 4 + n / 2] = e1.sub(t);
+            }
+        }
+        let n = input.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if !n.is_power_of_two() {
+            return self.fft(input);
+        }
+        let mut planner = self.planner.borrow_mut();
+        recurse(&mut planner, input);
+        Ok(())
+    }
 }
 
 impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
@@ -322,109 +481,8 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         if (n & (n - 1)) == 0 {
-            // Power of two: use radix-4 where possible, then radix-2
-            let bitrev = {
-                let mut planner = self.planner.borrow_mut();
-                planner.get_bitrev(n)
-            };
-            for i in 0..n {
-                let j = bitrev[i];
-                if i < j {
-                    input.swap(i, j);
-                }
-            }
-            // Largest power of four dividing n
-            let pow4_stages = n.trailing_zeros() / 2;
-            let mut len = 4usize;
-            let max_radix4 = 1usize << (pow4_stages * 2);
-
-            // Fetch all twiddles once and reuse them in both radix-4 and
-            // radix-2 stages to avoid repeated planner lookups.
-            let mut planner = self.planner.borrow_mut();
-            let twiddles = planner.get_twiddles(n);
-
-            // Radix-4 stages
-            while len <= max_radix4 {
-                let w_step = twiddles[n / len];
-                let mut i = 0;
-                while i < n {
-                    let mut w1 = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 4) {
-                        let w2 = w1.mul(w1);
-                        let w3 = w2.mul(w1);
-                        let a = input[i + j];
-                        let b = input[i + j + len / 2].mul(w1);
-                        let c = input[i + j + len / 4].mul(w2);
-                        let d = input[i + j + len / 2 + len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + len / 2 + len / 4] = x3;
-                        w1 = w1.mul(w_step);
-                    }
-                    i += len;
-                }
-                len *= 4;
-            }
-
-            // Remaining radix-2 stages
-            let mut len = max_radix4 * 2;
-            while len <= n {
-                let w_step = twiddles[n / len];
-                #[cfg(feature = "parallel")]
-                {
-                    if should_parallelize_fft(n)
-                        && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
-                    {
-                        let w_step32 =
-                            unsafe { *(&w_step as *const Complex<T> as *const Complex32) };
-                        let input32 =
-                            unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                        let half = len / 2;
-                        input32.par_chunks_mut(len).for_each(move |chunk| {
-                            let mut w = Complex32::new(1.0, 0.0);
-                            for j in 0..half {
-                                let u = chunk[j];
-                                let v = chunk[j + half].mul(w);
-                                chunk[j] = u.add(v);
-                                chunk[j + half] = u.sub(v);
-                                w = w.mul(w_step32);
-                            }
-                        });
-                    } else {
-                        let mut i = 0;
-                        while i < n {
-                            let mut w = Complex::new(T::one(), T::zero());
-                            for j in 0..(len / 2) {
-                                let u = input[i + j];
-                                let v = input[i + j + len / 2].mul(w);
-                                input[i + j] = u.add(v);
-                                input[i + j + len / 2] = u.sub(v);
-                                w = w.mul(w_step);
-                            }
-                            i += len;
-                        }
-                    }
-                }
-                #[cfg(not(feature = "parallel"))]
-                {
-                    let mut i = 0;
-                    while i < n {
-                        let mut w = Complex::new(T::one(), T::zero());
-                        for j in 0..(len / 2) {
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
-                            w = w.mul(w_step);
-                        }
-                        i += len;
-                    }
-                }
-                len <<= 1;
-            }
-            return Ok(());
+            // Power of two: use split-radix FFT
+            return self.split_radix_fft(input);
         }
         // Bluestein's algorithm for non-power-of-two
         #[cfg(not(feature = "std"))]
@@ -630,6 +688,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         match chosen {
             FftStrategy::Radix2 => self.fft(input),
             FftStrategy::Radix4 => self.fft_radix4(input),
+            FftStrategy::SplitRadix => self.split_radix_fft(input),
             FftStrategy::Auto => self.fft(input),
         }
     }
@@ -989,41 +1048,40 @@ impl ScalarFftImpl<f32> {
 // SIMD FFT implementations (feature-gated)
 
 // x86_64 SIMD implementations
-#[cfg(all(
-    target_arch = "x86_64",
-    any(
-        feature = "x86_64",
-        feature = "sse",
-        target_feature = "avx2",
-        target_feature = "sse2"
-    )
-))]
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-// x86_64 AVX2/FMA
-#[cfg(all(
-    target_arch = "x86_64",
-    any(feature = "x86_64", target_feature = "avx2")
-))]
+#[cfg(target_arch = "x86_64")]
 #[derive(Default)]
 pub struct SimdFftX86_64Impl;
-#[cfg(all(
-    target_arch = "x86_64",
-    any(feature = "x86_64", target_feature = "avx2")
-))]
+
+#[cfg(target_arch = "x86_64")]
 impl FftImpl<f32> for SimdFftX86_64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        #[cfg(all(target_arch = "x86_64", feature = "std"))]
+        {
+            #[cfg(any(feature = "avx512", target_feature = "avx512f"))]
+            if std::arch::is_x86_feature_detected!("avx512f") {
+                unsafe { return fft_avx512(input); }
+            }
+            if std::arch::is_x86_feature_detected!("avx2")
+                && std::arch::is_x86_feature_detected!("fma")
+            {
+                unsafe { return fft_avx2(input); }
+            }
+        }
+
+        // Fallback to SSE2 implementation
         let n = input.len();
         if n <= 1 {
             return Ok(());
         }
-        // SIMD-accelerated bit-reversal permutation for n >= 8
-        let aligned = (input.as_ptr() as usize) % 32 == 0;
-        if n >= 8 {
+        let aligned = (input.as_ptr() as usize) % 16 == 0;
+        if n >= 4 {
             unsafe {
                 let mut j = 0;
                 let mut i = 1;
-                while i + 7 < n {
+                while i + 3 < n {
                     let mut bit = n >> 1;
                     while j & bit != 0 {
                         j ^= bit;
@@ -1034,26 +1092,26 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
                         let ptr_i = input.as_mut_ptr().add(i);
                         let ptr_j = input.as_mut_ptr().add(j);
                         if aligned {
-                            let re_i = _mm256_load_ps(ptr_i as *const f32);
-                            let im_i = _mm256_load_ps(ptr_i.add(1) as *const f32);
-                            let re_j = _mm256_load_ps(ptr_j as *const f32);
-                            let im_j = _mm256_load_ps(ptr_j.add(1) as *const f32);
-                            _mm256_store_ps(ptr_i as *mut f32, re_j);
-                            _mm256_store_ps(ptr_i.add(1) as *mut f32, im_j);
-                            _mm256_store_ps(ptr_j as *mut f32, re_i);
-                            _mm256_store_ps(ptr_j.add(1) as *mut f32, im_i);
+                            let re_i = _mm_load_ps(ptr_i as *const f32);
+                            let im_i = _mm_load_ps(ptr_i.add(1) as *const f32);
+                            let re_j = _mm_load_ps(ptr_j as *const f32);
+                            let im_j = _mm_load_ps(ptr_j.add(1) as *const f32);
+                            _mm_store_ps(ptr_i as *mut f32, re_j);
+                            _mm_store_ps(ptr_i.add(1) as *mut f32, im_j);
+                            _mm_store_ps(ptr_j as *mut f32, re_i);
+                            _mm_store_ps(ptr_j.add(1) as *mut f32, im_i);
                         } else {
-                            let re_i = _mm256_loadu_ps(ptr_i as *const f32);
-                            let im_i = _mm256_loadu_ps(ptr_i.add(1) as *const f32);
-                            let re_j = _mm256_loadu_ps(ptr_j as *const f32);
-                            let im_j = _mm256_loadu_ps(ptr_j.add(1) as *const f32);
-                            _mm256_storeu_ps(ptr_i as *mut f32, re_j);
-                            _mm256_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
-                            _mm256_storeu_ps(ptr_j as *mut f32, re_i);
-                            _mm256_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
+                            let re_i = _mm_loadu_ps(ptr_i as *const f32);
+                            let im_i = _mm_loadu_ps(ptr_i.add(1) as *const f32);
+                            let re_j = _mm_loadu_ps(ptr_j as *const f32);
+                            let im_j = _mm_loadu_ps(ptr_j.add(1) as *const f32);
+                            _mm_storeu_ps(ptr_i as *mut f32, re_j);
+                            _mm_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
+                            _mm_storeu_ps(ptr_j as *mut f32, re_i);
+                            _mm_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
                         }
                     }
-                    i += 8;
+                    i += 4;
                 }
                 for k in i..n {
                     let mut bit = n >> 1;
@@ -1067,22 +1125,8 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
                     }
                 }
             }
-        } else {
-            // Scalar bit-reversal
-            let mut j = 0;
-            for i in 1..n {
-                let mut bit = n >> 1;
-                while j & bit != 0 {
-                    j ^= bit;
-                    bit >>= 1;
-                }
-                j ^= bit;
-                if i < j {
-                    input.swap(i, j);
-                }
-            }
         }
-        // Only use SIMD for lengths that are multiples of 4
+
         if n % 4 != 0 {
             let scalar = ScalarFftImpl::<f32>::default();
             scalar.fft(input)?;
@@ -1235,6 +1279,322 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft_with_strategy(input, strategy)
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
+    let n = input.len();
+    if n <= 1 {
+        return Ok(());
+    }
+    let aligned = (input.as_ptr() as usize) % 32 == 0;
+    if n >= 8 {
+        let mut j = 0;
+        let mut i = 1;
+        while i + 7 < n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if i < j {
+                let ptr_i = input.as_mut_ptr().add(i);
+                let ptr_j = input.as_mut_ptr().add(j);
+                if aligned {
+                    let re_i = _mm256_load_ps(ptr_i as *const f32);
+                    let im_i = _mm256_load_ps(ptr_i.add(1) as *const f32);
+                    let re_j = _mm256_load_ps(ptr_j as *const f32);
+                    let im_j = _mm256_load_ps(ptr_j.add(1) as *const f32);
+                    _mm256_store_ps(ptr_i as *mut f32, re_j);
+                    _mm256_store_ps(ptr_i.add(1) as *mut f32, im_j);
+                    _mm256_store_ps(ptr_j as *mut f32, re_i);
+                    _mm256_store_ps(ptr_j.add(1) as *mut f32, im_i);
+                } else {
+                    let re_i = _mm256_loadu_ps(ptr_i as *const f32);
+                    let im_i = _mm256_loadu_ps(ptr_i.add(1) as *const f32);
+                    let re_j = _mm256_loadu_ps(ptr_j as *const f32);
+                    let im_j = _mm256_loadu_ps(ptr_j.add(1) as *const f32);
+                    _mm256_storeu_ps(ptr_i as *mut f32, re_j);
+                    _mm256_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
+                    _mm256_storeu_ps(ptr_j as *mut f32, re_i);
+                    _mm256_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
+                }
+            }
+            i += 8;
+        }
+        for k in i..n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if k < j {
+                input.swap(k, j);
+            }
+        }
+    } else {
+        let mut j = 0;
+        for i in 1..n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if i < j {
+                input.swap(i, j);
+            }
+        }
+    }
+    if n % 8 != 0 {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft(input)?;
+        return Ok(());
+    }
+    let mut len = 2;
+    while len <= n {
+        let ang = -2.0 * PI / (len as f32);
+        let wlen = Complex32::expi(ang);
+        let mut i = 0;
+        while i < n {
+            let mut w = Complex32::new(1.0, 0.0);
+            let half = len / 2;
+            let simd_width = 8;
+            let simd_iters = half / simd_width;
+            for s in 0..simd_iters {
+                let j = s * simd_width;
+                let mut w_re = [0.0f32; 8];
+                let mut w_im = [0.0f32; 8];
+                let mut wj = w;
+                for k in 0..simd_width {
+                    w_re[k] = wj.re;
+                    w_im[k] = wj.im;
+                    wj = wj.mul(wlen);
+                }
+                let w_re_v = if aligned {
+                    _mm256_load_ps(w_re.as_ptr())
+                } else {
+                    _mm256_loadu_ps(w_re.as_ptr())
+                };
+                let w_im_v = if aligned {
+                    _mm256_load_ps(w_im.as_ptr())
+                } else {
+                    _mm256_loadu_ps(w_im.as_ptr())
+                };
+                let u_re = if aligned {
+                    _mm256_load_ps(&input[i + j].re as *const f32)
+                } else {
+                    _mm256_loadu_ps(&input[i + j].re as *const f32)
+                };
+                let u_im = if aligned {
+                    _mm256_load_ps(&input[i + j].im as *const f32)
+                } else {
+                    _mm256_loadu_ps(&input[i + j].im as *const f32)
+                };
+                let v_re = if aligned {
+                    _mm256_load_ps(&input[i + j + half].re as *const f32)
+                } else {
+                    _mm256_loadu_ps(&input[i + j + half].re as *const f32)
+                };
+                let v_im = if aligned {
+                    _mm256_load_ps(&input[i + j + half].im as *const f32)
+                } else {
+                    _mm256_loadu_ps(&input[i + j + half].im as *const f32)
+                };
+                let vw_re = _mm256_fmsub_ps(v_re, w_re_v, _mm256_mul_ps(v_im, w_im_v));
+                let vw_im = _mm256_fmadd_ps(v_re, w_im_v, _mm256_mul_ps(v_im, w_re_v));
+                let out_re = _mm256_add_ps(u_re, vw_re);
+                let out_im = _mm256_add_ps(u_im, vw_im);
+                let out2_re = _mm256_sub_ps(u_re, vw_re);
+                let out2_im = _mm256_sub_ps(u_im, vw_im);
+                if aligned {
+                    _mm256_store_ps(&mut input[i + j].re as *mut f32, out_re);
+                    _mm256_store_ps(&mut input[i + j].im as *mut f32, out_im);
+                    _mm256_store_ps(&mut input[i + j + half].re as *mut f32, out2_re);
+                    _mm256_store_ps(&mut input[i + j + half].im as *mut f32, out2_im);
+                } else {
+                    _mm256_storeu_ps(&mut input[i + j].re as *mut f32, out_re);
+                    _mm256_storeu_ps(&mut input[i + j].im as *mut f32, out_im);
+                    _mm256_storeu_ps(&mut input[i + j + half].re as *mut f32, out2_re);
+                    _mm256_storeu_ps(&mut input[i + j + half].im as *mut f32, out2_im);
+                }
+                for _ in 0..simd_width {
+                    w = w.mul(wlen);
+                }
+            }
+            for j in (simd_iters * simd_width)..half {
+                let u = input[i + j];
+                let v = input[i + j + half].mul(w);
+                input[i + j] = u.add(v);
+                input[i + j + half] = u.sub(v);
+                w = w.mul(wlen);
+            }
+            i += len;
+        }
+        len <<= 1;
+    }
+    Ok(())
+}
+
+#[cfg(all(target_arch = "x86_64", any(feature = "avx512", target_feature = "avx512f")))]
+#[target_feature(enable = "avx512f")]
+unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
+    let n = input.len();
+    if n <= 1 {
+        return Ok(());
+    }
+    let aligned = (input.as_ptr() as usize) % 64 == 0;
+    if n >= 16 {
+        let mut j = 0;
+        let mut i = 1;
+        while i + 15 < n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if i < j {
+                let ptr_i = input.as_mut_ptr().add(i);
+                let ptr_j = input.as_mut_ptr().add(j);
+                if aligned {
+                    let re_i = _mm512_load_ps(ptr_i as *const f32);
+                    let im_i = _mm512_load_ps(ptr_i.add(1) as *const f32);
+                    let re_j = _mm512_load_ps(ptr_j as *const f32);
+                    let im_j = _mm512_load_ps(ptr_j.add(1) as *const f32);
+                    _mm512_store_ps(ptr_i as *mut f32, re_j);
+                    _mm512_store_ps(ptr_i.add(1) as *mut f32, im_j);
+                    _mm512_store_ps(ptr_j as *mut f32, re_i);
+                    _mm512_store_ps(ptr_j.add(1) as *mut f32, im_i);
+                } else {
+                    let re_i = _mm512_loadu_ps(ptr_i as *const f32);
+                    let im_i = _mm512_loadu_ps(ptr_i.add(1) as *const f32);
+                    let re_j = _mm512_loadu_ps(ptr_j as *const f32);
+                    let im_j = _mm512_loadu_ps(ptr_j.add(1) as *const f32);
+                    _mm512_storeu_ps(ptr_i as *mut f32, re_j);
+                    _mm512_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
+                    _mm512_storeu_ps(ptr_j as *mut f32, re_i);
+                    _mm512_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
+                }
+            }
+            i += 16;
+        }
+        for k in i..n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if k < j {
+                input.swap(k, j);
+            }
+        }
+    } else {
+        let mut j = 0;
+        for i in 1..n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if i < j {
+                input.swap(i, j);
+            }
+        }
+    }
+    if n % 16 != 0 {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft(input)?;
+        return Ok(());
+    }
+    let mut len = 2;
+    while len <= n {
+        let ang = -2.0 * PI / (len as f32);
+        let wlen = Complex32::expi(ang);
+        let mut i = 0;
+        while i < n {
+            let mut w = Complex32::new(1.0, 0.0);
+            let half = len / 2;
+            let simd_width = 16;
+            let simd_iters = half / simd_width;
+            for s in 0..simd_iters {
+                let j = s * simd_width;
+                let mut w_re = [0.0f32; 16];
+                let mut w_im = [0.0f32; 16];
+                let mut wj = w;
+                for k in 0..simd_width {
+                    w_re[k] = wj.re;
+                    w_im[k] = wj.im;
+                    wj = wj.mul(wlen);
+                }
+                let w_re_v = if aligned {
+                    _mm512_load_ps(w_re.as_ptr())
+                } else {
+                    _mm512_loadu_ps(w_re.as_ptr())
+                };
+                let w_im_v = if aligned {
+                    _mm512_load_ps(w_im.as_ptr())
+                } else {
+                    _mm512_loadu_ps(w_im.as_ptr())
+                };
+                let u_re = if aligned {
+                    _mm512_load_ps(&input[i + j].re as *const f32)
+                } else {
+                    _mm512_loadu_ps(&input[i + j].re as *const f32)
+                };
+                let u_im = if aligned {
+                    _mm512_load_ps(&input[i + j].im as *const f32)
+                } else {
+                    _mm512_loadu_ps(&input[i + j].im as *const f32)
+                };
+                let v_re = if aligned {
+                    _mm512_load_ps(&input[i + j + half].re as *const f32)
+                } else {
+                    _mm512_loadu_ps(&input[i + j + half].re as *const f32)
+                };
+                let v_im = if aligned {
+                    _mm512_load_ps(&input[i + j + half].im as *const f32)
+                } else {
+                    _mm512_loadu_ps(&input[i + j + half].im as *const f32)
+                };
+                let vw_re = _mm512_fmsub_ps(v_re, w_re_v, _mm512_mul_ps(v_im, w_im_v));
+                let vw_im = _mm512_fmadd_ps(v_re, w_im_v, _mm512_mul_ps(v_im, w_re_v));
+                let out_re = _mm512_add_ps(u_re, vw_re);
+                let out_im = _mm512_add_ps(u_im, vw_im);
+                let out2_re = _mm512_sub_ps(u_re, vw_re);
+                let out2_im = _mm512_sub_ps(u_im, vw_im);
+                if aligned {
+                    _mm512_store_ps(&mut input[i + j].re as *mut f32, out_re);
+                    _mm512_store_ps(&mut input[i + j].im as *mut f32, out_im);
+                    _mm512_store_ps(&mut input[i + j + half].re as *mut f32, out2_re);
+                    _mm512_store_ps(&mut input[i + j + half].im as *mut f32, out2_im);
+                } else {
+                    _mm512_storeu_ps(&mut input[i + j].re as *mut f32, out_re);
+                    _mm512_storeu_ps(&mut input[i + j].im as *mut f32, out_im);
+                    _mm512_storeu_ps(&mut input[i + j + half].re as *mut f32, out2_re);
+                    _mm512_storeu_ps(&mut input[i + j + half].im as *mut f32, out2_im);
+                }
+                for _ in 0..simd_width {
+                    w = w.mul(wlen);
+                }
+            }
+            for j in (simd_iters * simd_width)..half {
+                let u = input[i + j];
+                let v = input[i + j + half].mul(w);
+                input[i + j] = u.add(v);
+                input[i + j + half] = u.sub(v);
+                w = w.mul(wlen);
+            }
+            i += len;
+        }
+        len <<= 1;
+    }
+    Ok(())
 }
 
 // x86_64 SSE SIMD implementation
@@ -1871,53 +2231,30 @@ impl FftImpl<f32> for SimdFftWasmImpl {
 
 /// Returns the best available FFT implementation for the current platform and enabled features.
 pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
-    #[cfg(all(
-        target_arch = "x86_64",
-        any(feature = "x86_64", target_feature = "avx2")
-    ))]
+    #[cfg(all(target_arch = "x86_64", feature = "std"))]
     {
-        Box::new(SimdFftX86_64Impl)
+        #[cfg(any(feature = "avx512", target_feature = "avx512f"))]
+        if std::arch::is_x86_feature_detected!("avx512f") {
+            return Box::new(SimdFftX86_64Impl);
+        }
+        if std::arch::is_x86_feature_detected!("avx2")
+            && std::arch::is_x86_feature_detected!("fma")
+        {
+            return Box::new(SimdFftX86_64Impl);
+        }
+        if std::arch::is_x86_feature_detected!("sse2") {
+            return Box::new(SimdFftSseImpl);
+        }
     }
-    #[cfg(all(
-        target_arch = "x86_64",
-        any(feature = "sse", target_feature = "sse2"),
-        not(any(feature = "x86_64", target_feature = "avx2"))
-    ))]
+    #[cfg(target_arch = "aarch64")]
     {
-        Box::new(SimdFftSseImpl)
+        return Box::new(SimdFftAArch64Impl);
     }
-    #[cfg(all(
-        target_arch = "aarch64",
-        any(feature = "aarch64", target_feature = "neon")
-    ))]
+    #[cfg(target_arch = "wasm32")]
     {
-        Box::new(SimdFftAArch64Impl)
+        return Box::new(SimdFftWasmImpl);
     }
-    #[cfg(all(
-        target_arch = "wasm32",
-        any(feature = "wasm", target_feature = "simd128")
-    ))]
-    {
-        Box::new(SimdFftWasmImpl)
-    }
-    #[cfg(not(any(
-        all(
-            target_arch = "x86_64",
-            any(feature = "x86_64", target_feature = "avx2")
-        ),
-        all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")),
-        all(
-            target_arch = "aarch64",
-            any(feature = "aarch64", target_feature = "neon")
-        ),
-        all(
-            target_arch = "wasm32",
-            any(feature = "wasm", target_feature = "simd128")
-        )
-    )))]
-    {
-        Box::new(ScalarFftImpl::<f32>::default())
-    }
+    Box::new(ScalarFftImpl::<f32>::default())
 }
 
 /// Plan-based FFT: precompute twiddles and bit-reversal for repeated transforms.
@@ -1931,7 +2268,7 @@ pub struct FftPlan<T: Float> {
 
 #[cfg(feature = "std")]
 impl<T: Float> FftPlan<T> {
-    /// Create a new FFT plan for size n and strategy (Radix2, Radix4, Auto)
+    /// Create a new FFT plan for size n and strategy (Radix2, Radix4, SplitRadix, Auto)
     pub fn new(n: usize, strategy: FftStrategy) -> Self {
         let twiddles = if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
             Some(TwiddleFactorBuffer::new(n))
@@ -1966,6 +2303,7 @@ impl<T: Float> FftPlan<T> {
                             .fft_radix4_with_twiddles(input32, tw);
                     }
                 }
+                FftStrategy::SplitRadix => {}
                 FftStrategy::Auto => {}
             }
         }
@@ -2012,6 +2350,20 @@ impl<T: Float> FftPlan<T> {
         output.copy_from_slice(input);
         self.ifft(output)
     }
+
+    pub fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != self.n || im.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.fft_split(re, im)
+    }
+
+    pub fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != self.n || im.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.ifft_split(re, im)
+    }
 }
 
 /// Compute FFT using the default planner. When the `parallel` feature is
@@ -2026,6 +2378,14 @@ pub fn fft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> 
 /// the same manner as [`fft_parallel`].
 pub fn ifft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> {
     ScalarFftImpl::<T>::default().ifft(input)
+}
+
+pub fn fft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().fft_split(re, im)
+}
+
+pub fn ifft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().ifft_split(re, im)
 }
 
 /// Batch FFT: process a batch of mutable slices in-place
@@ -2232,7 +2592,7 @@ mod coverage_tests {
 
     #[test]
     fn test_plan_based_fft_ifft() {
-        let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
+        let plan = FftPlan::<f32>::new(4, FftStrategy::SplitRadix);
         let mut data = vec![
             Complex32::new(1.0, 0.0),
             Complex32::new(2.0, 0.0),
@@ -2249,7 +2609,7 @@ mod coverage_tests {
 
     #[test]
     fn test_plan_out_of_place() {
-        let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
+        let plan = FftPlan::<f32>::new(4, FftStrategy::SplitRadix);
         let input = vec![Complex32::new(1.0, 0.0); 4];
         let mut output = vec![Complex32::zero(); 4];
         plan.fft_out_of_place(&input, &mut output).unwrap();
@@ -2304,10 +2664,13 @@ mod coverage_tests {
     #[test]
     fn test_fft_with_strategy_variants() {
         let fft = ScalarFftImpl::<f32>::default();
-        // length 16 exercises radix-4 implementation
+        // length 16 exercises multiple implementations
         let mut data = (1..=16)
             .map(|i| Complex32::new(i as f32, 0.0))
             .collect::<Vec<_>>();
+        // Explicit split-radix strategy
+        fft.fft_with_strategy(&mut data, FftStrategy::SplitRadix)
+            .unwrap();
         // Explicit radix-4 strategy
         fft.fft_with_strategy(&mut data, FftStrategy::Radix4)
             .unwrap();
@@ -2316,16 +2679,17 @@ mod coverage_tests {
     }
 
     #[test]
-    fn test_fft_with_strategy_auto_matches_radix4() {
+    fn test_fft_with_strategy_auto_matches_split_radix() {
         let fft = ScalarFftImpl::<f32>::default();
         let mut auto_data = (1..=16)
             .map(|i| Complex32::new(i as f32, 0.0))
             .collect::<Vec<_>>();
-        let mut radix4_data = auto_data.clone();
-        fft.fft_radix4(&mut radix4_data).unwrap();
+        let mut split_data = auto_data.clone();
+        fft.fft_with_strategy(&mut split_data, FftStrategy::SplitRadix)
+            .unwrap();
         fft.fft_with_strategy(&mut auto_data, FftStrategy::Auto)
             .unwrap();
-        for (a, b) in radix4_data.iter().zip(auto_data.iter()) {
+        for (a, b) in split_data.iter().zip(auto_data.iter()) {
             assert!((a.re - b.re).abs() < 1e-4);
             assert!((a.im - b.im).abs() < 1e-4);
         }
@@ -2391,8 +2755,8 @@ mod coverage_tests {
     #[test]
     fn test_plan_strategy() {
         let mut planner = FftPlanner::<f32>::new();
-        assert_eq!(planner.plan_strategy(16), FftStrategy::Radix4);
-        assert_eq!(planner.plan_strategy(8), FftStrategy::Radix2);
+        assert_eq!(planner.plan_strategy(16), FftStrategy::SplitRadix);
+        assert_eq!(planner.plan_strategy(8), FftStrategy::SplitRadix);
         assert_eq!(planner.plan_strategy(12), FftStrategy::Auto);
     }
 
