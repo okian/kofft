@@ -49,6 +49,33 @@ impl<T: Float> FftPlanner<T> {
             })
             .clone()
     }
+
+    /// Determine an FFT strategy based on the factorization of `n`.
+    ///
+    /// Returns `Radix4` for sizes that are pure powers of four, `Radix2` for
+    /// other powers of two, and `Auto` when both twos and other factors are
+    /// present.
+    pub fn plan_strategy(&mut self, n: usize) -> FftStrategy {
+        if n < 2 {
+            return FftStrategy::Auto;
+        }
+        let factors = factorize(n);
+        let count_two = factors.iter().filter(|&&f| f == 2).count();
+        let has_two = count_two > 0;
+        let has_other = factors.iter().any(|&f| f != 2);
+
+        if has_two && !has_other {
+            if count_two % 2 == 0 {
+                FftStrategy::Radix4
+            } else {
+                FftStrategy::Radix2
+            }
+        } else if has_two && has_other {
+            FftStrategy::Auto
+        } else {
+            FftStrategy::Auto
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2130,6 +2157,14 @@ mod coverage_tests {
 
         let factors = factorize(360);
         assert_eq!(factors, vec![2, 2, 2, 3, 3, 5]);
+    }
+
+    #[test]
+    fn test_plan_strategy() {
+        let mut planner = FftPlanner::<f32>::new();
+        assert_eq!(planner.plan_strategy(16), FftStrategy::Radix4);
+        assert_eq!(planner.plan_strategy(8), FftStrategy::Radix2);
+        assert_eq!(planner.plan_strategy(12), FftStrategy::Auto);
     }
 
     #[test]
