@@ -5,12 +5,13 @@
 //! [`crate::fft`]. It also exposes stack-only helpers analogous to
 //! [`crate::fft::fft_inplace_stack`] for embedded/`no_std` environments.
 
-use alloc::vec;
+use alloc::{sync::Arc, vec};
 
 use core::any::TypeId;
 
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
+use hashbrown::HashMap;
 
 fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
     let angle = -T::pi() / T::from_f32(m as f32);
@@ -25,8 +26,122 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
     table
 }
 
+/// Planner that caches RFFT twiddle tables by transform length.
+pub struct RfftPlanner<T: Float> {
+    cache: HashMap<usize, Arc<[Complex<T>]>>,
+}
+
+impl<T: Float> Default for RfftPlanner<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Float> RfftPlanner<T> {
+    /// Create a new [`RfftPlanner`].
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+        }
+    }
+
+    /// Retrieve or build the twiddle table for length `m`.
+    pub fn get_twiddles(&mut self, m: usize) -> &[Complex<T>] {
+        if !self.cache.contains_key(&m) {
+            let vec = build_twiddle_table::<T>(m);
+            self.cache.insert(m, Arc::<[Complex<T>]>::from(vec));
+        }
+        self.cache.get(&m).unwrap().as_ref()
+    }
+
+    /// Compute a real-input FFT using cached twiddle tables.
+    pub fn rfft_with_scratch<F: FftImpl<T> + ?Sized>(
+        &mut self,
+        fft: &F,
+        input: &mut [T],
+        output: &mut [Complex<T>],
+        _scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
+        let m = input.len() / 2;
+        let twiddles = self.get_twiddles(m);
+        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                unsafe {
+                    let input32 = &mut *(input as *mut [T] as *mut [f32]);
+                    let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
+                    let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
+                    return rfft_direct_f32_simd(
+                        |d: &mut [Complex32]| {
+                            fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
+                        },
+                        input32,
+                        output32,
+                        twiddles32,
+                    );
+                }
+            }
+        }
+        rfft_direct(fft, input, output, twiddles)
+    }
+
+    /// Convenience wrapper that allocates a scratch buffer internally.
+    pub fn rfft<F: FftImpl<T> + ?Sized>(
+        &mut self,
+        fft: &F,
+        input: &mut [T],
+        output: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
+        let mut scratch = vec![Complex::zero(); input.len() / 2];
+        self.rfft_with_scratch(fft, input, output, &mut scratch)
+    }
+
+    /// Compute the inverse real FFT using cached twiddle tables.
+    pub fn irfft_with_scratch<F: FftImpl<T> + ?Sized>(
+        &mut self,
+        fft: &F,
+        input: &mut [Complex<T>],
+        output: &mut [T],
+        _scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
+        let m = output.len() / 2;
+        let twiddles = self.get_twiddles(m);
+        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                unsafe {
+                    let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
+                    let output32 = &mut *(output as *mut [T] as *mut [f32]);
+                    let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
+                    return irfft_direct_f32_simd(
+                        |d: &mut [Complex32]| {
+                            fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
+                        },
+                        input32,
+                        output32,
+                        twiddles32,
+                    );
+                }
+            }
+        }
+        irfft_direct(fft, input, output, twiddles)
+    }
+
+    /// Convenience wrapper that allocates scratch internally.
+    pub fn irfft<F: FftImpl<T> + ?Sized>(
+        &mut self,
+        fft: &F,
+        input: &mut [Complex<T>],
+        output: &mut [T],
+    ) -> Result<(), FftError> {
+        let mut scratch = vec![Complex::zero(); output.len() / 2];
+        self.irfft_with_scratch(fft, input, output, &mut scratch)
+    }
+}
+
 /// Old packed real FFT kernel used for comparison and fallback.
 pub fn rfft_packed<T: Float, F: FftImpl<T>>(
+    planner: &mut RfftPlanner<T>,
     fft: &F,
     input: &mut [T],
     output: &mut [Complex<T>],
@@ -51,7 +166,7 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
-    let twiddles = build_twiddle_table::<T>(m);
+    let twiddles = planner.get_twiddles(m);
     for k in 1..m {
         let a = scratch[k];
         let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
@@ -67,6 +182,7 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
 
 /// Packed inverse real FFT kernel used for comparison and fallback.
 pub fn irfft_packed<T: Float, F: FftImpl<T>>(
+    planner: &mut RfftPlanner<T>,
     fft: &F,
     input: &mut [Complex<T>],
     output: &mut [T],
@@ -88,7 +204,7 @@ pub fn irfft_packed<T: Float, F: FftImpl<T>>(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
     );
-    let twiddles = build_twiddle_table::<T>(m);
+    let twiddles = planner.get_twiddles(m);
     for k in 1..m {
         let a = input[k];
         let b = Complex::new(input[m - k].re, -input[m - k].im);
@@ -112,6 +228,7 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     fft: &F,
     input: &mut [T],
     output: &mut [Complex<T>],
+    twiddles: &[Complex<T>],
 ) -> Result<(), FftError> {
     let n = input.len();
     if n == 0 {
@@ -131,7 +248,6 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
-    let twiddles = build_twiddle_table::<T>(m);
     for k in 1..m {
         let a = data[k];
         let b = Complex::new(data[m - k].re, -data[m - k].im);
@@ -150,6 +266,7 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     fft: &F,
     input: &mut [Complex<T>],
     output: &mut [T],
+    twiddles: &[Complex<T>],
 ) -> Result<(), FftError> {
     let n = output.len();
     if n == 0 {
@@ -169,7 +286,6 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
     );
-    let twiddles = build_twiddle_table::<T>(m);
     for k in 1..m {
         let a = input[k];
         let b = Complex::new(input[m - k].re, -input[m - k].im);
@@ -196,6 +312,7 @@ fn rfft_direct_f32_simd<F>(
     mut fft: F,
     input: &mut [f32],
     output: &mut [Complex32],
+    twiddles: &[Complex32],
 ) -> Result<(), FftError>
 where
     F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
@@ -218,7 +335,6 @@ where
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
     let half = unsafe { _mm_set1_ps(0.5) };
-    let twiddles = build_twiddle_table::<f32>(m);
     for k in 1..m {
         let a = data[k];
         let b = Complex32::new(data[m - k].re, -data[m - k].im);
@@ -256,6 +372,7 @@ fn irfft_direct_f32_simd<F>(
     mut ifft: F,
     input: &mut [Complex32],
     output: &mut [f32],
+    twiddles: &[Complex32],
 ) -> Result<(), FftError>
 where
     F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
@@ -282,7 +399,6 @@ where
             _mm_cvtss_f32(_mm_mul_ss(b0, half)),
         );
     }
-    let twiddles = build_twiddle_table::<f32>(m);
     for k in 1..m {
         let a = input[k];
         let b = Complex32::new(input[m - k].re, -input[m - k].im);
@@ -332,23 +448,8 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
         output: &mut [Complex<T>],
         _scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
-        {
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                unsafe {
-                    let input32 = &mut *(input as *mut [T] as *mut [f32]);
-                    let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
-                    return rfft_direct_f32_simd(
-                        |d: &mut [Complex32]| {
-                            self.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
-                        },
-                        input32,
-                        output32,
-                    );
-                }
-            }
-        }
-        rfft_direct(self, input, output)
+        let mut planner = RfftPlanner::new();
+        planner.rfft_with_scratch(self, input, output, _scratch)
     }
 
     /// Convenience wrapper that allocates a scratch buffer internally.
@@ -366,23 +467,8 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
         output: &mut [T],
         _scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
-        {
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                unsafe {
-                    let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
-                    let output32 = &mut *(output as *mut [T] as *mut [f32]);
-                    return irfft_direct_f32_simd(
-                        |d: &mut [Complex32]| {
-                            self.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
-                        },
-                        input32,
-                        output32,
-                    );
-                }
-            }
-        }
-        irfft_direct(self, input, output)
+        let mut planner = RfftPlanner::new();
+        planner.irfft_with_scratch(self, input, output, _scratch)
     }
 
     /// Convenience wrapper that allocates scratch internally.

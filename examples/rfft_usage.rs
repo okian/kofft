@@ -1,18 +1,21 @@
 use kofft::fft::ScalarFftImpl;
-use kofft::rfft::{irfft_stack, rfft_stack, RealFftImpl};
+use kofft::rfft::{irfft_stack, rfft_stack, RfftPlanner};
 use kofft::Complex32;
 
 fn main() {
     // Planner-based real FFT
     let fft = ScalarFftImpl::<f32>::default();
+    let mut planner = RfftPlanner::new();
     let mut input = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let mut spectrum = vec![Complex32::new(0.0, 0.0); input.len() / 2 + 1];
     let mut scratch = vec![Complex32::new(0.0, 0.0); input.len() / 2];
-    fft.rfft_with_scratch(&mut input, &mut spectrum, &mut scratch)
+    planner
+        .rfft_with_scratch(&fft, &mut input, &mut spectrum, &mut scratch)
         .unwrap();
 
     let mut output = vec![0.0f32; input.len()];
-    fft.irfft_with_scratch(&mut spectrum, &mut output, &mut scratch)
+    planner
+        .irfft_with_scratch(&fft, &mut spectrum, &mut output, &mut scratch)
         .unwrap();
     println!("Input: {:?}\nReconstructed: {:?}", input, output);
 
