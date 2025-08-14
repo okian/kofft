@@ -3,10 +3,10 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::vec;
-use crate::fft::{ScalarFftImpl, Complex32, FftError};
 use crate::fft::FftImpl;
+use crate::fft::{Complex32, FftError, ScalarFftImpl};
+use alloc::vec;
+use alloc::vec::Vec;
 
 /// Compute the analytic signal (Hilbert transform) of a real input
 /// Returns a Vec<Complex32> of the analytic signal
@@ -25,20 +25,21 @@ pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
     let fft = ScalarFftImpl::<f32>::default();
     fft.fft(&mut freq)?;
     if n % 2 == 0 {
-        for i in 1..(n / 2) {
-            freq[i].re *= 2.0;
-            freq[i].im *= 2.0;
+        for f in freq.iter_mut().take(n / 2).skip(1) {
+            f.re *= 2.0;
+            f.im *= 2.0;
         }
-        for i in (n / 2 + 1)..n {
-            freq[i] = Complex32::zero();
+        for f in freq.iter_mut().take(n).skip(n / 2 + 1) {
+            *f = Complex32::zero();
         }
     } else {
-        for i in 1..=((n - 1) / 2) {
-            freq[i].re *= 2.0;
-            freq[i].im *= 2.0;
+        for f in freq.iter_mut().take((n - 1) / 2 + 1).skip(1) {
+            f.re *= 2.0;
+            f.im *= 2.0;
         }
-        for i in n.div_ceil(2)..n {
-            freq[i] = Complex32::zero();
+        let start = n.div_ceil(2);
+        for f in freq.iter_mut().take(n).skip(start) {
+            *f = Complex32::zero();
         }
     }
     fft.ifft(&mut freq)?;
@@ -59,6 +60,9 @@ mod tests {
     fn test_hilbert_errors() {
         assert_eq!(hilbert_analytic(&[]).unwrap_err(), FftError::EmptyInput);
         let x = [1.0, 2.0, 3.0];
-        assert_eq!(hilbert_analytic(&x).unwrap_err(), FftError::NonPowerOfTwoNoStd);
+        assert_eq!(
+            hilbert_analytic(&x).unwrap_err(),
+            FftError::NonPowerOfTwoNoStd
+        );
     }
 }

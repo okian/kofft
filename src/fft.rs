@@ -106,15 +106,13 @@ pub enum FftError {
     InvalidValue,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FftStrategy {
     Radix2,
     Radix4,
     #[default]
     Auto,
 }
-
 
 // Refactor FftImpl and ScalarFftImpl to be generic over T: Float
 pub trait FftImpl<T: Float> {
@@ -307,29 +305,25 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             let m = (2 * n - 1).next_power_of_two();
             let mut a = Vec::with_capacity(m);
             let mut b = Vec::with_capacity(m);
-            for i in 0..n {
+            for (i, &val) in input.iter().take(n).enumerate() {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 let w = Complex::expi(-angle);
-                a.push(input[i].mul(w));
+                a.push(val.mul(w));
             }
-            for _ in n..m {
-                a.push(Complex::zero());
-            }
+            a.resize(m, Complex::zero());
             for i in 0..n {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 b.push(Complex::expi(angle));
             }
-            for _ in n..m {
-                b.push(Complex::zero());
-            }
+            b.resize(m, Complex::zero());
             for i in 1..n {
                 b[m - i] = b[i];
             }
             let fft = ScalarFftImpl::<T>::default();
             fft.fft(&mut a)?;
             fft.fft(&mut b)?;
-            for i in 0..m {
-                a[i] = a[i].mul(b[i]);
+            for (ai, &bi) in a.iter_mut().zip(&b) {
+                *ai = ai.mul(bi);
             }
             for c in a.iter_mut() {
                 c.im = -c.im;
@@ -343,10 +337,10 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 c.re = c.re * scale;
                 c.im = c.im * scale;
             }
-            for i in 0..n {
+            for (i, out) in input.iter_mut().take(n).enumerate() {
                 let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 let w = Complex::expi(-angle);
-                input[i] = a[i].mul(w);
+                *out = a[i].mul(w);
             }
             Ok(())
         }
@@ -626,7 +620,7 @@ fn butterfly4<T: Float>(
 }
 
 #[inline(always)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 fn butterfly8<T: Float>(
     x0: Complex<T>,
     x1: Complex<T>,
