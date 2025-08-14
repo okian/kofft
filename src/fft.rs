@@ -379,7 +379,7 @@ impl<T: Float> ScalarFftImpl<T> {
 
     pub fn fft_radix4(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
-        if n.count_ones() % 2 != 0 {
+        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
             // Fallback to generic FFT if not power of four
             return self.fft(input);
         }
@@ -581,7 +581,7 @@ impl ScalarFftImpl<f32> {
         twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
         let n = input.len();
-        if n.count_ones() % 2 != 0 {
+        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
             // Not a power of 4, fallback to radix-2
             return self.fft_radix2_with_twiddles(input, twiddles);
         }
@@ -1888,5 +1888,15 @@ mod coverage_tests {
         assert_eq!(fft.rfft(&mut input, &mut freq), Err(FftError::EmptyInput));
         let mut out: [f32; 0] = [];
         assert_eq!(fft.irfft(&mut freq, &mut out), Err(FftError::EmptyInput));
+    }
+
+    #[test]
+    fn test_fft_radix4_sizes() {
+        let fft = ScalarFftImpl::<f32>::default();
+        for &n in &[16usize, 64usize] {
+            let mut data: Vec<Complex32> =
+                (0..n).map(|i| Complex32::new(i as f32, 0.0)).collect();
+            fft.fft_radix4(&mut data).unwrap();
+        }
     }
 }

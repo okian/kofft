@@ -63,6 +63,9 @@ pub fn istft(
     // Overlap-add
     for (frame_idx, frame) in frames.iter().enumerate() {
         let start = frame_idx * hop_size;
+        if frame.len() != win_len {
+            return Err(FftError::MismatchedLengths);
+        }
         let mut time_buf = frame.clone();
         fft.ifft(&mut time_buf)?;
         for i in 0..win_len {
@@ -153,11 +156,11 @@ pub fn parallel(
         return Err(FftError::InvalidHopSize);
     }
     let win_len = window.len();
-    let fft = ScalarFftImpl::<f32>::default();
     output
         .par_iter_mut()
         .enumerate()
         .try_for_each(|(frame_idx, frame)| {
+            let fft = ScalarFftImpl::<f32>::default();
             let start = frame_idx * hop_size;
             frame.clear();
             for i in 0..win_len {
@@ -204,7 +207,6 @@ pub fn inverse_parallel(
         return Err(FftError::InvalidHopSize);
     }
     let win_len = window.len();
-    let fft = ScalarFftImpl::<f32>::default();
     let partials: Result<
         alloc::vec::Vec<(usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>)>,
         FftError,
@@ -212,6 +214,7 @@ pub fn inverse_parallel(
         .par_iter()
         .enumerate()
         .map(|(frame_idx, frame)| {
+            let fft = ScalarFftImpl::<f32>::default();
             let start = frame_idx * hop_size;
             let mut time_buf = frame.clone();
             fft.ifft(&mut time_buf)?;
@@ -309,6 +312,7 @@ pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
     window: alloc::vec::Vec<f32>,
     fft: &'a Fft,
     buffer: alloc::vec::Vec<f32>,
+    time_buf: alloc::vec::Vec<crate::fft::Complex32>,
     buf_pos: usize,
     out_pos: usize,
     frame_count: usize,
@@ -325,12 +329,14 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
             return Err(FftError::InvalidHopSize);
         }
         let buffer = vec![0.0f32; win_len + hop * 2];
+        let time_buf = vec![crate::fft::Complex32::new(0.0, 0.0); win_len];
         Ok(Self {
             win_len,
             hop,
             window,
             fft,
             buffer,
+            time_buf,
             buf_pos: 0,
             out_pos: 0,
             frame_count: 0,
@@ -338,14 +344,18 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     }
 
     /// Feed in the next STFT frame, get a slice of output samples (may be empty if not enough overlap)
-    pub fn push_frame(&mut self, frame: &[crate::fft::Complex32]) -> &[f32] {
-        let mut time = alloc::vec::Vec::with_capacity(self.win_len);
-        time.resize(self.win_len, crate::fft::Complex32::new(0.0, 0.0));
-        time.copy_from_slice(frame);
-        self.fft.ifft(&mut time).unwrap();
+    pub fn push_frame(
+        &mut self,
+        frame: &[crate::fft::Complex32],
+    ) -> Result<&[f32], FftError> {
+        if frame.len() != self.win_len {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.time_buf.copy_from_slice(frame);
+        self.fft.ifft(&mut self.time_buf)?;
         // Window and overlap-add
         for i in 0..self.win_len {
-            let val = time[i].re * self.window[i];
+            let val = self.time_buf[i].re * self.window[i];
             self.buffer[self.buf_pos + i] += val;
         }
         self.frame_count += 1;
@@ -362,7 +372,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         for i in 0..self.hop {
             self.buffer[self.buf_pos + self.win_len - self.hop + i] = 0.0;
         }
-        &self.buffer[out_start..out_end]
+        Ok(&self.buffer[out_start..out_end])
     }
 }
 
@@ -501,6 +511,28 @@ mod edge_case_tests {
     }
 
     #[test]
+    fn test_istft_frame_size_mismatch() {
+        let window = [1.0, 1.0, 1.0, 1.0];
+        // Frame shorter than window length
+        let frames = vec![vec![Complex32::new(0.0, 0.0); 3]];
+        let mut output = vec![0.0f32; 4];
+        let res = istft(&frames, &window, 2, &mut output);
+        assert!(matches!(res, Err(FftError::MismatchedLengths)));
+    }
+
+    #[test]
+    fn test_istft_stream_frame_size_mismatch() {
+        let win_len = 4;
+        let hop = 2;
+        let window = vec![1.0f32; win_len];
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut istft_stream = IstftStream::new(win_len, hop, window.clone(), &fft).unwrap();
+        let frame = vec![Complex32::new(0.0, 0.0); win_len - 1];
+        let res = istft_stream.push_frame(&frame);
+        assert!(matches!(res, Err(FftError::MismatchedLengths)));
+    }
+
+    #[test]
     fn test_zero_hop_size() {
         let signal = [1.0, 2.0, 3.0, 4.0];
         let window = [1.0, 1.0, 1.0, 1.0];
@@ -563,12 +595,12 @@ mod edge_case_tests {
         let mut output = Vec::new();
         let mut frame = vec![Complex32::new(0.0, 0.0); win_len];
         while stft_stream.next_frame(&mut frame).unwrap() {
-            let out = istft_stream.push_frame(&frame);
+            let out = istft_stream.push_frame(&frame).unwrap();
             output.extend_from_slice(out);
         }
         frame.iter_mut().for_each(|c| *c = Complex32::new(0.0, 0.0));
         for _ in 0..win_len {
-            let out = istft_stream.push_frame(&frame);
+            let out = istft_stream.push_frame(&frame).unwrap();
             output.extend_from_slice(out);
         }
         output.truncate(signal.len());
