@@ -4,7 +4,7 @@
 
 extern crate alloc;
 #[allow(unused_imports)]
-use crate::fft::{FftError, Float};
+use crate::fft::{Complex32, FftError, Float, ScalarFftImpl};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
@@ -38,14 +38,27 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
 /// DCT-II (the "standard" DCT, used in JPEG, etc.)
 pub fn dct2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    let mut buffer = vec![Complex32::new(0.0, 0.0); 2 * n];
+    for i in 0..n {
+        buffer[i] = Complex32::new(input[i], 0.0);
+        buffer[2 * n - 1 - i] = Complex32::new(input[i], 0.0);
+    }
+    let fft = ScalarFftImpl::<f32>::default();
+    fft.fft_mixed_radix(&mut buffer).unwrap();
+
+    let mut twiddles = Vec::with_capacity(n);
+    let step = PI / (2.0 * n as f32);
+    for k in 0..n {
+        let (s, c) = (-step * k as f32).sin_cos();
+        twiddles.push(Complex32::new(c, s));
+    }
+
     let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
-        }
-        *out = sum;
+    for k in 0..n {
+        output[k] = (buffer[k] * twiddles[k]).re;
     }
     output
 }
@@ -53,14 +66,29 @@ pub fn dct2(input: &[f32]) -> Vec<f32> {
 /// DCT-III (the inverse of DCT-II, up to scaling)
 pub fn dct3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    let mut buffer = vec![Complex32::new(0.0, 0.0); 2 * n];
+    buffer[0] = Complex32::new(input[0], 0.0);
+    for i in 1..n {
+        buffer[i] = Complex32::new(input[i], 0.0);
+        buffer[2 * n - i] = Complex32::new(input[i], 0.0);
+    }
+    let fft = ScalarFftImpl::<f32>::default();
+    fft.fft_mixed_radix(&mut buffer).unwrap();
+
+    let mut twiddles = Vec::with_capacity(n);
+    let step = PI / (2.0 * n as f32);
+    for k in 0..n {
+        let (s, c) = (-step * k as f32).sin_cos();
+        twiddles.push(Complex32::new(c, s));
+    }
+
     let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = input[0] / 2.0;
-        for (i, &x) in input.iter().enumerate().skip(1) {
-            sum += x * (factor * i as f32 * (k as f32 + 0.5)).cos();
-        }
-        *out = sum;
+    let scale = 1.0 / n as f32;
+    for k in 0..n {
+        output[k] = (buffer[k] * twiddles[k]).re * scale;
     }
     output
 }
@@ -68,16 +96,80 @@ pub fn dct3(input: &[f32]) -> Vec<f32> {
 /// DCT-IV (self-inverse, used in audio and spectral analysis)
 pub fn dct4(input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    let mut buffer = vec![Complex32::new(0.0, 0.0); 2 * n];
+    for i in 0..n {
+        buffer[i] = Complex32::new(input[i], 0.0);
+        buffer[2 * n - 1 - i] = Complex32::new(-input[i], 0.0);
+    }
+    let fft = ScalarFftImpl::<f32>::default();
+    fft.fft_mixed_radix(&mut buffer).unwrap();
+
+    let mut twiddles = Vec::with_capacity(n);
+    let step = PI / (2.0 * n as f32);
+    for k in 0..n {
+        let (s, c) = (-step * (k as f32 + 0.5)).sin_cos();
+        twiddles.push(Complex32::new(c, s));
+    }
+
     let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).cos();
-        }
-        *out = sum;
+    for k in 0..n {
+        output[k] = (buffer[k] * twiddles[k]).re;
     }
     output
+}
+
+#[cfg(feature = "slow")]
+/// Naive DCT implementations retained for benchmarking and reference.
+pub mod slow {
+    use super::*;
+
+    /// Naive DCT-II implementation.
+    pub fn dct2(input: &[f32]) -> Vec<f32> {
+        let n = input.len();
+        let mut output = vec![0.0; n];
+        let factor = PI / n as f32;
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (i, &x) in input.iter().enumerate() {
+                sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
+            }
+            *out = sum;
+        }
+        output
+    }
+
+    /// Naive DCT-III implementation.
+    pub fn dct3(input: &[f32]) -> Vec<f32> {
+        let n = input.len();
+        let mut output = vec![0.0; n];
+        let factor = PI / n as f32;
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = input[0] / 2.0;
+            for (i, &x) in input.iter().enumerate().skip(1) {
+                sum += x * (factor * i as f32 * (k as f32 + 0.5)).cos();
+            }
+            *out = sum;
+        }
+        output
+    }
+
+    /// Naive DCT-IV implementation.
+    pub fn dct4(input: &[f32]) -> Vec<f32> {
+        let n = input.len();
+        let mut output = vec![0.0; n];
+        let factor = PI / n as f32;
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (i, &x) in input.iter().enumerate() {
+                sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).cos();
+            }
+            *out = sum;
+        }
+        output
+    }
 }
 
 /// MCU/stack-only, const-generic, in-place DCT-I for power-of-two sizes (no heap, no alloc).

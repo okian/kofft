@@ -38,6 +38,7 @@ x86_64 = []
 sse = []
 aarch64 = []
 wasm = []
+slow = []
 internal-tests = ["proptest", "rand"]
 
 [dependencies.rayon]
