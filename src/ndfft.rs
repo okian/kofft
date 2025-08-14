@@ -66,17 +66,44 @@ pub fn flatten_3d<T: Float>(
     Ok((flat, depth, rows, cols))
 }
 
+const BLOCK_SIZE: usize = 64;
+
+fn transpose_blockwise<T: Float>(
+    input: &[Complex<T>],
+    output: &mut [Complex<T>],
+    rows: usize,
+    cols: usize,
+) {
+    let mut r = 0;
+    while r < rows {
+        let r_end = core::cmp::min(r + BLOCK_SIZE, rows);
+        let mut c = 0;
+        while c < cols {
+            let c_end = core::cmp::min(c + BLOCK_SIZE, cols);
+            for i in r..r_end {
+                let src = i * cols;
+                for j in c..c_end {
+                    output[j * rows + i] = input[src + j];
+                }
+            }
+            c += BLOCK_SIZE;
+        }
+        r += BLOCK_SIZE;
+    }
+}
+
 /// 2D FFT in-place (row-column algorithm)
 /// Perform a 2D FFT in-place using a row-column algorithm.
 ///
-/// `scratch_col` must have length equal to the number of rows and is used as
-/// temporary storage when transforming columns.
+/// `scratch` must have length equal to `rows * cols` and is used as
+/// temporary storage for block-wise transposes between the row and column
+/// transforms.
 pub fn fft2d_inplace<T: Float>(
     data: &mut [Complex<T>],
     rows: usize,
     cols: usize,
     fft: &ScalarFftImpl<T>,
-    scratch_col: &mut [Complex<T>],
+    scratch: &mut [Complex<T>],
 ) -> Result<(), FftError> {
     if rows * cols != data.len() {
         return Err(FftError::MismatchedLengths);
@@ -84,7 +111,7 @@ pub fn fft2d_inplace<T: Float>(
     if rows == 0 || cols == 0 {
         return Ok(());
     }
-    if scratch_col.len() != rows {
+    if scratch.len() != data.len() {
         return Err(FftError::MismatchedLengths);
     }
     // FFT on rows
@@ -92,25 +119,30 @@ pub fn fft2d_inplace<T: Float>(
         let start = r * cols;
         fft.fft(&mut data[start..start + cols])?;
     }
-    // FFT on columns using strided transform
+    // Transpose, FFT on former columns (now rows), transpose back
+    transpose_blockwise(data, scratch, rows, cols);
     for c in 0..cols {
-        fft.fft_strided(&mut data[c..], cols, scratch_col)?;
+        let start = c * rows;
+        fft.fft(&mut scratch[start..start + rows])?;
     }
+    transpose_blockwise(scratch, data, cols, rows);
     Ok(())
 }
 
 /// Scratch buffers for [`fft3d_inplace`].
 pub struct Fft3dScratch<'a, T: Float> {
-    pub tube: &'a mut [Complex<T>],
-    pub row: &'a mut [Complex<T>],
-    pub col: &'a mut [Complex<T>],
+    /// Scratch buffer of length `rows * cols` for plane transposes
+    pub plane: &'a mut [Complex<T>],
+    /// Scratch buffer of length `depth * rows * cols` for volume transposes
+    pub volume: &'a mut [Complex<T>],
 }
 
 /// 3D FFT in-place (row-column-depth algorithm)
 /// Perform a 3D FFT in-place using a row-column-depth algorithm.
 ///
-/// The scratch buffers must have lengths equal to the depth, rows, and columns
-/// respectively.
+/// `scratch.plane` must have length `rows * cols` and `scratch.volume` must have
+/// length `depth * rows * cols`. These are used for block-wise transposes to
+/// ensure FFTs operate on contiguous data.
 pub fn fft3d_inplace<T: Float>(
     data: &mut [Complex<T>],
     depth: usize,
@@ -125,30 +157,34 @@ pub fn fft3d_inplace<T: Float>(
     if depth == 0 || rows == 0 || cols == 0 {
         return Ok(());
     }
-    if scratch.tube.len() != depth || scratch.row.len() != rows || scratch.col.len() != cols {
+    if scratch.plane.len() != rows * cols || scratch.volume.len() != depth * rows * cols {
         return Err(FftError::MismatchedLengths);
-    }
-    // FFT on depth (z axis)
-    for r in 0..rows {
-        for c in 0..cols {
-            let start = r * cols + c;
-            fft.fft_strided(&mut data[start..], rows * cols, scratch.tube)?;
-        }
-    }
-    // FFT on rows (y axis)
-    for d in 0..depth {
-        for c in 0..cols {
-            let start = d * rows * cols + c;
-            fft.fft_strided(&mut data[start..], cols, scratch.row)?;
-        }
     }
     // FFT on columns (x axis)
     for d in 0..depth {
         for r in 0..rows {
-            let start = d * rows * cols + r * cols;
+            let start = (d * rows + r) * cols;
             fft.fft(&mut data[start..start + cols])?;
         }
     }
+    // FFT on rows (y axis) via per-plane transpose
+    for d in 0..depth {
+        let plane_start = d * rows * cols;
+        let plane = &mut data[plane_start..plane_start + rows * cols];
+        transpose_blockwise(plane, scratch.plane, rows, cols);
+        for c in 0..cols {
+            let start = c * rows;
+            fft.fft(&mut scratch.plane[start..start + rows])?;
+        }
+        transpose_blockwise(scratch.plane, plane, cols, rows);
+    }
+    // FFT on depth (z axis) via full-volume transpose
+    transpose_blockwise(data, scratch.volume, depth, rows * cols);
+    for rc in 0..rows * cols {
+        let start = rc * depth;
+        fft.fft(&mut scratch.volume[start..start + depth])?;
+    }
+    transpose_blockwise(scratch.volume, data, rows * cols, depth);
     Ok(())
 }
 

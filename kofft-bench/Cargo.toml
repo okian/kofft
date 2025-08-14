@@ -21,6 +21,10 @@ harness = false
 name = "bench_dct"
 harness = false
 
+[[bench]]
+name = "bench_ndfft"
+harness = false
+
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"

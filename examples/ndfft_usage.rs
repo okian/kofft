@@ -12,7 +12,7 @@ fn main() -> Result<(), FftError> {
     ];
     let (mut data, rows, cols) = flatten_2d(nested)?;
     let fft = ScalarFftImpl::<f32>::default();
-    let mut scratch = vec![Complex32::zero(); rows];
+    let mut scratch = vec![Complex32::zero(); rows * cols];
 
     fft2d_inplace(&mut data, rows, cols, &fft, &mut scratch)?;
     println!("2D FFT result: {:?}", data);
