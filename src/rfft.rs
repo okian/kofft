@@ -7,55 +7,339 @@
 
 use alloc::vec;
 
+use core::any::TypeId;
+
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
+
+/// Old packed real FFT kernel used for comparison and fallback.
+pub fn rfft_packed<T: Float, F: FftImpl<T>>(
+    fft: &F,
+    input: &mut [T],
+    output: &mut [Complex<T>],
+    scratch: &mut [Complex<T>],
+) -> Result<(), FftError> {
+    let n = input.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n % 2 != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if output.len() != m + 1 || scratch.len() < m {
+        return Err(FftError::MismatchedLengths);
+    }
+    for i in 0..m {
+        scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+    }
+    fft.fft(&mut scratch[..m])?;
+    let y0 = scratch[0];
+    output[0] = Complex::new(y0.re + y0.im, T::zero());
+    output[m] = Complex::new(y0.re - y0.im, T::zero());
+    let half = T::from_f32(0.5);
+    for k in 1..m {
+        let a = scratch[k];
+        let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
+        let sum = a.add(b);
+        let diff = a.sub(b);
+        let angle = -T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
+        let w = Complex::expi(angle);
+        let t = w.mul(diff);
+        let temp = sum.add(Complex::new(t.im, -t.re));
+        output[k] = Complex::new(temp.re * half, temp.im * half);
+    }
+    Ok(())
+}
+
+/// Packed inverse real FFT kernel used for comparison and fallback.
+pub fn irfft_packed<T: Float, F: FftImpl<T>>(
+    fft: &F,
+    input: &mut [Complex<T>],
+    output: &mut [T],
+    scratch: &mut [Complex<T>],
+) -> Result<(), FftError> {
+    let n = output.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n % 2 != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if input.len() != m + 1 || scratch.len() < m {
+        return Err(FftError::MismatchedLengths);
+    }
+    let half = T::from_f32(0.5);
+    scratch[0] = Complex::new(
+        (input[0].re + input[m].re) * half,
+        (input[0].re - input[m].re) * half,
+    );
+    for k in 1..m {
+        let a = input[k];
+        let b = Complex::new(input[m - k].re, -input[m - k].im);
+        let sum = a.add(b);
+        let diff = a.sub(b);
+        let angle = T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
+        let w = Complex::expi(angle);
+        let t = w.mul(diff);
+        let temp = sum.sub(Complex::new(t.im, -t.re));
+        scratch[k] = Complex::new(temp.re * half, temp.im * half);
+    }
+    fft.ifft(&mut scratch[..m])?;
+    for i in 0..m {
+        output[2 * i] = scratch[i].re;
+        output[2 * i + 1] = scratch[i].im;
+    }
+    Ok(())
+}
+
+/// Direct real FFT kernel operating in-place on the real buffer.
+fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
+    fft: &F,
+    input: &mut [T],
+    output: &mut [Complex<T>],
+) -> Result<(), FftError> {
+    let n = input.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n % 2 != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if output.len() != m + 1 {
+        return Err(FftError::MismatchedLengths);
+    }
+    let data: &mut [Complex<T>] = unsafe {
+        core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex<T>, m)
+    };
+    fft.fft(data)?;
+    let y0 = data[0];
+    output[0] = Complex::new(y0.re + y0.im, T::zero());
+    output[m] = Complex::new(y0.re - y0.im, T::zero());
+    let half = T::from_f32(0.5);
+    for k in 1..m {
+        let a = data[k];
+        let b = Complex::new(data[m - k].re, -data[m - k].im);
+        let sum = a.add(b);
+        let diff = a.sub(b);
+        let angle = -T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
+        let w = Complex::expi(angle);
+        let t = w.mul(diff);
+        let temp = sum.add(Complex::new(t.im, -t.re));
+        output[k] = Complex::new(temp.re * half, temp.im * half);
+    }
+    Ok(())
+}
+
+/// Direct inverse real FFT kernel operating on the real buffer.
+fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
+    fft: &F,
+    input: &mut [Complex<T>],
+    output: &mut [T],
+) -> Result<(), FftError> {
+    let n = output.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n % 2 != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if input.len() != m + 1 {
+        return Err(FftError::MismatchedLengths);
+    }
+    let data: &mut [Complex<T>] = unsafe {
+        core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex<T>, m)
+    };
+    let half = T::from_f32(0.5);
+    data[0] = Complex::new(
+        (input[0].re + input[m].re) * half,
+        (input[0].re - input[m].re) * half,
+    );
+    for k in 1..m {
+        let a = input[k];
+        let b = Complex::new(input[m - k].re, -input[m - k].im);
+        let sum = a.add(b);
+        let diff = a.sub(b);
+        let angle = T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
+        let w = Complex::expi(angle);
+        let t = w.mul(diff);
+        let temp = sum.sub(Complex::new(t.im, -t.re));
+        data[k] = Complex::new(temp.re * half, temp.im * half);
+    }
+    fft.ifft(data)?;
+    for i in 0..m {
+        output[2 * i] = data[i].re;
+        output[2 * i + 1] = data[i].im;
+    }
+    Ok(())
+}
+
+#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+use core::arch::x86_64::*;
+
+#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+fn rfft_direct_f32_simd<F>(
+    mut fft: F,
+    input: &mut [f32],
+    output: &mut [Complex32],
+) -> Result<(), FftError>
+where
+    F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
+{
+    let n = input.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n % 2 != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if output.len() != m + 1 {
+        return Err(FftError::MismatchedLengths);
+    }
+    let data: &mut [Complex32] = unsafe {
+        core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex32, m)
+    };
+    fft(data)?;
+    let y0 = data[0];
+    output[0] = Complex32::new(y0.re + y0.im, 0.0);
+    output[m] = Complex32::new(y0.re - y0.im, 0.0);
+    let half = unsafe { _mm_set1_ps(0.5) };
+    for k in 1..m {
+        let a = data[k];
+        let b = Complex32::new(data[m - k].re, -data[m - k].im);
+        let sum_re = a.re + b.re;
+        let sum_im = a.im + b.im;
+        let diff_re = a.re - b.re;
+        let diff_im = a.im - b.im;
+        let angle = -core::f32::consts::PI * (k as f32) / (m as f32);
+        let w = Complex32::expi(angle);
+        unsafe {
+            let v_re = _mm_set1_ps(diff_re);
+            let v_im = _mm_set1_ps(diff_im);
+            let w_re = _mm_set1_ps(w.re);
+            let w_im = _mm_set1_ps(w.im);
+            let t1 = _mm_mul_ps(v_re, w_re);
+            let t2 = _mm_mul_ps(v_im, w_im);
+            let t3 = _mm_mul_ps(v_re, w_im);
+            let t4 = _mm_mul_ps(v_im, w_re);
+            let vw_re = _mm_sub_ps(t1, t2);
+            let vw_im = _mm_add_ps(t3, t4);
+            let t_re = _mm_cvtss_f32(vw_re);
+            let t_im = _mm_cvtss_f32(vw_im);
+            let temp_re = sum_re + t_im;
+            let temp_im = sum_im - t_re;
+            let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
+            let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
+            output[k].re = _mm_cvtss_f32(res_re);
+            output[k].im = _mm_cvtss_f32(res_im);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+fn irfft_direct_f32_simd<F>(
+    mut ifft: F,
+    input: &mut [Complex32],
+    output: &mut [f32],
+) -> Result<(), FftError>
+where
+    F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
+{
+    let n = output.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n % 2 != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if input.len() != m + 1 {
+        return Err(FftError::MismatchedLengths);
+    }
+    let data: &mut [Complex32] = unsafe {
+        core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex32, m)
+    };
+    let half = unsafe { _mm_set1_ps(0.5) };
+    unsafe {
+        let a0 = _mm_set_ss(input[0].re + input[m].re);
+        let b0 = _mm_set_ss(input[0].re - input[m].re);
+        data[0] = Complex32::new(
+            _mm_cvtss_f32(_mm_mul_ss(a0, half)),
+            _mm_cvtss_f32(_mm_mul_ss(b0, half)),
+        );
+    }
+    for k in 1..m {
+        let a = input[k];
+        let b = Complex32::new(input[m - k].re, -input[m - k].im);
+        let sum_re = a.re + b.re;
+        let sum_im = a.im + b.im;
+        let diff_re = a.re - b.re;
+        let diff_im = a.im - b.im;
+        let angle = core::f32::consts::PI * (k as f32) / (m as f32);
+        let w = Complex32::expi(angle);
+        unsafe {
+            let v_re = _mm_set1_ps(diff_re);
+            let v_im = _mm_set1_ps(diff_im);
+            let w_re = _mm_set1_ps(w.re);
+            let w_im = _mm_set1_ps(w.im);
+            let t1 = _mm_mul_ps(v_re, w_re);
+            let t2 = _mm_mul_ps(v_im, w_im);
+            let t3 = _mm_mul_ps(v_re, w_im);
+            let t4 = _mm_mul_ps(v_im, w_re);
+            let vw_re = _mm_sub_ps(t1, t2);
+            let vw_im = _mm_add_ps(t3, t4);
+            let t_re = _mm_cvtss_f32(vw_re);
+            let t_im = _mm_cvtss_f32(vw_im);
+            let temp_re = sum_re - t_im;
+            let temp_im = sum_im + t_re;
+            let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
+            let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
+            data[k].re = _mm_cvtss_f32(res_re);
+            data[k].im = _mm_cvtss_f32(res_im);
+        }
+    }
+    ifft(data)?;
+    for i in 0..m {
+        output[2 * i] = data[i].re;
+        output[2 * i + 1] = data[i].im;
+    }
+    Ok(())
+}
 
 /// Trait providing real-valued FFT transforms built on top of [`FftImpl`].
 pub trait RealFftImpl<T: Float>: FftImpl<T> {
     /// Compute the real-input FFT, producing `N/2 + 1` complex samples.
-    /// A scratch buffer of length `N/2` is used to avoid heap allocations
-    /// and can be reused across calls.
+    /// Scratch storage is ignored for the specialized kernels but kept for
+    /// API compatibility. When SIMD features are enabled this routine
+    /// dispatches to SIMD-accelerated variants.
     fn rfft_with_scratch(
         &self,
         input: &mut [T],
         output: &mut [Complex<T>],
-        scratch: &mut [Complex<T>],
+        _scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let n = input.len();
-        if n == 0 {
-            return Err(FftError::EmptyInput);
+        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                unsafe {
+                    let input32 = &mut *(input as *mut [T] as *mut [f32]);
+                    let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
+                    return rfft_direct_f32_simd(
+                        |d: &mut [Complex32]| {
+                            self.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
+                        },
+                        input32,
+                        output32,
+                    );
+                }
+            }
         }
-        if n % 2 != 0 {
-            return Err(FftError::InvalidValue);
-        }
-        let m = n / 2;
-        if output.len() != m + 1 || scratch.len() < m {
-            return Err(FftError::MismatchedLengths);
-        }
-        // Pack even/odd samples into complex buffer
-        for i in 0..m {
-            scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
-        }
-        // Compute half-size complex FFT
-        self.fft(&mut scratch[..m])?;
-        // DC and Nyquist components
-        let y0 = scratch[0];
-        output[0] = Complex::new(y0.re + y0.im, T::zero());
-        output[m] = Complex::new(y0.re - y0.im, T::zero());
-        let half = T::from_f32(0.5);
-        // Remaining frequencies
-        for k in 1..m {
-            let a = scratch[k];
-            let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
-            let sum = a.add(b);
-            let diff = a.sub(b);
-            let angle = -T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
-            let w = Complex::expi(angle);
-            let t = w.mul(diff);
-            let temp = sum.add(Complex::new(t.im, -t.re));
-            output[k] = Complex::new(temp.re * half, temp.im * half);
-        }
-        Ok(())
+        rfft_direct(self, input, output)
     }
 
     /// Convenience wrapper that allocates a scratch buffer internally.
@@ -71,44 +355,25 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
         &self,
         input: &mut [Complex<T>],
         output: &mut [T],
-        scratch: &mut [Complex<T>],
+        _scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let n = output.len();
-        if n == 0 {
-            return Err(FftError::EmptyInput);
+        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                unsafe {
+                    let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
+                    let output32 = &mut *(output as *mut [T] as *mut [f32]);
+                    return irfft_direct_f32_simd(
+                        |d: &mut [Complex32]| {
+                            self.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
+                        },
+                        input32,
+                        output32,
+                    );
+                }
+            }
         }
-        if n % 2 != 0 {
-            return Err(FftError::InvalidValue);
-        }
-        let m = n / 2;
-        if input.len() != m + 1 || scratch.len() < m {
-            return Err(FftError::MismatchedLengths);
-        }
-        let half = T::from_f32(0.5);
-        // Reconstruct the half-size spectrum
-        scratch[0] = Complex::new(
-            (input[0].re + input[m].re) * half,
-            (input[0].re - input[m].re) * half,
-        );
-        for k in 1..m {
-            let a = input[k];
-            let b = Complex::new(input[m - k].re, -input[m - k].im);
-            let sum = a.add(b);
-            let diff = a.sub(b);
-            let angle = T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
-            let w = Complex::expi(angle);
-            let t = w.mul(diff);
-            let temp = sum.sub(Complex::new(t.im, -t.re));
-            scratch[k] = Complex::new(temp.re * half, temp.im * half);
-        }
-        // Perform inverse complex FFT of half-size
-        self.ifft(&mut scratch[..m])?;
-        // Unpack into real output
-        for i in 0..m {
-            output[2 * i] = scratch[i].re;
-            output[2 * i + 1] = scratch[i].im;
-        }
-        Ok(())
+        irfft_direct(self, input, output)
     }
 
     /// Convenience wrapper that allocates scratch internally.
