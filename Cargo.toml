@@ -59,3 +59,8 @@ path = "examples/stft_usage.rs"
 [[example]]
 name = "ndfft_usage"
 path = "examples/ndfft_usage.rs"
+
+[[example]]
+name = "parallel_benchmark"
+path = "examples/parallel_benchmark.rs"
+required-features = ["parallel"]
