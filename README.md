@@ -12,7 +12,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
 - **⚡ SIMD acceleration** (x86_64 AVX2 & SSE, AArch64 NEON, WebAssembly SIMD)
-- **🧮 Radix-4 and mixed-radix FFTs** for power-of-two and composite sizes
+- **🧮 Split-radix FFTs** for power-of-two sizes, with radix-2/4 and mixed-radix support
 - **🔧 Multiple transform types**: FFT, DCT (Types I-IV), DST (Types I-IV), Hartley, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**

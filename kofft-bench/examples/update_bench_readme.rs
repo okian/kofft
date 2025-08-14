@@ -1,6 +1,6 @@
-use std::fs;
-use std::error::Error;
 use serde::Deserialize;
+use std::error::Error;
+use std::fs;
 
 #[derive(Deserialize)]
 struct BenchFile {
@@ -37,7 +37,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut table = String::new();
     table.push_str(&format!(
         "Last run: {} on {} ({}; {}; flags: `{}`)\n\n",
-        bf.env.date, bf.env.runner, bf.env.cpu.trim(), bf.env.rustc, bf.env.flags
+        bf.env.date,
+        bf.env.runner,
+        bf.env.cpu.trim(),
+        bf.env.rustc,
+        bf.env.flags
     ));
     table.push_str("| Library | Transform | Size (N) | Mode | Time/op | Ops/sec | Allocations | Date/Runner |\n");
     table.push_str("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
@@ -46,8 +50,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         let time_ms = r.time_per_op_ns / 1_000_000.0;
         table.push_str(&format!(
             "| {} | {} | {} | {} | {:.3} ms | {:.2} | {} | {} {} |\n",
-            r.library, r.transform, r.size, r.mode, time_ms, r.ops_per_sec,
-            r.allocations, date_short, bf.env.runner
+            r.library,
+            r.transform,
+            r.size,
+            r.mode,
+            time_ms,
+            r.ops_per_sec,
+            r.allocations,
+            date_short,
+            bf.env.runner
         ));
     }
     update_readme(&table)?;

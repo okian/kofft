@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Split-radix FFT implementation for power-of-two sizes
 - Initial release of kofft DSP library
 - FFT (Fast Fourier Transform) with scalar and SIMD implementations
 - DCT (Discrete Cosine Transform) variants: DCT-II, DCT-III, DCT-IV

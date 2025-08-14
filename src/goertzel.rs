@@ -1,9 +1,9 @@
 //! Goertzel algorithm: efficient single-bin DFT detector
 //! no_std + alloc compatible
 
-use libm::{sqrtf, floorf};
 #[allow(unused_imports)]
-use crate::fft::{Float, FftError};
+use crate::fft::{FftError, Float};
+use libm::{floorf, sqrtf};
 
 /// Compute the magnitude at a single DFT bin using the Goertzel algorithm.
 /// - `input`: real-valued signal
@@ -11,11 +11,7 @@ use crate::fft::{Float, FftError};
 /// - `sample_rate`: sample rate in Hz
 /// - `target_freq`: frequency to detect in Hz
 #[cfg(feature = "std")]
-pub fn goertzel_f32(
-    input: &[f32],
-    sample_rate: f32,
-    target_freq: f32,
-) -> Result<f32, FftError> {
+pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> Result<f32, FftError> {
     if input.is_empty() {
         return Err(FftError::EmptyInput);
     }
@@ -38,12 +34,8 @@ pub fn goertzel_f32(
 }
 
 #[cfg(not(feature = "std"))]
-pub fn goertzel_f32(
-    input: &[f32],
-    sample_rate: f32,
-    target_freq: f32,
-) -> Result<f32, FftError> {
-    use libm::{sqrtf, cosf, floorf};
+pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> Result<f32, FftError> {
+    use libm::{cosf, floorf, sqrtf};
     if input.is_empty() {
         return Err(FftError::EmptyInput);
     }
@@ -74,7 +66,9 @@ mod tests {
         let sr = 8000.0;
         let f = 1000.0;
         let n = 100;
-        let signal: Vec<f32> = (0..n).map(|i| (2.0 * core::f32::consts::PI * f * i as f32 / sr).sin()).collect();
+        let signal: Vec<f32> = (0..n)
+            .map(|i| (2.0 * core::f32::consts::PI * f * i as f32 / sr).sin())
+            .collect();
         let mag = goertzel_f32(&signal, sr, f).unwrap();
         let _mean = signal.iter().map(|&x| x.abs()).sum::<f32>() / signal.len() as f32;
         assert!(mag > 0.0); // Only robust check with libm
@@ -82,12 +76,18 @@ mod tests {
 
     #[test]
     fn test_goertzel_empty() {
-        assert_eq!(goertzel_f32(&[], 1.0, 1.0).unwrap_err(), FftError::EmptyInput);
+        assert_eq!(
+            goertzel_f32(&[], 1.0, 1.0).unwrap_err(),
+            FftError::EmptyInput
+        );
     }
 
     #[test]
     fn test_goertzel_bad_rate() {
         let signal = [1.0f32, 2.0];
-        assert_eq!(goertzel_f32(&signal, 0.0, 1.0).unwrap_err(), FftError::InvalidValue);
+        assert_eq!(
+            goertzel_f32(&signal, 0.0, 1.0).unwrap_err(),
+            FftError::InvalidValue
+        );
     }
 }

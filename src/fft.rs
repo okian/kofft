@@ -161,26 +161,12 @@ impl<T: Float> FftPlanner<T> {
         (Arc::clone(chirp), Arc::clone(fft_b))
     }
 
-    /// Determine an FFT strategy based on the factorization of `n`.
+    /// Determine an FFT strategy based on the input length.
     ///
-    /// Returns `Radix4` for sizes that are pure powers of four, `Radix2` for
-    /// other powers of two, and `Auto` when both twos and other factors are
-    /// present.
+    /// Returns `SplitRadix` for power-of-two sizes and `Auto` otherwise.
     pub fn plan_strategy(&mut self, n: usize) -> FftStrategy {
-        if n < 2 {
-            return FftStrategy::Auto;
-        }
-        let factors = factorize(n);
-        let count_two = factors.iter().filter(|&&f| f == 2).count();
-        let has_two = count_two > 0;
-        let has_other = factors.iter().any(|&f| f != 2);
-
-        if has_two && !has_other {
-            if count_two % 2 == 0 {
-                FftStrategy::Radix4
-            } else {
-                FftStrategy::Radix2
-            }
+        if n.is_power_of_two() && n > 1 {
+            FftStrategy::SplitRadix
         } else {
             FftStrategy::Auto
         }
@@ -208,6 +194,7 @@ pub enum FftError {
 pub enum FftStrategy {
     Radix2,
     Radix4,
+    SplitRadix,
     #[default]
     Auto,
 }
@@ -270,7 +257,7 @@ pub trait FftImpl<T: Float> {
         output: &mut [Complex<T>],
         out_stride: usize,
     ) -> Result<(), FftError>;
-    /// Plan-based strategy selection (Radix2, Radix4, Auto)
+    /// Plan-based strategy selection (Radix2, Radix4, SplitRadix, Auto)
     fn fft_with_strategy(
         &self,
         input: &mut [Complex<T>],
@@ -310,6 +297,53 @@ impl<T: Float> ScalarFftImpl<T> {
             planner: RefCell::new(planner),
         }
     }
+
+    pub fn split_radix_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+        fn recurse<T: Float>(planner: &mut FftPlanner<T>, data: &mut [Complex<T>]) {
+            let n = data.len();
+            if n <= 1 {
+                return;
+            }
+            if n == 2 {
+                let a = data[0];
+                let b = data[1];
+                data[0] = a.add(b);
+                data[1] = a.sub(b);
+                return;
+            }
+            let mut even: Vec<Complex<T>> = data.iter().step_by(2).cloned().collect();
+            let mut odd1: Vec<Complex<T>> = data.iter().skip(1).step_by(4).cloned().collect();
+            let mut odd3: Vec<Complex<T>> = data.iter().skip(3).step_by(4).cloned().collect();
+            recurse(planner, &mut even);
+            recurse(planner, &mut odd1);
+            recurse(planner, &mut odd3);
+            let tw = planner.get_twiddles(n);
+            let j = Complex::new(T::zero(), -T::one());
+            for k in 0..n / 4 {
+                let e0 = even[k];
+                let e1 = even[k + n / 4];
+                let t1 = tw[k].mul(odd1[k]);
+                let t2 = tw[(3 * k) % n].mul(odd3[k]);
+                let t1p2 = t1.add(t2);
+                let t1m2 = t1.sub(t2);
+                data[k] = e0.add(t1p2);
+                data[k + n / 2] = e0.sub(t1p2);
+                let t = t1m2.mul(j);
+                data[k + n / 4] = e1.add(t);
+                data[k + n / 4 + n / 2] = e1.sub(t);
+            }
+        }
+        let n = input.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if !n.is_power_of_two() {
+            return self.fft(input);
+        }
+        let mut planner = self.planner.borrow_mut();
+        recurse(&mut planner, input);
+        Ok(())
+    }
 }
 
 impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
@@ -322,109 +356,8 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         if (n & (n - 1)) == 0 {
-            // Power of two: use radix-4 where possible, then radix-2
-            let bitrev = {
-                let mut planner = self.planner.borrow_mut();
-                planner.get_bitrev(n)
-            };
-            for i in 0..n {
-                let j = bitrev[i];
-                if i < j {
-                    input.swap(i, j);
-                }
-            }
-            // Largest power of four dividing n
-            let pow4_stages = n.trailing_zeros() / 2;
-            let mut len = 4usize;
-            let max_radix4 = 1usize << (pow4_stages * 2);
-
-            // Fetch all twiddles once and reuse them in both radix-4 and
-            // radix-2 stages to avoid repeated planner lookups.
-            let mut planner = self.planner.borrow_mut();
-            let twiddles = planner.get_twiddles(n);
-
-            // Radix-4 stages
-            while len <= max_radix4 {
-                let w_step = twiddles[n / len];
-                let mut i = 0;
-                while i < n {
-                    let mut w1 = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 4) {
-                        let w2 = w1.mul(w1);
-                        let w3 = w2.mul(w1);
-                        let a = input[i + j];
-                        let b = input[i + j + len / 2].mul(w1);
-                        let c = input[i + j + len / 4].mul(w2);
-                        let d = input[i + j + len / 2 + len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + len / 2 + len / 4] = x3;
-                        w1 = w1.mul(w_step);
-                    }
-                    i += len;
-                }
-                len *= 4;
-            }
-
-            // Remaining radix-2 stages
-            let mut len = max_radix4 * 2;
-            while len <= n {
-                let w_step = twiddles[n / len];
-                #[cfg(feature = "parallel")]
-                {
-                    if should_parallelize_fft(n)
-                        && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
-                    {
-                        let w_step32 =
-                            unsafe { *(&w_step as *const Complex<T> as *const Complex32) };
-                        let input32 =
-                            unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                        let half = len / 2;
-                        input32.par_chunks_mut(len).for_each(move |chunk| {
-                            let mut w = Complex32::new(1.0, 0.0);
-                            for j in 0..half {
-                                let u = chunk[j];
-                                let v = chunk[j + half].mul(w);
-                                chunk[j] = u.add(v);
-                                chunk[j + half] = u.sub(v);
-                                w = w.mul(w_step32);
-                            }
-                        });
-                    } else {
-                        let mut i = 0;
-                        while i < n {
-                            let mut w = Complex::new(T::one(), T::zero());
-                            for j in 0..(len / 2) {
-                                let u = input[i + j];
-                                let v = input[i + j + len / 2].mul(w);
-                                input[i + j] = u.add(v);
-                                input[i + j + len / 2] = u.sub(v);
-                                w = w.mul(w_step);
-                            }
-                            i += len;
-                        }
-                    }
-                }
-                #[cfg(not(feature = "parallel"))]
-                {
-                    let mut i = 0;
-                    while i < n {
-                        let mut w = Complex::new(T::one(), T::zero());
-                        for j in 0..(len / 2) {
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
-                            w = w.mul(w_step);
-                        }
-                        i += len;
-                    }
-                }
-                len <<= 1;
-            }
-            return Ok(());
+            // Power of two: use split-radix FFT
+            return self.split_radix_fft(input);
         }
         // Bluestein's algorithm for non-power-of-two
         #[cfg(not(feature = "std"))]
@@ -630,6 +563,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         match chosen {
             FftStrategy::Radix2 => self.fft(input),
             FftStrategy::Radix4 => self.fft_radix4(input),
+            FftStrategy::SplitRadix => self.split_radix_fft(input),
             FftStrategy::Auto => self.fft(input),
         }
     }
@@ -1931,7 +1865,7 @@ pub struct FftPlan<T: Float> {
 
 #[cfg(feature = "std")]
 impl<T: Float> FftPlan<T> {
-    /// Create a new FFT plan for size n and strategy (Radix2, Radix4, Auto)
+    /// Create a new FFT plan for size n and strategy (Radix2, Radix4, SplitRadix, Auto)
     pub fn new(n: usize, strategy: FftStrategy) -> Self {
         let twiddles = if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
             Some(TwiddleFactorBuffer::new(n))
@@ -1966,6 +1900,7 @@ impl<T: Float> FftPlan<T> {
                             .fft_radix4_with_twiddles(input32, tw);
                     }
                 }
+                FftStrategy::SplitRadix => {}
                 FftStrategy::Auto => {}
             }
         }
@@ -2232,7 +2167,7 @@ mod coverage_tests {
 
     #[test]
     fn test_plan_based_fft_ifft() {
-        let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
+        let plan = FftPlan::<f32>::new(4, FftStrategy::SplitRadix);
         let mut data = vec![
             Complex32::new(1.0, 0.0),
             Complex32::new(2.0, 0.0),
@@ -2249,7 +2184,7 @@ mod coverage_tests {
 
     #[test]
     fn test_plan_out_of_place() {
-        let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
+        let plan = FftPlan::<f32>::new(4, FftStrategy::SplitRadix);
         let input = vec![Complex32::new(1.0, 0.0); 4];
         let mut output = vec![Complex32::zero(); 4];
         plan.fft_out_of_place(&input, &mut output).unwrap();
@@ -2304,10 +2239,13 @@ mod coverage_tests {
     #[test]
     fn test_fft_with_strategy_variants() {
         let fft = ScalarFftImpl::<f32>::default();
-        // length 16 exercises radix-4 implementation
+        // length 16 exercises multiple implementations
         let mut data = (1..=16)
             .map(|i| Complex32::new(i as f32, 0.0))
             .collect::<Vec<_>>();
+        // Explicit split-radix strategy
+        fft.fft_with_strategy(&mut data, FftStrategy::SplitRadix)
+            .unwrap();
         // Explicit radix-4 strategy
         fft.fft_with_strategy(&mut data, FftStrategy::Radix4)
             .unwrap();
@@ -2316,16 +2254,17 @@ mod coverage_tests {
     }
 
     #[test]
-    fn test_fft_with_strategy_auto_matches_radix4() {
+    fn test_fft_with_strategy_auto_matches_split_radix() {
         let fft = ScalarFftImpl::<f32>::default();
         let mut auto_data = (1..=16)
             .map(|i| Complex32::new(i as f32, 0.0))
             .collect::<Vec<_>>();
-        let mut radix4_data = auto_data.clone();
-        fft.fft_radix4(&mut radix4_data).unwrap();
+        let mut split_data = auto_data.clone();
+        fft.fft_with_strategy(&mut split_data, FftStrategy::SplitRadix)
+            .unwrap();
         fft.fft_with_strategy(&mut auto_data, FftStrategy::Auto)
             .unwrap();
-        for (a, b) in radix4_data.iter().zip(auto_data.iter()) {
+        for (a, b) in split_data.iter().zip(auto_data.iter()) {
             assert!((a.re - b.re).abs() < 1e-4);
             assert!((a.im - b.im).abs() < 1e-4);
         }
@@ -2391,8 +2330,8 @@ mod coverage_tests {
     #[test]
     fn test_plan_strategy() {
         let mut planner = FftPlanner::<f32>::new();
-        assert_eq!(planner.plan_strategy(16), FftStrategy::Radix4);
-        assert_eq!(planner.plan_strategy(8), FftStrategy::Radix2);
+        assert_eq!(planner.plan_strategy(16), FftStrategy::SplitRadix);
+        assert_eq!(planner.plan_strategy(8), FftStrategy::SplitRadix);
         assert_eq!(planner.plan_strategy(12), FftStrategy::Auto);
     }
 
