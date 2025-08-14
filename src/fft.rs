@@ -253,6 +253,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                         let input32 =
                             unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
                         let stage_vec = stage.as_ref().clone();
+                        let stage_vec: Vec<Complex32> = unsafe { core::mem::transmute(stage_vec) };
                         let half = len / 2;
                         input32.par_chunks_mut(len).for_each(move |chunk| {
                             for j in 0..half {
