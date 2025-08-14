@@ -8,6 +8,7 @@ use kofft::czt::czt_f32;
 use kofft::dct::dct2;
 use kofft::dst::dst2;
 use kofft::fft::{FftImpl, ScalarFftImpl};
+use kofft::rfft::RealFftImpl;
 use kofft::goertzel::goertzel_f32;
 use kofft::hartley::dht;
 use kofft::hilbert::hilbert_analytic;

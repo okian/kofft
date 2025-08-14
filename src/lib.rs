@@ -64,6 +64,9 @@ pub mod fft;
 ///
 /// Provides both scalar and SIMD-optimized FFT implementations.
 /// Supports complex and real input signals.
+pub mod rfft;
+/// Real-input FFT helpers built on top of complex FFT routines
+/// for converting between real and complex domains.
 pub mod num;
 
 /// N-dimensional FFT operations
@@ -140,6 +143,7 @@ pub fn add(left: u64, right: u64) -> u64 {
 mod tests {
     use super::*;
     use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
+    use crate::rfft::RealFftImpl;
     use alloc::vec;
     use alloc::vec::Vec;
     use core::f32::consts;

@@ -162,12 +162,26 @@ let result = fft.fft_vec(&data)?;
 
 ```rust
 use kofft::fft::{ScalarFftImpl, FftImpl};
+use kofft::rfft::RealFftImpl;
 
 let fft = ScalarFftImpl::<f32>::default();
-let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let mut input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let mut output = vec![Complex32::zero(); input.len() / 2 + 1];
 
-fft.rfft(&input, &mut output)?;
+fft.rfft(&mut input, &mut output)?;
+```
+
+Stack-only helpers avoid heap allocation:
+
+```rust
+use kofft::rfft::{irfft_stack, rfft_stack};
+use kofft::Complex32;
+
+let input = [1.0f32, 2.0, 3.0, 4.0];
+let mut freq = [Complex32::new(0.0, 0.0); 3];
+rfft_stack(&input, &mut freq)?;
+let mut time = [0.0f32; 4];
+irfft_stack(&freq, &mut time)?;
 ```
 
 ### STFT (Short-Time Fourier Transform)
@@ -213,6 +227,7 @@ cargo run --example stft_usage
 cargo run --example ndfft_usage
 cargo run --example embedded_example
 cargo run --example benchmark
+cargo run --example rfft_usage
 ```
 
 ## Advanced Features
