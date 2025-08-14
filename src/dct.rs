@@ -3,8 +3,9 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
+use crate::fft::FftError;
 #[allow(unused_imports)]
-use crate::fft::{FftError, Float};
+use crate::num::Float;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
@@ -78,6 +79,24 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
         *out = sum;
     }
     output
+}
+
+#[cfg(feature = "slow")]
+/// Naive DCT implementations retained for benchmarking and reference.
+pub mod slow {
+    use super::*;
+
+    pub fn dct2(input: &[f32]) -> Vec<f32> {
+        super::dct2(input)
+    }
+
+    pub fn dct3(input: &[f32]) -> Vec<f32> {
+        super::dct3(input)
+    }
+
+    pub fn dct4(input: &[f32]) -> Vec<f32> {
+        super::dct4(input)
+    }
 }
 
 /// MCU/stack-only, const-generic, in-place DCT-I for power-of-two sizes (no heap, no alloc).

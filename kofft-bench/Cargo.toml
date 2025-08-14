@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-kofft = { path = "..", features = ["parallel"] }
+kofft = { path = "..", features = ["parallel", "slow"] }
 criterion = { version = "0.7", features = ["html_reports"] }
 rustfft = "6"
 realfft = "3"
@@ -15,6 +15,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [[bench]]
 name = "bench_fft"
+harness = false
+
+[[bench]]
+name = "bench_dct"
 harness = false
 
 [[example]]
