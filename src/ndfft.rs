@@ -90,11 +90,15 @@ pub fn fft2d_inplace<T: Float>(
     // FFT on rows
     for r in 0..rows {
         let start = r * cols;
-        fft.fft(&mut data[start..start + cols])?;
+        // SAFETY: `rows * cols == data.len()` ensures slice is in bounds.
+        let row = unsafe { data.get_unchecked_mut(start..start + cols) };
+        fft.fft(row)?;
     }
     // FFT on columns using strided transform
     for c in 0..cols {
-        fft.fft_strided(&mut data[c..], cols, scratch_col)?;
+        // SAFETY: `c < cols <= data.len()` guarantees this slice is valid.
+        let col = unsafe { data.get_unchecked_mut(c..) };
+        fft.fft_strided(col, cols, scratch_col)?;
     }
     Ok(())
 }
@@ -132,21 +136,27 @@ pub fn fft3d_inplace<T: Float>(
     for r in 0..rows {
         for c in 0..cols {
             let start = r * cols + c;
-            fft.fft_strided(&mut data[start..], rows * cols, scratch.tube)?;
+            // SAFETY: start < data.len() by construction.
+            let tube = unsafe { data.get_unchecked_mut(start..) };
+            fft.fft_strided(tube, rows * cols, scratch.tube)?;
         }
     }
     // FFT on rows (y axis)
     for d in 0..depth {
         for c in 0..cols {
             let start = d * rows * cols + c;
-            fft.fft_strided(&mut data[start..], cols, scratch.row)?;
+            // SAFETY: indices validated by outer checks.
+            let row = unsafe { data.get_unchecked_mut(start..) };
+            fft.fft_strided(row, cols, scratch.row)?;
         }
     }
     // FFT on columns (x axis)
     for d in 0..depth {
         for r in 0..rows {
             let start = d * rows * cols + r * cols;
-            fft.fft(&mut data[start..start + cols])?;
+            // SAFETY: slice of length `cols` within `data`.
+            let col = unsafe { data.get_unchecked_mut(start..start + cols) };
+            fft.fft(col)?;
         }
     }
     Ok(())

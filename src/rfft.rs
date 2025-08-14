@@ -158,8 +158,14 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
+    // SAFETY: `m <= input.len()/2` and `scratch` has length at least `m`.
+    // The loop indexes remain in bounds.
     for i in 0..m {
-        scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+        unsafe {
+            let re = *input.get_unchecked(2 * i);
+            let im = *input.get_unchecked(2 * i + 1);
+            *scratch.get_unchecked_mut(i) = Complex::new(re, im);
+        }
     }
     fft.fft(&mut scratch[..m])?;
     let y0 = scratch[0];
@@ -168,14 +174,17 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
     let half = T::from_f32(0.5);
     let twiddles = planner.get_twiddles(m);
     for k in 1..m {
-        let a = scratch[k];
-        let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
-        let sum = a.add(b);
-        let diff = a.sub(b);
-        let w = twiddles[k];
-        let t = w.mul(diff);
-        let temp = sum.add(Complex::new(t.im, -t.re));
-        output[k] = Complex::new(temp.re * half, temp.im * half);
+        unsafe {
+            let a = *scratch.get_unchecked(k);
+            let tmp = scratch.get_unchecked(m - k);
+            let b = Complex::new(tmp.re, -tmp.im);
+            let sum = a.add(b);
+            let diff = a.sub(b);
+            let w = *twiddles.get_unchecked(k);
+            let t = w.mul(diff);
+            let temp = sum.add(Complex::new(t.im, -t.re));
+            *output.get_unchecked_mut(k) = Complex::new(temp.re * half, temp.im * half);
+        }
     }
     Ok(())
 }
@@ -206,19 +215,26 @@ pub fn irfft_packed<T: Float, F: FftImpl<T>>(
     );
     let twiddles = planner.get_twiddles(m);
     for k in 1..m {
-        let a = input[k];
-        let b = Complex::new(input[m - k].re, -input[m - k].im);
-        let sum = a.add(b);
-        let diff = a.sub(b);
-        let w = Complex::new(twiddles[k].re, -twiddles[k].im);
-        let t = w.mul(diff);
-        let temp = sum.sub(Complex::new(t.im, -t.re));
-        scratch[k] = Complex::new(temp.re * half, temp.im * half);
+        unsafe {
+            let a = *input.get_unchecked(k);
+            let tmp = input.get_unchecked(m - k);
+            let b = Complex::new(tmp.re, -tmp.im);
+            let sum = a.add(b);
+            let diff = a.sub(b);
+            let tw = twiddles.get_unchecked(k);
+            let w = Complex::new(tw.re, -tw.im);
+            let t = w.mul(diff);
+            let temp = sum.sub(Complex::new(t.im, -t.re));
+            *scratch.get_unchecked_mut(k) = Complex::new(temp.re * half, temp.im * half);
+        }
     }
     fft.ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = scratch[i].re;
-        output[2 * i + 1] = scratch[i].im;
+        unsafe {
+            let s = *scratch.get_unchecked(i);
+            *output.get_unchecked_mut(2 * i) = s.re;
+            *output.get_unchecked_mut(2 * i + 1) = s.im;
+        }
     }
     Ok(())
 }
@@ -249,14 +265,17 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
     for k in 1..m {
-        let a = data[k];
-        let b = Complex::new(data[m - k].re, -data[m - k].im);
-        let sum = a.add(b);
-        let diff = a.sub(b);
-        let w = twiddles[k];
-        let t = w.mul(diff);
-        let temp = sum.add(Complex::new(t.im, -t.re));
-        output[k] = Complex::new(temp.re * half, temp.im * half);
+        unsafe {
+            let a = *data.get_unchecked(k);
+            let tmp = data.get_unchecked(m - k);
+            let b = Complex::new(tmp.re, -tmp.im);
+            let sum = a.add(b);
+            let diff = a.sub(b);
+            let w = *twiddles.get_unchecked(k);
+            let t = w.mul(diff);
+            let temp = sum.add(Complex::new(t.im, -t.re));
+            *output.get_unchecked_mut(k) = Complex::new(temp.re * half, temp.im * half);
+        }
     }
     Ok(())
 }
@@ -287,19 +306,26 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         (input[0].re - input[m].re) * half,
     );
     for k in 1..m {
-        let a = input[k];
-        let b = Complex::new(input[m - k].re, -input[m - k].im);
-        let sum = a.add(b);
-        let diff = a.sub(b);
-        let w = Complex::new(twiddles[k].re, -twiddles[k].im);
-        let t = w.mul(diff);
-        let temp = sum.sub(Complex::new(t.im, -t.re));
-        data[k] = Complex::new(temp.re * half, temp.im * half);
+        unsafe {
+            let a = *input.get_unchecked(k);
+            let tmp = input.get_unchecked(m - k);
+            let b = Complex::new(tmp.re, -tmp.im);
+            let sum = a.add(b);
+            let diff = a.sub(b);
+            let tw = twiddles.get_unchecked(k);
+            let w = Complex::new(tw.re, -tw.im);
+            let t = w.mul(diff);
+            let temp = sum.sub(Complex::new(t.im, -t.re));
+            *data.get_unchecked_mut(k) = Complex::new(temp.re * half, temp.im * half);
+        }
     }
     fft.ifft(data)?;
     for i in 0..m {
-        output[2 * i] = data[i].re;
-        output[2 * i + 1] = data[i].im;
+        unsafe {
+            let val = *data.get_unchecked(i);
+            *output.get_unchecked_mut(2 * i) = val.re;
+            *output.get_unchecked_mut(2 * i + 1) = val.im;
+        }
     }
     Ok(())
 }
@@ -336,14 +362,15 @@ where
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
     let half = unsafe { _mm_set1_ps(0.5) };
     for k in 1..m {
-        let a = data[k];
-        let b = Complex32::new(data[m - k].re, -data[m - k].im);
-        let sum_re = a.re + b.re;
-        let sum_im = a.im + b.im;
-        let diff_re = a.re - b.re;
-        let diff_im = a.im - b.im;
-        let w = twiddles[k];
         unsafe {
+            let a = *data.get_unchecked(k);
+            let tmp = data.get_unchecked(m - k);
+            let b = Complex32::new(tmp.re, -tmp.im);
+            let sum_re = a.re + b.re;
+            let sum_im = a.im + b.im;
+            let diff_re = a.re - b.re;
+            let diff_im = a.im - b.im;
+            let w = *twiddles.get_unchecked(k);
             let v_re = _mm_set1_ps(diff_re);
             let v_im = _mm_set1_ps(diff_im);
             let w_re = _mm_set1_ps(w.re);
@@ -360,8 +387,9 @@ where
             let temp_im = sum_im - t_re;
             let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
             let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
-            output[k].re = _mm_cvtss_f32(res_re);
-            output[k].im = _mm_cvtss_f32(res_im);
+            let out = output.get_unchecked_mut(k);
+            (*out).re = _mm_cvtss_f32(res_re);
+            (*out).im = _mm_cvtss_f32(res_im);
         }
     }
     Ok(())
@@ -400,14 +428,16 @@ where
         );
     }
     for k in 1..m {
-        let a = input[k];
-        let b = Complex32::new(input[m - k].re, -input[m - k].im);
-        let sum_re = a.re + b.re;
-        let sum_im = a.im + b.im;
-        let diff_re = a.re - b.re;
-        let diff_im = a.im - b.im;
-        let w = Complex32::new(twiddles[k].re, -twiddles[k].im);
         unsafe {
+            let a = *input.get_unchecked(k);
+            let tmp = input.get_unchecked(m - k);
+            let b = Complex32::new(tmp.re, -tmp.im);
+            let sum_re = a.re + b.re;
+            let sum_im = a.im + b.im;
+            let diff_re = a.re - b.re;
+            let diff_im = a.im - b.im;
+            let tw = twiddles.get_unchecked(k);
+            let w = Complex32::new(tw.re, -tw.im);
             let v_re = _mm_set1_ps(diff_re);
             let v_im = _mm_set1_ps(diff_im);
             let w_re = _mm_set1_ps(w.re);
@@ -424,14 +454,18 @@ where
             let temp_im = sum_im + t_re;
             let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
             let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
-            data[k].re = _mm_cvtss_f32(res_re);
-            data[k].im = _mm_cvtss_f32(res_im);
+            let out = data.get_unchecked_mut(k);
+            (*out).re = _mm_cvtss_f32(res_re);
+            (*out).im = _mm_cvtss_f32(res_im);
         }
     }
     ifft(data)?;
     for i in 0..m {
-        output[2 * i] = data[i].re;
-        output[2 * i + 1] = data[i].im;
+        unsafe {
+            let val = *data.get_unchecked(i);
+            *output.get_unchecked_mut(2 * i) = val.re;
+            *output.get_unchecked_mut(2 * i + 1) = val.im;
+        }
     }
     Ok(())
 }

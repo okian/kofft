@@ -349,18 +349,25 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 let mut i = 0;
                 while i < n {
                     let mut w1 = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 4) {
+                    let half = len / 2;
+                    let quarter = len / 4;
+                    // SAFETY: `i + len <= n` and `len` is a power of two, so the
+                    // accesses below stay within the `input` slice.
+                    let ptr = unsafe { input.as_mut_ptr().add(i) };
+                    for j in 0..quarter {
                         let w2 = w1.mul(w1);
                         let w3 = w2.mul(w1);
-                        let a = input[i + j];
-                        let b = input[i + j + len / 2].mul(w1);
-                        let c = input[i + j + len / 4].mul(w2);
-                        let d = input[i + j + len / 2 + len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + len / 2 + len / 4] = x3;
+                        unsafe {
+                            let a = *ptr.add(j);
+                            let b = (*ptr.add(j + half)).mul(w1);
+                            let c = (*ptr.add(j + quarter)).mul(w2);
+                            let d = (*ptr.add(j + half + quarter)).mul(w3);
+                            let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                            *ptr.add(j) = x0;
+                            *ptr.add(j + quarter) = x1;
+                            *ptr.add(j + half) = x2;
+                            *ptr.add(j + half + quarter) = x3;
+                        }
                         w1 = w1.mul(w_step);
                     }
                     i += len;
@@ -384,23 +391,33 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                         let half = len / 2;
                         input32.par_chunks_mut(len).for_each(move |chunk| {
                             let mut w = Complex32::new(1.0, 0.0);
+                            // SAFETY: `chunk` has length `len` by construction and
+                            // `half <= len`, so pointer arithmetic stays in bounds.
+                            let ptr = chunk.as_mut_ptr();
                             for j in 0..half {
-                                let u = chunk[j];
-                                let v = chunk[j + half].mul(w);
-                                chunk[j] = u.add(v);
-                                chunk[j + half] = u.sub(v);
+                                unsafe {
+                                    let u = *ptr.add(j);
+                                    let v = (*ptr.add(j + half)).mul(w);
+                                    *ptr.add(j) = u.add(v);
+                                    *ptr.add(j + half) = u.sub(v);
+                                }
                                 w = w.mul(w_step32);
                             }
                         });
                     } else {
                         let mut i = 0;
+                        let half = len / 2;
                         while i < n {
                             let mut w = Complex::new(T::one(), T::zero());
-                            for j in 0..(len / 2) {
-                                let u = input[i + j];
-                                let v = input[i + j + len / 2].mul(w);
-                                input[i + j] = u.add(v);
-                                input[i + j + len / 2] = u.sub(v);
+                            // SAFETY: `i + len <= n` so accesses stay in bounds.
+                            let ptr = unsafe { input.as_mut_ptr().add(i) };
+                            for j in 0..half {
+                                unsafe {
+                                    let u = *ptr.add(j);
+                                    let v = (*ptr.add(j + half)).mul(w);
+                                    *ptr.add(j) = u.add(v);
+                                    *ptr.add(j + half) = u.sub(v);
+                                }
                                 w = w.mul(w_step);
                             }
                             i += len;
@@ -410,13 +427,18 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 #[cfg(not(feature = "parallel"))]
                 {
                     let mut i = 0;
+                    let half = len / 2;
                     while i < n {
                         let mut w = Complex::new(T::one(), T::zero());
-                        for j in 0..(len / 2) {
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
+                        // SAFETY: `i + len <= n` so pointer arithmetic is valid.
+                        let ptr = unsafe { input.as_mut_ptr().add(i) };
+                        for j in 0..half {
+                            unsafe {
+                                let u = *ptr.add(j);
+                                let v = (*ptr.add(j + half)).mul(w);
+                                *ptr.add(j) = u.add(v);
+                                *ptr.add(j + half) = u.sub(v);
+                            }
                             w = w.mul(w_step);
                         }
                         i += len;
