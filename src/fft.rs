@@ -25,6 +25,7 @@ pub use crate::num::{Complex, Complex32, Complex64, Float};
 
 pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
+    bitrev_cache: HashMap<usize, Arc<[usize]>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -37,6 +38,7 @@ impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
+            bitrev_cache: HashMap::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
@@ -51,6 +53,15 @@ impl<T: Float> FftPlanner<T> {
             self.cache.insert(n, Arc::<[Complex<T>]>::from(vec));
         }
         self.cache.get(&n).unwrap().as_ref()
+    }
+
+    pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
+        if !self.bitrev_cache.contains_key(&n) {
+            let vec = compute_bitrev_table(n);
+            self.bitrev_cache
+                .insert(n, Arc::<[usize]>::from(vec));
+        }
+        Arc::clone(self.bitrev_cache.get(&n).unwrap())
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
@@ -77,6 +88,13 @@ impl<T: Float> FftPlanner<T> {
             FftStrategy::Auto
         }
     }
+}
+
+fn compute_bitrev_table(n: usize) -> Vec<usize> {
+    let bits = n.trailing_zeros();
+    (0..n)
+        .map(|i| i.reverse_bits() >> (usize::BITS - bits))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,14 +226,12 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if (n & (n - 1)) == 0 {
             // Power of two: use radix-4 where possible, then radix-2
-            let mut j = 0;
-            for i in 1..n {
-                let mut bit = n >> 1;
-                while j & bit != 0 {
-                    j ^= bit;
-                    bit >>= 1;
-                }
-                j ^= bit;
+            let bitrev = {
+                let mut planner = self.planner.borrow_mut();
+                planner.get_bitrev(n)
+            };
+            for i in 0..n {
+                let j = bitrev[i];
                 if i < j {
                     input.swap(i, j);
                 }
@@ -711,14 +727,12 @@ impl ScalarFftImpl<f32> {
         twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
         let n = input.len();
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
+        let bitrev = {
+            let mut planner = self.planner.borrow_mut();
+            planner.get_bitrev(n)
+        };
+        for i in 0..n {
+            let j = bitrev[i];
             if i < j {
                 input.swap(i, j);
             }
@@ -833,14 +847,12 @@ impl ScalarFftImpl<f32> {
     }
     fn fft_radix2(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
+        let bitrev = {
+            let mut planner = self.planner.borrow_mut();
+            planner.get_bitrev(n)
+        };
+        for i in 0..n {
+            let j = bitrev[i];
             if i < j {
                 input.swap(i, j);
             }
