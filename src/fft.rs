@@ -1687,9 +1687,13 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
         any(feature = "x86_64", target_feature = "avx2")
     ))]
     {
-        return Box::new(SimdFftX86_64Impl);
+        Box::new(SimdFftX86_64Impl)
     }
-    #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+    #[cfg(all(
+        target_arch = "x86_64",
+        any(feature = "sse", target_feature = "sse2"),
+        not(any(feature = "x86_64", target_feature = "avx2"))
+    ))]
     {
         Box::new(SimdFftSseImpl)
     }
@@ -1698,14 +1702,14 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
         any(feature = "aarch64", target_feature = "neon")
     ))]
     {
-        return Box::new(SimdFftAArch64Impl);
+        Box::new(SimdFftAArch64Impl)
     }
     #[cfg(all(
         target_arch = "wasm32",
         any(feature = "wasm", target_feature = "simd128")
     ))]
     {
-        return Box::new(SimdFftWasmImpl);
+        Box::new(SimdFftWasmImpl)
     }
     #[cfg(not(any(
         all(
@@ -1723,7 +1727,7 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
         )
     )))]
     {
-        return Box::new(ScalarFftImpl::<f32>::default());
+        Box::new(ScalarFftImpl::<f32>::default())
     }
 }
 
