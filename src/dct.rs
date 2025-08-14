@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use core::f32::consts::PI;
 #[allow(unused_imports)]
-use crate::fft::Float;
+use crate::fft::{Float, FftError};
 
 /// DCT-II (the "standard" DCT, used in JPEG, etc.)
 pub fn dct2(input: &[f32]) -> Vec<f32> {
@@ -54,9 +54,16 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
     output
 }
 
-/// MCU/stack-only, const-generic, in-place DCT-II for power-of-two sizes (no heap, no alloc)
-/// User must provide output buffer of length N.
-pub fn dct2_inplace_stack<const N: usize>(input: &[f32; N], output: &mut [f32; N]) {
+/// MCU/stack-only, const-generic, in-place DCT-II for power-of-two sizes (no heap, no alloc).
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dct2_inplace_stack<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
     let factor = core::f32::consts::PI / N as f32;
     for k in 0..N {
         let mut sum = 0.0;
@@ -65,6 +72,7 @@ pub fn dct2_inplace_stack<const N: usize>(input: &[f32; N], output: &mut [f32; N
         }
         output[k] = sum;
     }
+    Ok(())
 }
 
 /// Batch DCT-II
@@ -204,7 +212,7 @@ mod coverage_tests {
     fn test_dct2_inplace_stack_and_multi_channel() {
         let input = [1.0f32, 2.0, 3.0, 4.0];
         let mut out = [0.0f32; 4];
-        dct2_inplace_stack(&input, &mut out);
+        dct2_inplace_stack(&input, &mut out).unwrap();
         let out_ref = dct2(&input);
         for (a, b) in out.iter().zip(out_ref.iter()) {
             assert!((a - b).abs() < 1e-4);
@@ -215,6 +223,12 @@ mod coverage_tests {
         multi_channel_iii(&mut channels);
         multi_channel_iv(&mut channels);
         assert_eq!(channels.len(), 2);
+    }
+    #[test]
+    fn test_dct2_inplace_stack_invalid() {
+        let input = [1.0f32, 2.0, 3.0];
+        let mut out = [0.0f32; 3];
+        assert_eq!(dct2_inplace_stack(&input, &mut out).unwrap_err(), FftError::NonPowerOfTwoNoStd);
     }
     #[test]
     fn test_dct4_roundtrip() {

@@ -12,6 +12,7 @@ use crate::fft::Float;
 
 /// Tukey window (tapered cosine)
 pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
+    let alpha = alpha.clamp(0.0, 1.0);
     let mut w = vec![0.0; len];
     let edge = floorf(alpha * (len as f32 - 1.0) / 2.0) as usize;
     for n in 0..len {
@@ -76,4 +77,14 @@ mod tests {
         assert_eq!(w3.len(), 8);
         assert_eq!(w4.len(), 8);
     }
-} 
+
+    #[test]
+    fn test_tukey_alpha_clamp() {
+        let w_neg = tukey(8, -0.5);
+        let w_zero = tukey(8, 0.0);
+        assert_eq!(w_neg, w_zero);
+        let w_gt = tukey(8, 1.5);
+        let w_one = tukey(8, 1.0);
+        assert_eq!(w_gt, w_one);
+    }
+}

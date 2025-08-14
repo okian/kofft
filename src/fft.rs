@@ -52,6 +52,7 @@ pub enum FftError {
     MismatchedLengths,
     InvalidStride,
     InvalidHopSize,
+    InvalidValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

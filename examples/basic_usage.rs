@@ -134,7 +134,7 @@ fn main() {
     let target_freq = 1000.0;
     let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 
-    let magnitude = goertzel_f32(&signal, sample_rate, target_freq);
+    let magnitude = goertzel_f32(&signal, sample_rate, target_freq).unwrap();
     println!("   Signal length: {}", signal.len());
     println!("   Sample rate: {} Hz", sample_rate);
     println!("   Target frequency: {} Hz", target_freq);
@@ -172,7 +172,7 @@ fn main() {
     // 9. Hilbert Transform
     println!("9. Hilbert Transform");
     let hilbert_input = vec![1.0, 0.0, -1.0, 0.0];
-    let hilbert_result = hilbert_analytic(&hilbert_input);
+    let hilbert_result = hilbert_analytic(&hilbert_input).unwrap();
     println!(
         "   Analytic signal: {:?}",
         hilbert_result
@@ -198,7 +198,7 @@ fn main() {
     // 11. Cepstrum Analysis
     println!("11. Cepstrum Analysis");
     let cep_input = vec![1.0, 2.0, 3.0, 4.0];
-    let cep_result = real_cepstrum(&cep_input);
+    let cep_result = real_cepstrum(&cep_input).unwrap();
     println!(
         "   Cepstrum: {:?}",
         cep_result

@@ -3,7 +3,7 @@
 
 use libm::{sqrtf, floorf};
 #[allow(unused_imports)]
-use crate::fft::Float;
+use crate::fft::{Float, FftError};
 
 /// Compute the magnitude at a single DFT bin using the Goertzel algorithm.
 /// - `input`: real-valued signal
@@ -11,11 +11,21 @@ use crate::fft::Float;
 /// - `sample_rate`: sample rate in Hz
 /// - `target_freq`: frequency to detect in Hz
 #[cfg(feature = "std")]
-pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> f32 {
+pub fn goertzel_f32(
+    input: &[f32],
+    sample_rate: f32,
+    target_freq: f32,
+) -> Result<f32, FftError> {
+    if input.is_empty() {
+        return Err(FftError::EmptyInput);
+    }
+    if sample_rate <= 0.0 {
+        return Err(FftError::InvalidValue);
+    }
     let n = input.len() as f32;
-    let k = floorf(target_freq * n as f32 / sample_rate);
-    let w = 2.0 * core::f32::consts::PI * k / n;
-    let coeff = (2.0 * w).cos();
+    let k = floorf(target_freq * n / sample_rate);
+    let omega = 2.0 * core::f32::consts::PI * k / n;
+    let coeff = 2.0 * omega.cos();
     let mut s_prev = 0.0;
     let mut s_prev2 = 0.0;
     for &x in input {
@@ -24,16 +34,26 @@ pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> f32 {
         s_prev = s;
     }
     let power = s_prev2 * s_prev2 + s_prev * s_prev - coeff * s_prev * s_prev2;
-    sqrtf(power)
+    Ok(sqrtf(power))
 }
 
 #[cfg(not(feature = "std"))]
-pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> f32 {
+pub fn goertzel_f32(
+    input: &[f32],
+    sample_rate: f32,
+    target_freq: f32,
+) -> Result<f32, FftError> {
     use libm::{sqrtf, cosf, floorf};
+    if input.is_empty() {
+        return Err(FftError::EmptyInput);
+    }
+    if sample_rate <= 0.0 {
+        return Err(FftError::InvalidValue);
+    }
     let n = input.len() as f32;
-    let k = floorf(target_freq * n as f32 / sample_rate);
-    let w = 2.0 * core::f32::consts::PI * k / n;
-    let coeff = cosf(2.0 * w);
+    let k = floorf(target_freq * n / sample_rate);
+    let omega = 2.0 * core::f32::consts::PI * k / n;
+    let coeff = 2.0 * cosf(omega);
     let mut s_prev = 0.0;
     let mut s_prev2 = 0.0;
     for &x in input {
@@ -42,7 +62,7 @@ pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> f32 {
         s_prev = s;
     }
     let power = s_prev2 * s_prev2 + s_prev * s_prev - coeff * s_prev * s_prev2;
-    sqrtf(power)
+    Ok(sqrtf(power))
 }
 
 #[cfg(test)]
@@ -55,8 +75,19 @@ mod tests {
         let f = 1000.0;
         let n = 100;
         let signal: Vec<f32> = (0..n).map(|i| (2.0 * core::f32::consts::PI * f * i as f32 / sr).sin()).collect();
-        let mag = goertzel_f32(&signal, sr, f);
+        let mag = goertzel_f32(&signal, sr, f).unwrap();
         let _mean = signal.iter().map(|&x| x.abs()).sum::<f32>() / signal.len() as f32;
         assert!(mag > 0.0); // Only robust check with libm
     }
-} 
+
+    #[test]
+    fn test_goertzel_empty() {
+        assert_eq!(goertzel_f32(&[], 1.0, 1.0).unwrap_err(), FftError::EmptyInput);
+    }
+
+    #[test]
+    fn test_goertzel_bad_rate() {
+        let signal = [1.0f32, 2.0];
+        assert_eq!(goertzel_f32(&signal, 0.0, 1.0).unwrap_err(), FftError::InvalidValue);
+    }
+}
