@@ -88,7 +88,6 @@ type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
-    bitrev_cache: HashMap<usize, Arc<[usize]>>,
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
 }
 
@@ -102,7 +101,6 @@ impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
-            bitrev_cache: HashMap::new(),
             bluestein_cache: HashMap::new(),
         }
     }
@@ -123,14 +121,6 @@ impl<T: Float> FftPlanner<T> {
             Arc::<[Complex<T>]>::from(vec)
         });
         self.cache.get(&n).unwrap().as_ref()
-    }
-
-    pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
-        if !self.bitrev_cache.contains_key(&n) {
-            let vec = compute_bitrev_table(n);
-            self.bitrev_cache.insert(n, Arc::<[usize]>::from(vec));
-        }
-        Arc::clone(self.bitrev_cache.get(&n).unwrap())
     }
 
     #[cfg(feature = "std")]
@@ -185,13 +175,6 @@ impl<T: Float> FftPlanner<T> {
             FftStrategy::Auto
         }
     }
-}
-
-fn compute_bitrev_table(n: usize) -> Vec<usize> {
-    let bits = n.trailing_zeros();
-    (0..n)
-        .map(|i| i.reverse_bits() >> (usize::BITS - bits))
-        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -322,107 +305,44 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         if (n & (n - 1)) == 0 {
-            // Power of two: use radix-4 where possible, then radix-2
-            let bitrev = {
-                let mut planner = self.planner.borrow_mut();
-                planner.get_bitrev(n)
-            };
-            for i in 0..n {
-                let j = bitrev[i];
-                if i < j {
-                    input.swap(i, j);
-                }
-            }
-            // Largest power of four dividing n
-            let pow4_stages = n.trailing_zeros() / 2;
-            let mut len = 4usize;
-            let max_radix4 = 1usize << (pow4_stages * 2);
-
-            // Fetch all twiddles once and reuse them in both radix-4 and
-            // radix-2 stages to avoid repeated planner lookups.
+            // Power of two: use Stockham auto-sort algorithm
+            let mut scratch = vec![Complex::zero(); n];
             let mut planner = self.planner.borrow_mut();
             let twiddles = planner.get_twiddles(n);
-
-            // Radix-4 stages
-            while len <= max_radix4 {
-                let w_step = twiddles[n / len];
-                let mut i = 0;
-                while i < n {
-                    let mut w1 = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 4) {
-                        let w2 = w1.mul(w1);
-                        let w3 = w2.mul(w1);
-                        let a = input[i + j];
-                        let b = input[i + j + len / 2].mul(w1);
-                        let c = input[i + j + len / 4].mul(w2);
-                        let d = input[i + j + len / 2 + len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + len / 2 + len / 4] = x3;
-                        w1 = w1.mul(w_step);
+            let mut len = 1;
+            let mut from_input = true;
+            while len < n {
+                let step = n / (len * 2);
+                if from_input {
+                    for k in 0..len {
+                        let w = twiddles[k * step];
+                        for j in 0..step {
+                            let i0 = j + 2 * k * step;
+                            let i1 = i0 + step;
+                            let a = input[i0];
+                            let b = input[i1].mul(w);
+                            scratch[i0] = a.add(b);
+                            scratch[i1] = a.sub(b);
+                        }
                     }
-                    i += len;
-                }
-                len *= 4;
-            }
-
-            // Remaining radix-2 stages
-            let mut len = max_radix4 * 2;
-            while len <= n {
-                let w_step = twiddles[n / len];
-                #[cfg(feature = "parallel")]
-                {
-                    if should_parallelize_fft(n)
-                        && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
-                    {
-                        let w_step32 =
-                            unsafe { *(&w_step as *const Complex<T> as *const Complex32) };
-                        let input32 =
-                            unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                        let half = len / 2;
-                        input32.par_chunks_mut(len).for_each(move |chunk| {
-                            let mut w = Complex32::new(1.0, 0.0);
-                            for j in 0..half {
-                                let u = chunk[j];
-                                let v = chunk[j + half].mul(w);
-                                chunk[j] = u.add(v);
-                                chunk[j + half] = u.sub(v);
-                                w = w.mul(w_step32);
-                            }
-                        });
-                    } else {
-                        let mut i = 0;
-                        while i < n {
-                            let mut w = Complex::new(T::one(), T::zero());
-                            for j in 0..(len / 2) {
-                                let u = input[i + j];
-                                let v = input[i + j + len / 2].mul(w);
-                                input[i + j] = u.add(v);
-                                input[i + j + len / 2] = u.sub(v);
-                                w = w.mul(w_step);
-                            }
-                            i += len;
+                } else {
+                    for k in 0..len {
+                        let w = twiddles[k * step];
+                        for j in 0..step {
+                            let i0 = j + 2 * k * step;
+                            let i1 = i0 + step;
+                            let a = scratch[i0];
+                            let b = scratch[i1].mul(w);
+                            input[i0] = a.add(b);
+                            input[i1] = a.sub(b);
                         }
                     }
                 }
-                #[cfg(not(feature = "parallel"))]
-                {
-                    let mut i = 0;
-                    while i < n {
-                        let mut w = Complex::new(T::one(), T::zero());
-                        for j in 0..(len / 2) {
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
-                            w = w.mul(w_step);
-                        }
-                        i += len;
-                    }
-                }
+                from_input = !from_input;
                 len <<= 1;
+            }
+            if !from_input {
+                input.copy_from_slice(&scratch);
             }
             return Ok(());
         }
@@ -649,65 +569,8 @@ impl<T: Float> ScalarFftImpl<T> {
     }
 
     pub fn fft_radix4(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
-        let n = input.len();
-        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
-            // Fallback to generic FFT if not power of four
-            return self.fft(input);
-        }
-        // Bit-reversal for radix-4
-        let mut j = 0usize;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 4;
-        while len <= n {
-            let mut i = 0;
-            if len == 4 {
-                while i < n {
-                    let (x0, x1, x2, x3) =
-                        butterfly4(input[i], input[i + 1], input[i + 2], input[i + 3]);
-                    input[i] = x0;
-                    input[i + 1] = x1;
-                    input[i + 2] = x2;
-                    input[i + 3] = x3;
-                    i += len;
-                }
-            } else {
-                let w_step = {
-                    let mut planner = self.planner.borrow_mut();
-                    let twiddles = planner.get_twiddles(n);
-                    twiddles[n / len]
-                };
-                while i < n {
-                    let mut w1 = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 4) {
-                        let w2 = w1.mul(w1);
-                        let w3 = w2.mul(w1);
-                        let a = input[i + j];
-                        let b = input[i + j + len / 4].mul(w1);
-                        let c = input[i + j + len / 2].mul(w2);
-                        let d = input[i + j + 3 * len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + 3 * len / 4] = x3;
-                        w1 = w1.mul(w_step);
-                    }
-                    i += len;
-                }
-            }
-            len <<= 2;
-        }
-        Ok(())
+        // Stockham FFT handles all power-of-two sizes; reuse `fft`
+        self.fft(input)
     }
 }
 
@@ -807,182 +670,32 @@ impl ScalarFftImpl<f32> {
     pub fn fft_radix2_with_twiddles(
         &self,
         input: &mut [Complex32],
-        twiddles: &TwiddleFactorBuffer,
+        _twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
-        let n = input.len();
-        let bitrev = {
-            let mut planner = self.planner.borrow_mut();
-            planner.get_bitrev(n)
-        };
-        for i in 0..n {
-            let j = bitrev[i];
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 2;
-        while len <= n {
-            let step = n / len;
-            let mut i = 0;
-            while i < n {
-                for j in 0..(len / 2) {
-                    let w = twiddles.get(j * step);
-                    let u = input[i + j];
-                    let v = input[i + j + len / 2].mul(w);
-                    input[i + j] = u.add(v);
-                    input[i + j + len / 2] = u.sub(v);
-                }
-                i += len;
-            }
-            len <<= 1;
-        }
-        Ok(())
+        // Delegate to Stockham-based FFT
+        self.fft(input)
     }
     #[cfg(feature = "std")]
     pub fn fft_radix4_with_twiddles(
         &self,
         input: &mut [Complex32],
-        twiddles: &TwiddleFactorBuffer,
+        _twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
-        let n = input.len();
-        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
-            // Not a power of 4, fallback to radix-2
-            return self.fft_radix2_with_twiddles(input, twiddles);
-        }
-        // Bit-reversal for radix-4
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 4;
-        while len <= n {
-            let step = n / len;
-            let mut i = 0;
-            while i < n {
-                for j in 0..(len / 4) {
-                    let w1 = twiddles.get(j * step);
-                    let w2 = twiddles.get(2 * j * step);
-                    let w3 = twiddles.get(3 * j * step);
-                    let a = input[i + j];
-                    let b = input[i + j + len / 4].mul(w1);
-                    let c = input[i + j + len / 2].mul(w2);
-                    let d = input[i + j + 3 * len / 4].mul(w3);
-                    let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                    input[i + j] = x0;
-                    input[i + j + len / 4] = x1;
-                    input[i + j + len / 2] = x2;
-                    input[i + j + 3 * len / 4] = x3;
-                }
-                i += len;
-            }
-            len <<= 2;
-        }
-        Ok(())
+        // Delegate to Stockham-based FFT
+        self.fft(input)
     }
     #[cfg(feature = "std")]
     pub fn fft_mixed_radix_with_twiddles(
         &self,
         input: &mut [Complex32],
-        twiddles: &TwiddleFactorBuffer,
+        _twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
-        let n = input.len();
-        let factors = factorize(n);
-        if factors.iter().all(|&f| f == 2 || f == 4) {
-            if factors.iter().all(|&f| f == 4) {
-                self.fft_radix4_with_twiddles(input, twiddles)
-            } else {
-                self.fft_radix2_with_twiddles(input, twiddles)
-            }
-        } else {
-            self.fft(input)
-        }
+        // Stockham FFT covers all needed cases
+        self.fft(input)
     }
     pub fn fft_mixed_radix(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        let n = input.len();
-        if n == 0 {
-            return Err(FftError::EmptyInput);
-        }
-        if n == 1 {
-            return Ok(());
-        }
-        let factors = factorize(n);
-        if factors.iter().all(|&f| f == 2 || f == 4) {
-            // Use radix-2/radix-4 as appropriate
-            if factors.iter().all(|&f| f == 4) {
-                self.fft_radix4(input)
-            } else {
-                self.fft_radix2(input)
-            }
-        } else {
-            // Fallback to Bluestein's for unsupported factors
-            self.fft(input)
-        }
-    }
-    fn fft_radix2(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        let n = input.len();
-        let bitrev = {
-            let mut planner = self.planner.borrow_mut();
-            planner.get_bitrev(n)
-        };
-        for i in 0..n {
-            let j = bitrev[i];
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 2;
-        while len <= n {
-            let mut i = 0;
-            if len == 2 {
-                while i < n {
-                    // Unrolled butterfly for len=2
-                    let u = input[i];
-                    let v = input[i + 1];
-                    input[i] = u.add(v);
-                    input[i + 1] = u.sub(v);
-                    i += len;
-                }
-            } else if len == 4 {
-                while i < n {
-                    // Unrolled butterfly for len=4
-                    let (x0, x1, x2, x3) =
-                        butterfly4(input[i], input[i + 1], input[i + 2], input[i + 3]);
-                    input[i] = x0;
-                    input[i + 1] = x1;
-                    input[i + 2] = x2;
-                    input[i + 3] = x3;
-                    i += len;
-                }
-            } else {
-                let w_step = {
-                    let mut planner = self.planner.borrow_mut();
-                    let twiddles = planner.get_twiddles(n);
-                    twiddles[n / len]
-                };
-                while i < n {
-                    let mut w = Complex32::new(1.0, 0.0);
-                    for j in 0..(len / 2) {
-                        let u = input[i + j];
-                        let v = input[i + j + len / 2].mul(w);
-                        input[i + j] = u.add(v);
-                        input[i + j + len / 2] = u.sub(v);
-                        w = w.mul(w_step);
-                    }
-                    i += len;
-                }
-            }
-            len <<= 1;
-        }
-        // For very large n, consider block/tiled FFTs for cache locality (future optimization)
-        Ok(())
+        // Mixed-radix path replaced by Stockham FFT
+        self.fft(input)
     }
 }
 

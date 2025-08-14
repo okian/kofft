@@ -109,6 +109,18 @@ fn bench_complex(c: &mut Criterion, size: usize) {
     let input: Vec<Complex32> = (0..size).map(|i| Complex32::new(i as f32, 0.0)).collect();
     let mut data = input.clone();
 
+    // Verify correctness against rustfft before benchmarking
+    let mut check = input.clone();
+    let mut check_planner = RustFftPlanner::<f32>::new();
+    let rust_fft = check_planner.plan_fft_forward(size);
+    let mut rust_data: Vec<rustfft::num_complex::Complex<f32>> =
+        input.iter().map(|c| rustfft::num_complex::Complex::new(c.re, c.im)).collect();
+    rust_fft.process(&mut rust_data);
+    let check_fft = ScalarFftImpl::with_planner(FftPlanner::<f32>::new());
+    check_fft.fft(&mut check).unwrap();
+    for (a, b) in check.iter().zip(rust_data.iter()) {
+        assert!((a.re - b.re).abs() < 1e-3 && (a.im - b.im).abs() < 1e-3);
+    }
     // kofft single-threaded
     let planner = FftPlanner::<f32>::new();
     let fft = ScalarFftImpl::with_planner(planner);
