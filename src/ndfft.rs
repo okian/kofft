@@ -92,15 +92,9 @@ pub fn fft2d_inplace<T: Float>(
         let start = r * cols;
         fft.fft(&mut data[start..start + cols])?;
     }
-    // FFT on columns using index calculations
+    // FFT on columns using strided transform
     for c in 0..cols {
-        for r in 0..rows {
-            scratch_col[r] = data[r * cols + c];
-        }
-        fft.fft(scratch_col)?;
-        for r in 0..rows {
-            data[r * cols + c] = scratch_col[r];
-        }
+        fft.fft_strided(&mut data[c..], cols, scratch_col)?;
     }
     Ok(())
 }
@@ -137,25 +131,15 @@ pub fn fft3d_inplace<T: Float>(
     // FFT on depth (z axis)
     for r in 0..rows {
         for c in 0..cols {
-            for d in 0..depth {
-                scratch.tube[d] = data[d * rows * cols + r * cols + c];
-            }
-            fft.fft(scratch.tube)?;
-            for d in 0..depth {
-                data[d * rows * cols + r * cols + c] = scratch.tube[d];
-            }
+            let start = r * cols + c;
+            fft.fft_strided(&mut data[start..], rows * cols, scratch.tube)?;
         }
     }
     // FFT on rows (y axis)
     for d in 0..depth {
         for c in 0..cols {
-            for r in 0..rows {
-                scratch.row[r] = data[d * rows * cols + r * cols + c];
-            }
-            fft.fft(scratch.row)?;
-            for r in 0..rows {
-                data[d * rows * cols + r * cols + c] = scratch.row[r];
-            }
+            let start = d * rows * cols + c;
+            fft.fft_strided(&mut data[start..], cols, scratch.row)?;
         }
     }
     // FFT on columns (x axis)
@@ -186,13 +170,7 @@ mod tests {
         }
         let mut col = vec![Complex::zero(); rows];
         for c in 0..cols {
-            for r in 0..rows {
-                col[r] = data[r * cols + c];
-            }
-            fft.ifft(&mut col).unwrap();
-            for r in 0..rows {
-                data[r * cols + c] = col[r];
-            }
+            fft.ifft_strided(&mut data[c..], cols, &mut col).unwrap();
         }
     }
 
@@ -206,34 +184,23 @@ mod tests {
         let mut tube = vec![Complex::zero(); depth];
         for r in 0..rows {
             for c in 0..cols {
-                for d in 0..depth {
-                    tube[d] = data[d * rows * cols + r * cols + c];
-                }
-                fft.ifft(&mut tube).unwrap();
-                for d in 0..depth {
-                    data[d * rows * cols + r * cols + c] = tube[d];
-                }
+                let start = r * cols + c;
+                fft.ifft_strided(&mut data[start..], rows * cols, &mut tube)
+                    .unwrap();
             }
         }
         let mut row_buf = vec![Complex::zero(); rows];
         for d in 0..depth {
             for c in 0..cols {
-                for r in 0..rows {
-                    row_buf[r] = data[d * rows * cols + r * cols + c];
-                }
-                fft.ifft(&mut row_buf).unwrap();
-                for r in 0..rows {
-                    data[d * rows * cols + r * cols + c] = row_buf[r];
-                }
+                let start = d * rows * cols + c;
+                fft.ifft_strided(&mut data[start..], cols, &mut row_buf)
+                    .unwrap();
             }
         }
-        let mut col_buf = vec![Complex::zero(); cols];
         for d in 0..depth {
             for r in 0..rows {
                 let start = d * rows * cols + r * cols;
-                col_buf[..cols].copy_from_slice(&data[start..start + cols]);
-                fft.ifft(&mut col_buf).unwrap();
-                data[start..start + cols].copy_from_slice(&col_buf[..cols]);
+                fft.ifft(&mut data[start..start + cols]).unwrap();
             }
         }
     }

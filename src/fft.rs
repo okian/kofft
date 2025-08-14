@@ -425,11 +425,14 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         stride: usize,
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        if stride == 0 || input.len() % stride != 0 {
+        if stride == 0 {
             return Err(FftError::InvalidStride);
         }
-        let n = input.len() / stride;
-        if scratch.len() < n {
+        let n = scratch.len();
+        if n == 0 {
+            return Ok(());
+        }
+        if input.len() < (n - 1) * stride + 1 {
             return Err(FftError::MismatchedLengths);
         }
         for i in 0..n {
@@ -447,11 +450,14 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         stride: usize,
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        if stride == 0 || input.len() % stride != 0 {
+        if stride == 0 {
             return Err(FftError::InvalidStride);
         }
-        let n = input.len() / stride;
-        if scratch.len() < n {
+        let n = scratch.len();
+        if n == 0 {
+            return Ok(());
+        }
+        if input.len() < (n - 1) * stride + 1 {
             return Err(FftError::MismatchedLengths);
         }
         for i in 0..n {
