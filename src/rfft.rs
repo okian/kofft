@@ -135,13 +135,11 @@ pub fn rfft_stack<const N: usize, const M: usize>(
         return Err(FftError::MismatchedLengths);
     }
     let mut buf = [Complex32::new(0.0, 0.0); N];
-    for i in 0..N {
-        buf[i] = Complex32::new(input[i], 0.0);
+    for (b, &x) in buf.iter_mut().zip(input.iter()) {
+        *b = Complex32::new(x, 0.0);
     }
     fft_inplace_stack(&mut buf)?;
-    for k in 0..=N / 2 {
-        output[k] = buf[k];
-    }
+    output[..(N / 2 + 1)].copy_from_slice(&buf[..(N / 2 + 1)]);
     Ok(())
 }
 
@@ -159,15 +157,13 @@ pub fn irfft_stack<const N: usize, const M: usize>(
         return Err(FftError::MismatchedLengths);
     }
     let mut buf = [Complex32::new(0.0, 0.0); N];
-    for k in 0..=N / 2 {
-        buf[k] = input[k];
-    }
+    buf[..(N / 2 + 1)].copy_from_slice(&input[..(N / 2 + 1)]);
     for k in 1..N / 2 {
         buf[N - k] = Complex32::new(input[k].re, -input[k].im);
     }
     ifft_inplace_stack(&mut buf)?;
-    for i in 0..N {
-        output[i] = buf[i].re;
+    for (o, &b) in output.iter_mut().zip(buf.iter()) {
+        *o = b.re;
     }
     Ok(())
 }

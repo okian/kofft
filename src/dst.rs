@@ -3,23 +3,23 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::vec;
-use core::f32::consts::PI;
 #[allow(unused_imports)]
-use crate::fft::{Float, FftError};
+use crate::fft::{FftError, Float};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::f32::consts::PI;
 
 /// DST-I (sine transform, odd symmetry)
 pub fn dst1(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / (n as f32 + 1.0);
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             sum += x * ((i as f32 + 1.0) * (k as f32 + 1.0) * factor).sin();
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -29,12 +29,12 @@ pub fn dst2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -44,12 +44,12 @@ pub fn dst3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = input[0] / 2.0;
-        for i in 1..n {
-            sum += input[i] * (factor * (k as f32 + 0.5) * i as f32).sin();
+        for (i, &x) in input.iter().enumerate().skip(1) {
+            sum += x * (factor * (k as f32 + 0.5) * i as f32).sin();
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -59,12 +59,12 @@ pub fn dst4(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -98,13 +98,21 @@ pub fn batch_iv(batches: &mut [Vec<f32>]) {
     }
 }
 /// Multi-channel DST-I
-pub fn multi_channel_i(channels: &mut [Vec<f32>]) { batch_i(channels) }
+pub fn multi_channel_i(channels: &mut [Vec<f32>]) {
+    batch_i(channels)
+}
 /// Multi-channel DST-II
-pub fn multi_channel_ii(channels: &mut [Vec<f32>]) { batch_ii(channels) }
+pub fn multi_channel_ii(channels: &mut [Vec<f32>]) {
+    batch_ii(channels)
+}
 /// Multi-channel DST-III
-pub fn multi_channel_iii(channels: &mut [Vec<f32>]) { batch_iii(channels) }
+pub fn multi_channel_iii(channels: &mut [Vec<f32>]) {
+    batch_iii(channels)
+}
 /// Multi-channel DST-IV
-pub fn multi_channel_iv(channels: &mut [Vec<f32>]) { batch_iv(channels) }
+pub fn multi_channel_iv(channels: &mut [Vec<f32>]) {
+    batch_iv(channels)
+}
 
 /// MCU/stack-only, const-generic, in-place DST-II for power-of-two sizes (no heap, no alloc)
 ///
@@ -117,12 +125,12 @@ pub fn dst2_inplace_stack<const N: usize>(
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / N as f32;
-    for k in 0..N {
+    for (k, out) in output.iter_mut().enumerate().take(N) {
         let mut sum = 0.0;
-        for i in 0..N {
-            sum += input[i] * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+        for (i, &x) in input.iter().enumerate().take(N) {
+            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
         }
-        output[k] = sum;
+        *out = sum;
     }
     Ok(())
 }
@@ -138,12 +146,12 @@ pub fn dst4_inplace_stack<const N: usize>(
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / N as f32;
-    for k in 0..N {
+    for (k, out) in output.iter_mut().enumerate().take(N) {
         let mut sum = 0.0;
-        for i in 0..N {
-            sum += input[i] * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
+        for (i, &x) in input.iter().enumerate().take(N) {
+            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
         }
-        output[k] = sum;
+        *out = sum;
     }
     Ok(())
 }
@@ -221,8 +229,8 @@ mod dst4_tests {
 mod coverage_tests {
     use super::*;
     use alloc::format;
-    use proptest::proptest;
     use proptest::prop_assert;
+    use proptest::proptest;
     // use libm::fabsf;
 
     #[test]
@@ -241,7 +249,9 @@ mod coverage_tests {
     fn test_dst_all_zeros() {
         let x = [0.0; 8];
         let y = dst1(&x);
-        for v in y { assert_eq!(v, 0.0); }
+        for v in y {
+            assert_eq!(v, 0.0);
+        }
     }
     #[test]
     fn test_dst_all_ones() {
@@ -255,12 +265,18 @@ mod coverage_tests {
         let nonzero = x.iter().filter(|&&v| v != 0.0).count();
         let mean = x.iter().map(|&v: &f32| v.abs()).sum::<f32>() / x.len() as f32;
         let max = x.iter().map(|&v: &f32| v.abs()).fold(0.0, f32::max);
-        if max > 500.0 { return; } // skip pathological large values
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if max > 500.0 {
+            return;
+        } // skip pathological large values
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let y = dst2(&x);
         let z = dst3(&y);
         for (a, b) in x.iter().zip(z.iter()) {
-            if (a - b / 2.0).abs() > 1e2 { return; } // skip pathological floating-point case
+            if (a - b / 2.0).abs() > 1e2 {
+                return;
+            } // skip pathological floating-point case
             if (a - b / 2.0).abs() > 1e0 {
                 continue;
             }
@@ -289,7 +305,10 @@ mod coverage_tests {
     fn test_dst2_inplace_stack_invalid() {
         let input = [1.0f32, 2.0, 3.0];
         let mut out = [0.0f32; 3];
-        assert_eq!(dst2_inplace_stack(&input, &mut out).unwrap_err(), FftError::NonPowerOfTwoNoStd);
+        assert_eq!(
+            dst2_inplace_stack(&input, &mut out).unwrap_err(),
+            FftError::NonPowerOfTwoNoStd
+        );
     }
     proptest! {
         #[test]
@@ -309,4 +328,4 @@ mod coverage_tests {
             }
         }
     }
-} 
+}

@@ -3,8 +3,8 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 use libm::{cosf, sinf};
 
 #[cfg(not(feature = "std"))]
@@ -16,7 +16,7 @@ pub fn dht(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = 2.0 * core::f32::consts::PI / n as f32;
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             let angle = factor * (i * k) as f32;
@@ -24,7 +24,7 @@ pub fn dht(input: &[f32]) -> Vec<f32> {
             let im = sinf(angle);
             sum += x * (re + im);
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -35,7 +35,7 @@ pub fn dht(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = 2.0 * core::f32::consts::PI / n as f32;
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             let angle = factor * (i * k) as f32;
@@ -43,7 +43,7 @@ pub fn dht(input: &[f32]) -> Vec<f32> {
             let im = sinf(angle);
             sum += x * (re + im);
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -56,7 +56,9 @@ pub fn batch(batches: &mut [Vec<f32>]) {
     }
 }
 /// Multi-channel DHT
-pub fn multi_channel(channels: &mut [Vec<f32>]) { batch(channels) }
+pub fn multi_channel(channels: &mut [Vec<f32>]) {
+    batch(channels)
+}
 
 #[cfg(test)]
 mod tests {
@@ -86,8 +88,8 @@ mod batch_tests {
 #[cfg(test)]
 mod coverage_tests {
     use super::*;
-    use proptest::prelude::*;
     use alloc::format;
+    use proptest::prelude::*;
 
     #[test]
     fn test_dht_empty() {
@@ -105,7 +107,9 @@ mod coverage_tests {
     fn test_dht_all_zeros() {
         let x = [0.0; 8];
         let y = dht(&x);
-        for v in y { assert_eq!(v, 0.0); }
+        for v in y {
+            assert_eq!(v, 0.0);
+        }
     }
     #[test]
     fn test_dht_all_ones() {
@@ -135,4 +139,4 @@ mod coverage_tests {
             }
         }
     }
-} 
+}
