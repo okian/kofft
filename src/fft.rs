@@ -23,6 +23,8 @@ use rayon::prelude::*;
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use std::sync::OnceLock;
 
 /// Override for the parallel FFT threshold.
 ///
@@ -31,11 +33,47 @@ use num_cpus;
 static PARALLEL_FFT_THRESHOLD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "parallel")]
+static PARALLEL_FFT_CACHE_BYTES_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "parallel")]
+static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+static CPU_COUNT: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_THRESHOLD: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_CACHE_BYTES: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_PER_CORE_WORK: OnceLock<Option<usize>> = OnceLock::new();
+
+#[cfg(feature = "parallel")]
 /// Set a custom minimum FFT length to use parallel processing.
+///
+/// The heuristic parallelizes when each core would handle at least
+/// `max(L1_cache_bytes/size_of::<Complex32>(), per_core_work)` elements. These
+/// parameters can be tuned via [`set_parallel_fft_l1_cache`] and
+/// [`set_parallel_fft_per_core_work`].
 ///
 /// Passing `0` reverts to the built-in heuristic.
 pub fn set_parallel_fft_threshold(threshold: usize) {
     PARALLEL_FFT_THRESHOLD_OVERRIDE.store(threshold, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Set the assumed L1 data cache size per core in bytes for the parallel FFT heuristic.
+///
+/// Passing `0` reverts to the built-in default or environment variable.
+pub fn set_parallel_fft_l1_cache(bytes: usize) {
+    PARALLEL_FFT_CACHE_BYTES_OVERRIDE.store(bytes, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Set the minimum number of complex points each core must process before using
+/// parallel FFTs. This approximates per-core throughput.
+///
+/// Passing `0` reverts to the built-in default or environment variable.
+pub fn set_parallel_fft_per_core_work(points: usize) {
+    PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.store(points, Ordering::Relaxed);
 }
 
 #[cfg(feature = "parallel")]
@@ -44,16 +82,15 @@ fn should_parallelize_fft(n: usize) -> bool {
     let threshold = if override_thr == 0 {
         #[cfg(feature = "std")]
         {
-            if let Ok(val) = std::env::var("KOFFT_PAR_FFT_THRESHOLD") {
-                if let Ok(parsed) = val.parse::<usize>() {
-                    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(parsed, Ordering::Relaxed);
-                    parsed
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
+            ENV_PAR_FFT_THRESHOLD
+                .get_or_init(|| {
+                    std::env::var("KOFFT_PAR_FFT_THRESHOLD")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                })
+                .as_ref()
+                .copied()
+                .unwrap_or(0)
         }
         #[cfg(not(feature = "std"))]
         {
@@ -70,7 +107,7 @@ fn should_parallelize_fft(n: usize) -> bool {
     let cores = {
         #[cfg(feature = "std")]
         {
-            num_cpus::get().max(1)
+            *CPU_COUNT.get_or_init(|| num_cpus::get().max(1))
         }
         #[cfg(not(feature = "std"))]
         {
@@ -78,8 +115,59 @@ fn should_parallelize_fft(n: usize) -> bool {
         }
     };
 
-    // Require roughly 32KiB (4096 f32 complex numbers) of work per core.
-    n / cores >= 4096
+    let cache_bytes = {
+        let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+        if override_bytes != 0 {
+            override_bytes
+        } else {
+            #[cfg(feature = "std")]
+            {
+                ENV_PAR_FFT_CACHE_BYTES
+                    .get_or_init(|| {
+                        std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(32 * 1024)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                32 * 1024
+            }
+        }
+    };
+
+    let per_core_work = {
+        let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+        if override_work != 0 {
+            override_work
+        } else {
+            #[cfg(feature = "std")]
+            {
+                ENV_PAR_FFT_PER_CORE_WORK
+                    .get_or_init(|| {
+                        std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(4096)
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                4096
+            }
+        }
+    };
+
+    let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
+    let cache_elems = cache_bytes / bytes_per_elem;
+    let per_core_min = core::cmp::max(cache_elems, per_core_work);
+
+    n >= per_core_min * cores
 }
 
 pub use crate::num::{Complex, Complex32, Complex64, Float};
