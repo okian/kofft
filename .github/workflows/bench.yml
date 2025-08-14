@@ -1,0 +1,32 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run benchmarks
+        run: cargo bench --bench bench_fft --features parallel -- --sample-size=10 --measurement-time=0.5 --warm-up-time=0.2
+      - name: Update README
+        run: cargo run --example update_bench_readme
+      - name: Commit results
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          if [[ -n "$(git status --porcelain README.md benchmarks/latest.json)" ]]; then
+            git add README.md benchmarks/latest.json
+            git commit -m "chore: update benchmark results"
+            git push
+          fi
