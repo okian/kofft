@@ -422,10 +422,13 @@ mod tests {
         let mut input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let mut freq = vec![Complex32::zero(); input.len() / 2 + 1];
         let mut output = vec![0.0; input.len()];
+        let mut scratch = vec![Complex32::zero(); input.len() / 2];
 
         let fft = ScalarFftImpl::<f32>::default();
-        fft.rfft(&mut input, &mut freq).unwrap();
-        fft.irfft(&mut freq, &mut output).unwrap();
+        fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
+            .unwrap();
+        fft.irfft_with_scratch(&mut freq, &mut output, &mut scratch)
+            .unwrap();
 
         for (a, b) in input.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
@@ -436,9 +439,11 @@ mod tests {
     fn test_rfft_hermitian_symmetry() {
         let mut input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let mut freq = vec![Complex32::zero(); input.len() / 2 + 1];
+        let mut scratch = vec![Complex32::zero(); input.len() / 2];
 
         let fft = ScalarFftImpl::<f32>::default();
-        fft.rfft(&mut input, &mut freq).unwrap();
+        fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
+            .unwrap();
 
         // Check that the result has the expected Hermitian symmetry
         // The first element should be real

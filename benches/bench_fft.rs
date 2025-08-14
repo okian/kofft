@@ -8,10 +8,10 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use once_cell::sync::Lazy;
 use serde::Serialize;
 
-use kofft::fft::{fft_parallel, Complex32, FftPlanner, ScalarFftImpl, FftImpl};
+use kofft::fft::{fft_parallel, Complex32, FftImpl, FftPlanner, ScalarFftImpl};
 use kofft::rfft::RealFftImpl;
-use rustfft::FftPlanner as RustFftPlanner;
 use realfft::RealFftPlanner as RustRealFftPlanner;
+use rustfft::FftPlanner as RustFftPlanner;
 
 // ---------------- Allocation tracking ----------------
 struct CountingAllocator;
@@ -57,7 +57,10 @@ fn reset_alloc() {
 }
 
 fn alloc_stats() -> (usize, usize) {
-    (ALLOCATIONS.load(Ordering::Relaxed), PEAK_BYTES.load(Ordering::Relaxed))
+    (
+        ALLOCATIONS.load(Ordering::Relaxed),
+        PEAK_BYTES.load(Ordering::Relaxed),
+    )
 }
 
 // ---------------- Result tracking ----------------
@@ -95,9 +98,7 @@ static RESULTS: Lazy<Mutex<Vec<BenchRecord>>> = Lazy::new(|| Mutex::new(Vec::new
 fn bench_complex(c: &mut Criterion, size: usize) {
     let mut group = c.benchmark_group(format!("complex_{}", size));
 
-    let mut input: Vec<Complex32> = (0..size)
-        .map(|i| Complex32::new(i as f32, 0.0))
-        .collect();
+    let mut input: Vec<Complex32> = (0..size).map(|i| Complex32::new(i as f32, 0.0)).collect();
     let mut data = input.clone();
 
     // kofft single-threaded
@@ -117,7 +118,9 @@ fn bench_complex(c: &mut Criterion, size: usize) {
                 let dur = start.elapsed();
                 let (a, p) = alloc_stats();
                 alloc_total += a;
-                if p > peak { peak = p; }
+                if p > peak {
+                    peak = p;
+                }
                 total += dur;
             }
             if first {
@@ -155,7 +158,9 @@ fn bench_complex(c: &mut Criterion, size: usize) {
                     let dur = start.elapsed();
                     let (a, p) = alloc_stats();
                     alloc_total += a;
-                    if p > peak { peak = p; }
+                    if p > peak {
+                        peak = p;
+                    }
                     total += dur;
                 }
                 if first_p {
@@ -198,7 +203,9 @@ fn bench_complex(c: &mut Criterion, size: usize) {
                 let dur = start.elapsed();
                 let (a, p) = alloc_stats();
                 alloc_total += a;
-                if p > peak { peak = p; }
+                if p > peak {
+                    peak = p;
+                }
                 total += dur;
             }
             if first_rust {
@@ -227,6 +234,7 @@ fn bench_real(c: &mut Criterion, size: usize) {
 
     let mut input: Vec<f32> = (0..size).map(|i| i as f32).collect();
     let mut output = vec![Complex32::new(0.0, 0.0); size / 2 + 1];
+    let mut scratch = vec![Complex32::new(0.0, 0.0); size / 2];
 
     // kofft real
     let planner = FftPlanner::<f32>::new();
@@ -240,11 +248,14 @@ fn bench_real(c: &mut Criterion, size: usize) {
             for _ in 0..iters {
                 reset_alloc();
                 let start = Instant::now();
-                fft.rfft(&mut input, &mut output).unwrap();
+                fft.rfft_with_scratch(&mut input, &mut output, &mut scratch)
+                    .unwrap();
                 let dur = start.elapsed();
                 let (a, p) = alloc_stats();
                 alloc_total += a;
-                if p > peak { peak = p; }
+                if p > peak {
+                    peak = p;
+                }
                 total += dur;
             }
             if first {
@@ -284,7 +295,9 @@ fn bench_real(c: &mut Criterion, size: usize) {
                 let dur = start.elapsed();
                 let (a, p) = alloc_stats();
                 alloc_total += a;
-                if p > peak { peak = p; }
+                if p > peak {
+                    peak = p;
+                }
                 total += dur;
             }
             if first_realfft {
@@ -339,7 +352,14 @@ fn save_results() {
     let runner = env::var("RUNNER_NAME").unwrap_or_else(|_| "local".to_string());
 
     let file = BenchFile {
-        env: EnvInfo { cpu, os, rustc, flags, date: date.clone(), runner },
+        env: EnvInfo {
+            cpu,
+            os,
+            rustc,
+            flags,
+            date: date.clone(),
+            runner,
+        },
         results: RESULTS.lock().unwrap().clone(),
     };
     let json = serde_json::to_string_pretty(&file).unwrap();

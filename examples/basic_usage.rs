@@ -8,10 +8,10 @@ use kofft::czt::czt_f32;
 use kofft::dct::dct2;
 use kofft::dst::dst2;
 use kofft::fft::{FftImpl, ScalarFftImpl};
-use kofft::rfft::RealFftImpl;
 use kofft::goertzel::goertzel_f32;
 use kofft::hartley::dht;
 use kofft::hilbert::hilbert_analytic;
+use kofft::rfft::RealFftImpl;
 use kofft::wavelet::haar_forward;
 use kofft::window::{hamming, hann};
 use kofft::Complex32;
@@ -63,8 +63,10 @@ fn main() {
     println!("2. Real FFT");
     let mut real_input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let mut real_output = vec![Complex32::zero(); real_input.len() / 2 + 1];
+    let mut scratch = vec![Complex32::zero(); real_input.len() / 2];
 
-    fft.rfft(&mut real_input, &mut real_output).unwrap();
+    fft.rfft_with_scratch(&mut real_input, &mut real_output, &mut scratch)
+        .unwrap();
     println!("   Real input: {:?}", real_input);
     println!(
         "   RFFT: {:?}",

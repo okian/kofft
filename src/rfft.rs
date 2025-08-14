@@ -5,54 +5,116 @@
 //! [`crate::fft`]. It also exposes stack-only helpers analogous to
 //! [`crate::fft::fft_inplace_stack`] for embedded/`no_std` environments.
 
-use alloc::vec::Vec;
+use alloc::vec;
 
-use crate::fft::{ifft_inplace_stack, fft_inplace_stack, Complex, Complex32, FftError, FftImpl};
+use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
 
 /// Trait providing real-valued FFT transforms built on top of [`FftImpl`].
 pub trait RealFftImpl<T: Float>: FftImpl<T> {
-    /// Compute the real-input FFT, producing `N/2 + 1` complex samples
-    /// representing the positive-frequency spectrum.
-    fn rfft(&self, input: &mut [T], output: &mut [Complex<T>]) -> Result<(), FftError> {
+    /// Compute the real-input FFT, producing `N/2 + 1` complex samples.
+    /// A scratch buffer of length `N/2` is used to avoid heap allocations
+    /// and can be reused across calls.
+    fn rfft_with_scratch(
+        &self,
+        input: &mut [T],
+        output: &mut [Complex<T>],
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
         }
-        if output.len() != n / 2 + 1 {
+        if n % 2 != 0 {
+            return Err(FftError::InvalidValue);
+        }
+        let m = n / 2;
+        if output.len() != m + 1 || scratch.len() < m {
             return Err(FftError::MismatchedLengths);
         }
-        let mut buf: Vec<Complex<T>> = input
-            .iter()
-            .map(|&x| Complex::<T>::new(x, T::zero()))
-            .collect();
-        self.fft(&mut buf)?;
-        for k in 0..=n / 2 {
-            output[k] = buf[k];
+        // Pack even/odd samples into complex buffer
+        for i in 0..m {
+            scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+        }
+        // Compute half-size complex FFT
+        self.fft(&mut scratch[..m])?;
+        // DC and Nyquist components
+        let y0 = scratch[0];
+        output[0] = Complex::new(y0.re + y0.im, T::zero());
+        output[m] = Complex::new(y0.re - y0.im, T::zero());
+        let half = T::from_f32(0.5);
+        // Remaining frequencies
+        for k in 1..m {
+            let a = scratch[k];
+            let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
+            let sum = a.add(b);
+            let diff = a.sub(b);
+            let angle = -T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
+            let w = Complex::expi(angle);
+            let t = w.mul(diff);
+            let temp = sum.add(Complex::new(t.im, -t.re));
+            output[k] = Complex::new(temp.re * half, temp.im * half);
         }
         Ok(())
     }
 
+    /// Convenience wrapper that allocates a scratch buffer internally.
+    fn rfft(&self, input: &mut [T], output: &mut [Complex<T>]) -> Result<(), FftError> {
+        let mut scratch = vec![Complex::zero(); input.len() / 2];
+        self.rfft_with_scratch(input, output, &mut scratch)
+    }
+
     /// Compute the inverse real FFT, consuming `N/2 + 1` complex samples and
-    /// producing `N` real time-domain values.
-    fn irfft(&self, input: &mut [Complex<T>], output: &mut [T]) -> Result<(), FftError> {
+    /// producing `N` real time-domain values. A scratch buffer of length `N/2`
+    /// is used to avoid allocations.
+    fn irfft_with_scratch(
+        &self,
+        input: &mut [Complex<T>],
+        output: &mut [T],
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         let n = output.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
         }
-        if input.len() != n / 2 + 1 {
+        if n % 2 != 0 {
+            return Err(FftError::InvalidValue);
+        }
+        let m = n / 2;
+        if input.len() != m + 1 || scratch.len() < m {
             return Err(FftError::MismatchedLengths);
         }
-        let mut buf: Vec<Complex<T>> = input.to_vec();
-        for k in (1..n / 2).rev() {
-            let c = input[k];
-            buf.push(Complex::new(c.re, -c.im));
+        let half = T::from_f32(0.5);
+        // Reconstruct the half-size spectrum
+        scratch[0] = Complex::new(
+            (input[0].re + input[m].re) * half,
+            (input[0].re - input[m].re) * half,
+        );
+        for k in 1..m {
+            let a = input[k];
+            let b = Complex::new(input[m - k].re, -input[m - k].im);
+            let sum = a.add(b);
+            let diff = a.sub(b);
+            let angle = T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
+            let w = Complex::expi(angle);
+            let t = w.mul(diff);
+            let temp = sum.sub(Complex::new(t.im, -t.re));
+            scratch[k] = Complex::new(temp.re * half, temp.im * half);
         }
-        self.ifft(&mut buf)?;
-        for (i, c) in buf.iter().enumerate() {
-            output[i] = c.re;
+        // Perform inverse complex FFT of half-size
+        self.ifft(&mut scratch[..m])?;
+        // Unpack into real output
+        for i in 0..m {
+            output[2 * i] = scratch[i].re;
+            output[2 * i + 1] = scratch[i].im;
         }
         Ok(())
+    }
+
+    /// Convenience wrapper that allocates scratch internally.
+    fn irfft(&self, input: &mut [Complex<T>], output: &mut [T]) -> Result<(), FftError> {
+        let mut scratch = vec![Complex::zero(); output.len() / 2];
+        self.irfft_with_scratch(input, output, &mut scratch)
     }
 }
 
@@ -121,9 +183,12 @@ mod tests {
         let fft = ScalarFftImpl::<f32>::default();
         let mut input = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let mut freq = vec![Complex32::new(0.0, 0.0); input.len() / 2 + 1];
-        fft.rfft(&mut input, &mut freq).unwrap();
+        let mut scratch = vec![Complex32::new(0.0, 0.0); input.len() / 2];
+        fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
+            .unwrap();
         let mut out = vec![0.0f32; input.len()];
-        fft.irfft(&mut freq, &mut out).unwrap();
+        fft.irfft_with_scratch(&mut freq, &mut out, &mut scratch)
+            .unwrap();
         for (a, b) in input.iter().zip(out.iter()) {
             assert!((a - b).abs() < 1e-5);
         }
