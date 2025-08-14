@@ -1,6 +1,6 @@
 [package]
 name = "kofft"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Kian Ostad <c@kianostad.com>"]
 description = "High-performance, no_std, MCU-friendly FFT, DCT, DST, Hartley, Wavelet, STFT, and more. Stack-only, SIMD, and batch transforms for embedded and scientific Rust."
