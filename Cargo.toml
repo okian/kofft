@@ -28,6 +28,7 @@ members = ["kofft-bench"]
 libm = "0.2"
 proptest = { version = "1.4", optional = true }
 rand = { version = "0.8", optional = true }
+hashbrown = "0.14"
 
 [features]
 default = ["std"]
