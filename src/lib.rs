@@ -69,6 +69,9 @@ pub mod fft;
 ///
 /// Provides both scalar and SIMD-optimized FFT implementations.
 /// Supports complex and real input signals.
+pub mod rfft;
+/// Real-input FFT helpers built on top of complex FFT routines
+/// for converting between real and complex domains.
 pub mod num;
 
 /// N-dimensional FFT operations
@@ -83,12 +86,12 @@ pub mod window;
 
 /// Discrete Cosine Transform (DCT)
 ///
-/// DCT-II, DCT-III, and DCT-IV implementations for audio and image compression.
+/// DCT-I, DCT-II, DCT-III, and DCT-IV implementations for audio and image compression.
 pub mod dct;
 
 /// Discrete Sine Transform (DST)
 ///
-/// DST-II, DST-III, and DST-IV implementations.
+/// DST-I, DST-II, DST-III, and DST-IV implementations.
 pub mod dst;
 
 /// Discrete Hartley Transform (DHT)
@@ -145,6 +148,7 @@ pub fn add(left: u64, right: u64) -> u64 {
 mod tests {
     use super::*;
     use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
+    use crate::rfft::RealFftImpl;
     use alloc::vec;
     use alloc::vec::Vec;
     use core::f32::consts;
