@@ -24,7 +24,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 ```toml
 [dependencies]
-kofft = { version = "0.1.1", features = [
+kofft = { version = "0.1.4", features = [
     # "sse",      # enable SSE on x86_64 (fallback)
     # "x86_64",   # enable AVX2 on x86_64
     # "aarch64",  # enable NEON on AArch64
@@ -222,7 +222,7 @@ Enable optional features in `Cargo.toml`:
 
 ```toml
 [dependencies]
-kofft = { version = "0.1.1", features = [
+kofft = { version = "0.1.4", features = [
     # "sse",      # SSE on x86_64 (fallback)
     # "x86_64",   # AVX2 on x86_64
     # "aarch64",  # NEON on AArch64
