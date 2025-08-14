@@ -247,10 +247,9 @@ pub fn inverse_parallel(
         return Err(FftError::InvalidHopSize);
     }
     let win_len = window.len();
-    let partials: Result<
-        alloc::vec::Vec<(usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>)>,
-        FftError,
-    > = frames
+    type Accum = (usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>);
+    type AccumResult = Result<alloc::vec::Vec<Accum>, FftError>;
+    let partials: AccumResult = frames
         .par_iter()
         .enumerate()
         .map(|(frame_idx, frame)| {
