@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use hashbrown::HashMap;
+use once_cell::unsync::OnceCell;
 
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -87,9 +87,9 @@ pub use crate::num::{Complex, Complex32, Complex64, Float};
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
-    cache: HashMap<usize, Arc<[Complex<T>]>>,
-    bitrev_cache: HashMap<usize, Arc<[usize]>>,
-    bluestein_cache: HashMap<usize, BluesteinPair<T>>,
+    cache: Vec<OnceCell<Arc<[Complex<T>]>>>,
+    bitrev_cache: Vec<OnceCell<Arc<[usize]>>>,
+    bluestein_cache: Vec<OnceCell<BluesteinPair<T>>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -101,41 +101,49 @@ impl<T: Float> Default for FftPlanner<T> {
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
-            cache: HashMap::new(),
-            bitrev_cache: HashMap::new(),
-            bluestein_cache: HashMap::new(),
+            cache: Vec::new(),
+            bitrev_cache: Vec::new(),
+            bluestein_cache: Vec::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
-        self.cache.entry(n).or_insert_with(|| {
-            let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
-            let (sin, cos) = angle.sin_cos();
-            let w = Complex::new(cos, sin);
-            // Allocate buffer of length `n` and fill it in-place. The buffer
-            // length equals `n`, so indexing is safe and could be optimized
-            // with `get_unchecked` if desired.
-            let mut vec = vec![Complex::zero(); n];
-            let mut current = Complex::new(T::one(), T::zero());
-            for elem in vec.iter_mut() {
-                *elem = current;
-                current = current * w;
-            }
-            Arc::<[Complex<T>]>::from(vec)
-        });
-        self.cache.get(&n).unwrap().as_ref()
+        if self.cache.len() <= n {
+            self.cache.resize_with(n + 1, OnceCell::new);
+        }
+        self.cache[n]
+            .get_or_init(|| {
+                let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
+                let (sin, cos) = angle.sin_cos();
+                let w = Complex::new(cos, sin);
+                // Allocate buffer of length `n` and fill it in-place. The buffer
+                // length equals `n`, so indexing is safe and could be optimized
+                // with `get_unchecked` if desired.
+                let mut vec = vec![Complex::zero(); n];
+                let mut current = Complex::new(T::one(), T::zero());
+                for elem in vec.iter_mut() {
+                    *elem = current;
+                    current = current * w;
+                }
+                Arc::<[Complex<T>]>::from(vec)
+            })
+            .as_ref()
     }
 
     pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
-        if !self.bitrev_cache.contains_key(&n) {
-            let vec = compute_bitrev_table(n);
-            self.bitrev_cache.insert(n, Arc::<[usize]>::from(vec));
+        if self.bitrev_cache.len() <= n {
+            self.bitrev_cache.resize_with(n + 1, OnceCell::new);
         }
-        Arc::clone(self.bitrev_cache.get(&n).unwrap())
+        Arc::clone(
+            self.bitrev_cache[n].get_or_init(|| Arc::<[usize]>::from(compute_bitrev_table(n))),
+        )
     }
 
     #[cfg(feature = "std")]
     pub fn get_bluestein(&mut self, n: usize) -> BluesteinPair<T> {
-        if !self.bluestein_cache.contains_key(&n) {
+        if self.bluestein_cache.len() <= n {
+            self.bluestein_cache.resize_with(n + 1, OnceCell::new);
+        }
+        let pair = self.bluestein_cache[n].get_or_init(|| {
             let m = (2 * n - 1).next_power_of_two();
             let mut chirp: Vec<Complex<T>> = Vec::with_capacity(n);
             let mut b: Vec<Complex<T>> = Vec::with_capacity(m);
@@ -153,12 +161,9 @@ impl<T: Float> FftPlanner<T> {
             fft.fft(&mut b_fft).unwrap();
             let chirp_arc: Arc<[Complex<T>]> = Arc::from(chirp);
             let b_fft_arc: Arc<[Complex<T>]> = Arc::from(b_fft);
-            self.bluestein_cache
-                .insert(n, (Arc::clone(&chirp_arc), Arc::clone(&b_fft_arc)));
-            return (chirp_arc, b_fft_arc);
-        }
-        let (chirp, fft_b) = self.bluestein_cache.get(&n).unwrap();
-        (Arc::clone(chirp), Arc::clone(fft_b))
+            (chirp_arc, b_fft_arc)
+        });
+        (Arc::clone(&pair.0), Arc::clone(&pair.1))
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
