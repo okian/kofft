@@ -305,7 +305,7 @@ parallel(&signal, &window, hop_size, &mut frames)?;
 - **DCT** – Discrete Cosine Transform ([Wikipedia](https://en.wikipedia.org/wiki/Discrete_cosine_transform))
 - **DST** – Discrete Sine Transform ([Wikipedia](https://en.wikipedia.org/wiki/Discrete_sine_transform))
 - **Hartley Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Discrete_Hartley_transform))
-- **Wavelet Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Wavelet_transform))
+- **Wavelet Transform** – multi-level Haar, Daubechies, Symlets, Coiflets ([Wikipedia](https://en.wikipedia.org/wiki/Wavelet_transform))
 - **Goertzel Algorithm** – ([Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm))
 - **Chirp Z-Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Chirp_Z-transform))
 - **Hilbert Transform** – ([Wikipedia](https://en.wikipedia.org/wiki/Hilbert_transform))
@@ -328,8 +328,14 @@ let dst3_result = dst::dst3(&input);
 let hartley_result = hartley::dht(&input);
 
 // Wavelet Transform
-let (avg, diff) = wavelet::haar_forward(&input);
-let reconstructed = wavelet::haar_inverse(&avg, &diff);
+use wavelet::{
+    haar_forward_multi, haar_inverse_multi, db4_forward_multi, db4_inverse_multi,
+};
+let (approx, details) = haar_forward_multi(&input, 2);
+let reconstructed = haar_inverse_multi(&approx, &details);
+// Additional families, e.g. Daubechies-4
+let (db4_a, db4_d) = db4_forward_multi(&input, 2);
+let db4_recon = db4_inverse_multi(&db4_a, &db4_d);
 
 // Goertzel Algorithm (single frequency detection)
 let magnitude = goertzel::goertzel_f32(&input, 44100.0, 1000.0);
