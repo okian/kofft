@@ -12,6 +12,19 @@ use core::any::TypeId;
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
 
+fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
+    let angle = -T::pi() / T::from_f32(m as f32);
+    let (sin_step, cos_step) = angle.sin_cos();
+    let w = Complex::new(cos_step, sin_step);
+    let mut table = alloc::vec::Vec::with_capacity(m);
+    let mut current = Complex::new(T::one(), T::zero());
+    for _ in 0..m {
+        table.push(current);
+        current = current.mul(w);
+    }
+    table
+}
+
 /// Old packed real FFT kernel used for comparison and fallback.
 pub fn rfft_packed<T: Float, F: FftImpl<T>>(
     fft: &F,
@@ -38,13 +51,13 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
+    let twiddles = build_twiddle_table::<T>(m);
     for k in 1..m {
         let a = scratch[k];
         let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
         let sum = a.add(b);
         let diff = a.sub(b);
-        let angle = -T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
-        let w = Complex::expi(angle);
+        let w = twiddles[k];
         let t = w.mul(diff);
         let temp = sum.add(Complex::new(t.im, -t.re));
         output[k] = Complex::new(temp.re * half, temp.im * half);
@@ -75,13 +88,13 @@ pub fn irfft_packed<T: Float, F: FftImpl<T>>(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
     );
+    let twiddles = build_twiddle_table::<T>(m);
     for k in 1..m {
         let a = input[k];
         let b = Complex::new(input[m - k].re, -input[m - k].im);
         let sum = a.add(b);
         let diff = a.sub(b);
-        let angle = T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
-        let w = Complex::expi(angle);
+        let w = Complex::new(twiddles[k].re, -twiddles[k].im);
         let t = w.mul(diff);
         let temp = sum.sub(Complex::new(t.im, -t.re));
         scratch[k] = Complex::new(temp.re * half, temp.im * half);
@@ -118,13 +131,13 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
+    let twiddles = build_twiddle_table::<T>(m);
     for k in 1..m {
         let a = data[k];
         let b = Complex::new(data[m - k].re, -data[m - k].im);
         let sum = a.add(b);
         let diff = a.sub(b);
-        let angle = -T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
-        let w = Complex::expi(angle);
+        let w = twiddles[k];
         let t = w.mul(diff);
         let temp = sum.add(Complex::new(t.im, -t.re));
         output[k] = Complex::new(temp.re * half, temp.im * half);
@@ -156,13 +169,13 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
     );
+    let twiddles = build_twiddle_table::<T>(m);
     for k in 1..m {
         let a = input[k];
         let b = Complex::new(input[m - k].re, -input[m - k].im);
         let sum = a.add(b);
         let diff = a.sub(b);
-        let angle = T::pi() * T::from_f32(k as f32) / T::from_f32(m as f32);
-        let w = Complex::expi(angle);
+        let w = Complex::new(twiddles[k].re, -twiddles[k].im);
         let t = w.mul(diff);
         let temp = sum.sub(Complex::new(t.im, -t.re));
         data[k] = Complex::new(temp.re * half, temp.im * half);
@@ -205,6 +218,7 @@ where
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
     let half = unsafe { _mm_set1_ps(0.5) };
+    let twiddles = build_twiddle_table::<f32>(m);
     for k in 1..m {
         let a = data[k];
         let b = Complex32::new(data[m - k].re, -data[m - k].im);
@@ -212,8 +226,7 @@ where
         let sum_im = a.im + b.im;
         let diff_re = a.re - b.re;
         let diff_im = a.im - b.im;
-        let angle = -core::f32::consts::PI * (k as f32) / (m as f32);
-        let w = Complex32::expi(angle);
+        let w = twiddles[k];
         unsafe {
             let v_re = _mm_set1_ps(diff_re);
             let v_im = _mm_set1_ps(diff_im);
@@ -269,6 +282,7 @@ where
             _mm_cvtss_f32(_mm_mul_ss(b0, half)),
         );
     }
+    let twiddles = build_twiddle_table::<f32>(m);
     for k in 1..m {
         let a = input[k];
         let b = Complex32::new(input[m - k].re, -input[m - k].im);
@@ -276,8 +290,7 @@ where
         let sum_im = a.im + b.im;
         let diff_re = a.re - b.re;
         let diff_im = a.im - b.im;
-        let angle = core::f32::consts::PI * (k as f32) / (m as f32);
-        let w = Complex32::expi(angle);
+        let w = Complex32::new(twiddles[k].re, -twiddles[k].im);
         unsafe {
             let v_re = _mm_set1_ps(diff_re);
             let v_im = _mm_set1_ps(diff_im);
@@ -432,7 +445,7 @@ pub fn irfft_stack<const N: usize, const M: usize>(
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
-    use crate::fft::ScalarFftImpl;
+    use crate::fft::{Complex64, ScalarFftImpl};
     use alloc::vec;
 
     #[test]
@@ -461,6 +474,23 @@ mod tests {
         irfft_stack(&freq, &mut out).unwrap();
         for (a, b) in input.iter().zip(out.iter()) {
             assert!((a - b).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn rfft_irfft_roundtrip_f64() {
+        let fft = ScalarFftImpl::<f64>::default();
+        let mut input = vec![1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let orig = input.clone();
+        let mut freq = vec![Complex64::new(0.0, 0.0); input.len() / 2 + 1];
+        let mut scratch = vec![Complex64::new(0.0, 0.0); input.len() / 2];
+        fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
+            .unwrap();
+        let mut out = vec![0.0f64; orig.len()];
+        fft.irfft_with_scratch(&mut freq, &mut out, &mut scratch)
+            .unwrap();
+        for (a, b) in orig.iter().zip(out.iter()) {
+            assert!((a - b).abs() < 1e-10);
         }
     }
 }
