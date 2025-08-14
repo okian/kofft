@@ -242,12 +242,14 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             let mut len = 4usize;
             let max_radix4 = 1usize << (pow4_stages * 2);
 
+            // Fetch all twiddles once and reuse them in both radix-4 and
+            // radix-2 stages to avoid repeated planner lookups.
+            let mut planner = self.planner.borrow_mut();
+            let twiddles = planner.get_twiddles(n);
+
             // Radix-4 stages
             while len <= max_radix4 {
-                let w_step = {
-                    let mut planner = self.planner.borrow_mut();
-                    planner.get_twiddles(n)[n / len]
-                };
+                let w_step = twiddles[n / len];
                 let mut i = 0;
                 while i < n {
                     let mut w1 = Complex::new(T::one(), T::zero());
@@ -273,10 +275,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             // Remaining radix-2 stages
             let mut len = max_radix4 * 2;
             while len <= n {
-                let w_step = {
-                    let mut planner = self.planner.borrow_mut();
-                    planner.get_twiddles(n)[n / len]
-                };
+                let w_step = twiddles[n / len];
                 #[cfg(feature = "parallel")]
                 {
                     if n >= PARALLEL_FFT_THRESHOLD
