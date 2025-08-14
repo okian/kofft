@@ -285,6 +285,8 @@ kofft = { version = "0.1.1", features = [
 ### SIMD Acceleration
 
 Enable one of the CPU-specific SIMD features above for better performance.
+SIMD backends are also enabled automatically when compiling with the
+appropriate `target-feature` flags (e.g., `RUSTFLAGS="-C target-feature=+avx2"`).
 
 ### Parallel Processing
 
@@ -395,12 +397,12 @@ fn main() -> ! {
 
 ## Platform Support
 
-| Platform | SIMD Support | Features |
-|----------|-------------|----------|
-| x86_64   | AVX2/FMA    | `x86_64` feature |
-| x86_64 (SSE) | SSE2 | `sse` feature |
-| AArch64  | NEON        | `aarch64` feature |
-| WebAssembly | SIMD128   | `wasm` feature |
+| Platform | SIMD Support | Enable via |
+|----------|-------------|-----------|
+| x86_64   | AVX2/FMA    | `x86_64` feature or `-C target-feature=+avx2` |
+| x86_64 (SSE) | SSE2 | `sse` feature or default `sse2` target |
+| AArch64  | NEON        | `aarch64` feature or `-C target-feature=+neon` |
+| WebAssembly | SIMD128   | `wasm` feature or `-C target-feature=+simd128` |
 | Generic  | Scalar      | Default fallback |
 
 Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.

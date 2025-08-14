@@ -748,13 +748,27 @@ impl ScalarFftImpl<f32> {
 // SIMD FFT implementations (feature-gated)
 
 // x86_64 SIMD implementations
-#[cfg(all(any(feature = "x86_64", feature = "sse"), target_arch = "x86_64"))]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(
+        feature = "x86_64",
+        feature = "sse",
+        target_feature = "avx2",
+        target_feature = "sse2"
+    )
+))]
 use core::arch::x86_64::*;
 
 // x86_64 AVX2/FMA
-#[cfg(all(feature = "x86_64", target_arch = "x86_64"))]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(feature = "x86_64", target_feature = "avx2")
+))]
 pub struct SimdFftX86_64Impl;
-#[cfg(all(feature = "x86_64", target_arch = "x86_64"))]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(feature = "x86_64", target_feature = "avx2")
+))]
 impl FftImpl<f32> for SimdFftX86_64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
@@ -972,9 +986,9 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
 }
 
 // x86_64 SSE SIMD implementation
-#[cfg(all(feature = "sse", target_arch = "x86_64"))]
+#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
 pub struct SimdFftSseImpl;
-#[cfg(all(feature = "sse", target_arch = "x86_64"))]
+#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
 impl FftImpl<f32> for SimdFftSseImpl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
@@ -1181,13 +1195,22 @@ impl FftImpl<f32> for SimdFftSseImpl {
 }
 
 // AArch64 NEON SIMD implementation
-#[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
+#[cfg(all(
+    target_arch = "aarch64",
+    any(feature = "aarch64", target_feature = "neon")
+))]
 use core::arch::aarch64::*;
 
 // AArch64 NEON
-#[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
+#[cfg(all(
+    target_arch = "aarch64",
+    any(feature = "aarch64", target_feature = "neon")
+))]
 pub struct SimdFftAArch64Impl;
-#[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
+#[cfg(all(
+    target_arch = "aarch64",
+    any(feature = "aarch64", target_feature = "neon")
+))]
 impl FftImpl<f32> for SimdFftAArch64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
@@ -1370,12 +1393,21 @@ impl FftImpl<f32> for SimdFftAArch64Impl {
 }
 
 // WebAssembly SIMD implementation
-#[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+#[cfg(all(
+    target_arch = "wasm32",
+    any(feature = "wasm", target_feature = "simd128")
+))]
 use core::arch::wasm32::*;
 
-#[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+#[cfg(all(
+    target_arch = "wasm32",
+    any(feature = "wasm", target_feature = "simd128")
+))]
 pub struct SimdFftWasmImpl;
-#[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+#[cfg(all(
+    target_arch = "wasm32",
+    any(feature = "wasm", target_feature = "simd128")
+))]
 impl FftImpl<f32> for SimdFftWasmImpl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
@@ -1554,27 +1586,45 @@ impl FftImpl<f32> for SimdFftWasmImpl {
 
 /// Returns the best available FFT implementation for the current platform and enabled features.
 pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
-    #[cfg(all(feature = "x86_64", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_arch = "x86_64",
+        any(feature = "x86_64", target_feature = "avx2")
+    ))]
     {
         return Box::new(SimdFftX86_64Impl);
     }
-    #[cfg(all(feature = "sse", target_arch = "x86_64"))]
+    #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
     {
         return Box::new(SimdFftSseImpl);
     }
-    #[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_arch = "aarch64",
+        any(feature = "aarch64", target_feature = "neon")
+    ))]
     {
         return Box::new(SimdFftAArch64Impl);
     }
-    #[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+    #[cfg(all(
+        target_arch = "wasm32",
+        any(feature = "wasm", target_feature = "simd128")
+    ))]
     {
         return Box::new(SimdFftWasmImpl);
     }
     #[cfg(not(any(
-        all(feature = "x86_64", target_arch = "x86_64"),
-        all(feature = "sse", target_arch = "x86_64"),
-        all(feature = "aarch64", target_arch = "aarch64"),
-        all(feature = "wasm", target_arch = "wasm32")
+        all(
+            target_arch = "x86_64",
+            any(feature = "x86_64", target_feature = "avx2")
+        ),
+        all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")),
+        all(
+            target_arch = "aarch64",
+            any(feature = "aarch64", target_feature = "neon")
+        ),
+        all(
+            target_arch = "wasm32",
+            any(feature = "wasm", target_feature = "simd128")
+        )
     )))]
     {
         return Box::new(ScalarFftImpl::<f32>::default());
