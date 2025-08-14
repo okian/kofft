@@ -1,5 +1,5 @@
 //! Discrete Sine Transform (DST) module
-//! Supports DST-I and DST-II for f32 (real input)
+//! Supports DST-I through DST-IV for f32 (real input)
 //! no_std + alloc compatible
 
 extern crate alloc;
@@ -54,6 +54,21 @@ pub fn dst3(input: &[f32]) -> Vec<f32> {
     output
 }
 
+/// DST-IV (self-inverse, used in spectral methods)
+pub fn dst4(input: &[f32]) -> Vec<f32> {
+    let n = input.len();
+    let mut output = vec![0.0; n];
+    let factor = PI / n as f32;
+    for k in 0..n {
+        let mut sum = 0.0;
+        for (i, &x) in input.iter().enumerate() {
+            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
+        }
+        output[k] = sum;
+    }
+    output
+}
+
 /// Batch DST-I
 pub fn batch_i(batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
@@ -75,12 +90,21 @@ pub fn batch_iii(batches: &mut [Vec<f32>]) {
         batch.copy_from_slice(&out);
     }
 }
+/// Batch DST-IV
+pub fn batch_iv(batches: &mut [Vec<f32>]) {
+    for batch in batches.iter_mut() {
+        let out = dst4(batch);
+        batch.copy_from_slice(&out);
+    }
+}
 /// Multi-channel DST-I
 pub fn multi_channel_i(channels: &mut [Vec<f32>]) { batch_i(channels) }
 /// Multi-channel DST-II
 pub fn multi_channel_ii(channels: &mut [Vec<f32>]) { batch_ii(channels) }
 /// Multi-channel DST-III
 pub fn multi_channel_iii(channels: &mut [Vec<f32>]) { batch_iii(channels) }
+/// Multi-channel DST-IV
+pub fn multi_channel_iv(channels: &mut [Vec<f32>]) { batch_iv(channels) }
 
 /// MCU/stack-only, const-generic, in-place DST-II for power-of-two sizes (no heap, no alloc)
 ///
@@ -97,6 +121,27 @@ pub fn dst2_inplace_stack<const N: usize>(
         let mut sum = 0.0;
         for i in 0..N {
             sum += input[i] * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+        }
+        output[k] = sum;
+    }
+    Ok(())
+}
+
+/// MCU/stack-only, const-generic, in-place DST-IV for power-of-two sizes (no heap, no alloc)
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dst4_inplace_stack<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    let factor = core::f32::consts::PI / N as f32;
+    for k in 0..N {
+        let mut sum = 0.0;
+        for i in 0..N {
+            sum += input[i] * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
         }
         output[k] = sum;
     }
@@ -135,6 +180,40 @@ mod dst3_tests {
         let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
         batch_iii(&mut batches);
         assert_eq!(batches.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod dst4_tests {
+    use super::*;
+    #[test]
+    fn test_dst4_roundtrip() {
+        let x: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
+        let y = dst4(&x);
+        let z = dst4(&y);
+        for (a, b) in x.iter().zip(z.iter()) {
+            assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
+        }
+    }
+    #[test]
+    fn test_dst4_batch() {
+        let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        batch_iv(&mut batches);
+        assert_eq!(batches.len(), 2);
+    }
+    #[test]
+    fn test_dst4_inplace_stack_and_multi_channel() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out = [0.0f32; 4];
+        dst4_inplace_stack(&input, &mut out).unwrap();
+        let out_ref = dst4(&input);
+        for (a, b) in out.iter().zip(out_ref.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+
+        let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        multi_channel_iv(&mut channels);
+        assert_eq!(channels.len(), 2);
     }
 }
 
@@ -203,6 +282,7 @@ mod coverage_tests {
         multi_channel_i(&mut channels);
         multi_channel_ii(&mut channels);
         multi_channel_iii(&mut channels);
+        multi_channel_iv(&mut channels);
         assert_eq!(channels.len(), 2);
     }
     #[test]
