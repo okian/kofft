@@ -26,6 +26,7 @@ pub use crate::num::{Complex, Complex32, Complex64, Float};
 pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
     bitrev_cache: HashMap<usize, Arc<[usize]>>,
+    bluestein_cache: HashMap<usize, (Arc<[Complex<T>]>, Arc<[Complex<T>]>)>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -39,6 +40,7 @@ impl<T: Float> FftPlanner<T> {
         Self {
             cache: HashMap::new(),
             bitrev_cache: HashMap::new(),
+            bluestein_cache: HashMap::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
@@ -63,6 +65,38 @@ impl<T: Float> FftPlanner<T> {
             self.bitrev_cache.insert(n, Arc::<[usize]>::from(vec));
         }
         Arc::clone(self.bitrev_cache.get(&n).unwrap())
+    }
+
+    #[cfg(feature = "std")]
+    pub fn get_bluestein(
+        &mut self,
+        n: usize,
+    ) -> (Arc<[Complex<T>]>, Arc<[Complex<T>]>) {
+        if !self.bluestein_cache.contains_key(&n) {
+            let m = (2 * n - 1).next_power_of_two();
+            let mut chirp: Vec<Complex<T>> = Vec::with_capacity(n);
+            let mut b: Vec<Complex<T>> = Vec::with_capacity(m);
+            for i in 0..n {
+                let angle =
+                    T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
+                chirp.push(Complex::expi(-angle));
+                b.push(Complex::expi(angle));
+            }
+            b.resize(m, Complex::zero());
+            for i in 1..n {
+                b[m - i] = b[i];
+            }
+            let mut b_fft = b;
+            let fft = ScalarFftImpl::<T>::default();
+            fft.fft(&mut b_fft).unwrap();
+            let chirp_arc: Arc<[Complex<T>]> = Arc::from(chirp);
+            let b_fft_arc: Arc<[Complex<T>]> = Arc::from(b_fft);
+            self.bluestein_cache
+                .insert(n, (Arc::clone(&chirp_arc), Arc::clone(&b_fft_arc)));
+            return (chirp_arc, b_fft_arc);
+        }
+        let (chirp, fft_b) = self.bluestein_cache.get(&n).unwrap();
+        (Arc::clone(chirp), Arc::clone(fft_b))
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
@@ -338,27 +372,21 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         #[cfg(feature = "std")]
         {
             use alloc::vec::Vec;
-            let m = (2 * n - 1).next_power_of_two();
+            let (chirp_arc, fft_b_arc) = {
+                let mut planner = self.planner.borrow_mut();
+                planner.get_bluestein(n)
+            };
+            let chirp = chirp_arc.as_ref();
+            let fft_b = fft_b_arc.as_ref();
+            let m = fft_b.len();
             let mut a = Vec::with_capacity(m);
-            let mut b = Vec::with_capacity(m);
             for (i, &val) in input.iter().take(n).enumerate() {
-                let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
-                let w = Complex::expi(-angle);
-                a.push(val.mul(w));
+                a.push(val.mul(chirp[i]));
             }
             a.resize(m, Complex::zero());
-            for i in 0..n {
-                let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
-                b.push(Complex::expi(angle));
-            }
-            b.resize(m, Complex::zero());
-            for i in 1..n {
-                b[m - i] = b[i];
-            }
             let fft = ScalarFftImpl::<T>::default();
             fft.fft(&mut a)?;
-            fft.fft(&mut b)?;
-            for (ai, &bi) in a.iter_mut().zip(&b) {
+            for (ai, &bi) in a.iter_mut().zip(fft_b.iter()) {
                 *ai = ai.mul(bi);
             }
             for c in a.iter_mut() {
@@ -374,9 +402,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 c.im = c.im * scale;
             }
             for (i, out) in input.iter_mut().take(n).enumerate() {
-                let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
-                let w = Complex::expi(-angle);
-                *out = a[i].mul(w);
+                *out = a[i].mul(chirp[i]);
             }
             Ok(())
         }
