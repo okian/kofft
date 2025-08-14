@@ -6,7 +6,7 @@
 //! ## Features
 //!
 //! - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
-//! - **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
+//! - **⚡ SIMD acceleration** (x86_64 SSE/AVX2, AArch64 NEON, WebAssembly SIMD)
 //! - **🔧 Multiple transform types**: FFT, DCT, DST, Hartley, Wavelet, STFT, CZT, Goertzel
 //! - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 //! - **🔄 Batch and multi-channel processing**
@@ -18,8 +18,12 @@
 //! - `std` (default): Enable standard library features
 //! - `parallel`: Enable parallel processing with Rayon
 //! - `x86_64`: Enable x86_64 SIMD optimizations
-//! - `aarch64`: Enable AArch64 SIMD optimizations  
+//! - `sse`: Enable x86_64 SSE optimizations (fallback if AVX2 is unavailable)
+//! - `aarch64`: Enable AArch64 SIMD optimizations
 //! - `wasm`: Enable WebAssembly SIMD optimizations
+//!
+//! On x86_64, enabling `x86_64` activates AVX2/FMA kernels while `sse`
+//! provides an SSE fallback. When both are enabled, `x86_64` takes precedence.
 //!
 //! ## Performance
 //!
@@ -30,12 +34,13 @@
 //!
 //! ## Platform Support
 //!
-//! | Platform | SIMD Support | Features |
-//! |----------|-------------|----------|
-//! | x86_64   | AVX2/FMA    | `x86_64` feature |
-//! | AArch64  | NEON        | `aarch64` feature |
-//! | WebAssembly | SIMD128   | `wasm` feature |
-//! | Generic  | Scalar      | Default fallback |
+//! | Platform        | SIMD Support | Features         |
+//! |-----------------|-------------|------------------|
+//! | x86_64 (AVX2)   | AVX2/FMA    | `x86_64` feature |
+//! | x86_64 (SSE)    | SSE         | `sse` feature    |
+//! | AArch64         | NEON        | `aarch64` feature |
+//! | WebAssembly     | SIMD128     | `wasm` feature   |
+//! | Generic         | Scalar      | Default fallback |
 //!
 //! ## Examples
 //!

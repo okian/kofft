@@ -11,7 +11,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 ## Features
 
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
-- **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
+- **⚡ SIMD acceleration** (x86_64 SSE/AVX2, AArch64 NEON, WebAssembly SIMD)
 - **🔧 Multiple transform types**: FFT, DCT, DST, Hartley, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**
@@ -25,6 +25,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 ```toml
 [dependencies]
 kofft = { version = "0.1.1", features = [
+    # "sse",      # enable SSE on x86_64 (fallback)
     # "x86_64",   # enable AVX2 on x86_64
     # "aarch64",  # enable NEON on AArch64
     # "wasm",     # enable WebAssembly SIMD
@@ -222,6 +223,7 @@ Enable optional features in `Cargo.toml`:
 ```toml
 [dependencies]
 kofft = { version = "0.1.1", features = [
+    # "sse",      # SSE on x86_64 (fallback)
     # "x86_64",   # AVX2 on x86_64
     # "aarch64",  # NEON on AArch64
     # "wasm",     # WebAssembly SIMD
@@ -232,6 +234,10 @@ kofft = { version = "0.1.1", features = [
 ### SIMD Acceleration
 
 Enable one of the CPU-specific SIMD features above for better performance.
+
+On x86_64 platforms, enabling `x86_64` activates AVX2/FMA kernels while `sse`
+provides an SSE fallback for older CPUs. If both features are enabled,
+`x86_64` takes precedence over `sse`.
 
 ### Parallel Processing
 
@@ -335,12 +341,13 @@ fn main() -> ! {
 
 ## Platform Support
 
-| Platform | SIMD Support | Features |
-|----------|-------------|----------|
-| x86_64   | AVX2/FMA    | `x86_64` feature |
-| AArch64  | NEON        | `aarch64` feature |
-| WebAssembly | SIMD128   | `wasm` feature |
-| Generic  | Scalar      | Default fallback |
+| Platform        | SIMD Support | Features         |
+|-----------------|-------------|------------------|
+| x86_64 (AVX2)   | AVX2/FMA    | `x86_64` feature |
+| x86_64 (SSE)    | SSE         | `sse` feature    |
+| AArch64         | NEON        | `aarch64` feature |
+| WebAssembly     | SIMD128     | `wasm` feature   |
+| Generic         | Scalar      | Default fallback |
 
 ## License
 

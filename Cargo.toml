@@ -28,6 +28,7 @@ default = ["std"]
 std = []
 parallel = ["rayon"]
 x86_64 = []
+sse = []
 aarch64 = []
 wasm = []
 

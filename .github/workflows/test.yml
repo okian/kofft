@@ -13,3 +13,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test
         run: cargo test --all --verbose
+      - name: Test SSE only
+        run: cargo test --no-default-features --features sse,std --verbose

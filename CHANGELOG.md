@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Window functions: Hann, Hamming, Blackman, Kaiser
 - Stack-only APIs for embedded/MCU usage
 - SIMD acceleration for x86_64 (AVX2), AArch64 (NEON), and WebAssembly
+- Added SSE feature for x86_64 as fallback when AVX2 is unavailable
 - Parallel processing support with Rayon
 - Batch and multi-channel processing
 - Real FFT optimization for real input signals
@@ -53,4 +54,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Minimum Rust version: 1.70
 - License: MIT OR Apache-2.0
 - Dependencies: libm (0.2), rayon (optional, 1.7)
-- Features: std, parallel, x86_64, aarch64, wasm 
+- Features: std, parallel, sse, x86_64, aarch64, wasm
