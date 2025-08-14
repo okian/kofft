@@ -82,3 +82,20 @@ impl<T: Float> core::ops::Neg for Complex<T> {
 pub type Complex32 = Complex<f32>;
 pub type Complex64 = Complex<f64>;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_complex_operations() {
+        let a = Complex64::new(1.0, -2.0);
+        let b = Complex64::new(3.0, 4.0);
+        let c = a.mul(b);
+        assert!((c.re - (1.0 * 3.0 - (-2.0) * 4.0)).abs() < 1e-6);
+        let n = -a;
+        assert_eq!(n.re, -1.0);
+        assert_eq!(n.im, 2.0);
+        let _e = Complex64::expi(<f64 as Float>::pi());
+    }
+}
+

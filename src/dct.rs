@@ -199,6 +199,23 @@ mod coverage_tests {
             assert!((a - b / 2.0).abs() < 1e-4);
         }
     }
+
+    #[test]
+    fn test_dct2_inplace_stack_and_multi_channel() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out = [0.0f32; 4];
+        dct2_inplace_stack(&input, &mut out);
+        let out_ref = dct2(&input);
+        for (a, b) in out.iter().zip(out_ref.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+
+        let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        multi_channel_ii(&mut channels);
+        multi_channel_iii(&mut channels);
+        multi_channel_iv(&mut channels);
+        assert_eq!(channels.len(), 2);
+    }
     #[test]
     fn test_dct4_roundtrip() {
         let x: [f32; 4] = [1.0, 2.0, 3.0, 4.0];

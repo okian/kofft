@@ -180,6 +180,23 @@ mod coverage_tests {
             assert!((a - b / 2.0).abs() < 1e0, "{} vs {}", a, b);
         }
     }
+
+    #[test]
+    fn test_dst2_inplace_stack_and_multi_channel() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out = [0.0f32; 4];
+        dst2_inplace_stack(&input, &mut out);
+        let out_ref = dst2(&input);
+        for (a, b) in out.iter().zip(out_ref.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+
+        let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        multi_channel_i(&mut channels);
+        multi_channel_ii(&mut channels);
+        multi_channel_iii(&mut channels);
+        assert_eq!(channels.len(), 2);
+    }
     proptest! {
         #[test]
         fn prop_dst2_dst3_roundtrip(len in 2usize..16, ref signal in proptest::collection::vec(-1000.0f32..1000.0, 16)) {

@@ -1757,4 +1757,136 @@ mod coverage_tests {
         let mut data: Vec<Complex32> = Vec::new();
         assert!(fft.fft_with_strategy(&mut data, FftStrategy::Auto).is_err());
     }
+
+    #[test]
+    fn test_twiddle_factor_buffer_and_factorize() {
+        let buf = TwiddleFactorBuffer::new(8);
+        let t1 = buf.get(1);
+        let t1_wrap = buf.get(1 + 4);
+        assert!((t1.re - t1_wrap.re).abs() < 1e-6);
+        assert!((t1.im - t1_wrap.im).abs() < 1e-6);
+
+        let factors = factorize(360);
+        assert_eq!(factors, vec![2, 2, 2, 3, 3, 5]);
+    }
+
+    #[test]
+    fn test_fft_inplace_stack_roundtrip() {
+        let mut data = [
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+            Complex32::new(4.0, 0.0),
+        ];
+        let orig = data;
+        fft_inplace_stack(&mut data).unwrap();
+        ifft_inplace_stack(&mut data).unwrap();
+        for (a, b) in data.iter().zip(orig.iter()) {
+            assert!((a.re - b.re).abs() < 1e-4);
+            assert!((a.im - b.im).abs() < 1e-4);
+        }
+
+        let mut data3 = [
+            Complex32::new(0.0, 0.0),
+            Complex32::new(0.0, 0.0),
+            Complex32::new(0.0, 0.0),
+        ];
+        assert_eq!(
+            fft_inplace_stack(&mut data3),
+            Err(FftError::NonPowerOfTwoNoStd)
+        );
+        assert_eq!(
+            ifft_inplace_stack(&mut data3),
+            Err(FftError::NonPowerOfTwoNoStd)
+        );
+    }
+
+    #[test]
+    fn test_batch_and_multi_channel() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut batches = vec![
+            vec![Complex32::new(1.0, 0.0); 4],
+            vec![Complex32::new(2.0, 0.0); 4],
+        ];
+        let orig = batches.clone();
+        batch(&fft, &mut batches).unwrap();
+        batch_inverse(&fft, &mut batches).unwrap();
+        for (batch, o) in batches.iter().zip(orig.iter()) {
+            for (a, b) in batch.iter().zip(o.iter()) {
+                assert!((a.re - b.re).abs() < 1e-4);
+            }
+        }
+        multi_channel(&fft, &mut batches).unwrap();
+        multi_channel_inverse(&fft, &mut batches).unwrap();
+    }
+
+    #[test]
+    fn test_fft_plan_length_mismatch() {
+        let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
+        let mut data = vec![Complex32::new(0.0, 0.0); 3];
+        assert!(plan.fft(&mut data).is_err());
+    }
+
+    #[test]
+    fn test_fft_inplace_stack_empty() {
+        let mut empty: [Complex32; 0] = [];
+        assert_eq!(fft_inplace_stack(&mut empty), Err(FftError::EmptyInput));
+        assert_eq!(ifft_inplace_stack(&mut empty), Err(FftError::EmptyInput));
+    }
+
+    #[test]
+    fn test_fft_plan_out_of_place_mismatch() {
+        let plan = FftPlan::<f32>::new(4, FftStrategy::Radix2);
+        let input = vec![Complex32::new(0.0, 0.0); 4];
+        let mut short_output = vec![Complex32::zero(); 3];
+        assert!(plan.fft_out_of_place(&input, &mut short_output).is_err());
+        let short_input = vec![Complex32::new(0.0, 0.0); 3];
+        let mut output = vec![Complex32::zero(); 4];
+        assert!(plan.ifft_out_of_place(&short_input, &mut output).is_err());
+        let mut data = vec![Complex32::new(0.0, 0.0); 3];
+        assert!(plan.ifft(&mut data).is_err());
+    }
+
+    #[test]
+    fn test_radix_with_twiddles_and_mixed() {
+        let fft = ScalarFftImpl::<f32>::default();
+
+        // Radix-2 with precomputed twiddles
+        let mut d2 = (0..8)
+            .map(|i| Complex32::new(i as f32, 0.0))
+            .collect::<Vec<_>>();
+        let tw2 = TwiddleFactorBuffer::new(8);
+        fft.fft_radix2_with_twiddles(&mut d2, &tw2).unwrap();
+
+        // Radix-4 with precomputed twiddles
+        let mut d4 = (0..16)
+            .map(|i| Complex32::new(i as f32, 0.0))
+            .collect::<Vec<_>>();
+        let tw4 = TwiddleFactorBuffer::new(16);
+        fft.fft_radix4_with_twiddles(&mut d4, &tw4).unwrap();
+
+        // Mixed radix helper chooses radix-2 path
+        let mut mix = (0..8)
+            .map(|i| Complex32::new(i as f32, 0.0))
+            .collect::<Vec<_>>();
+        fft.fft_mixed_radix(&mut mix).unwrap();
+
+        // Mixed radix with twiddles falling back to generic FFT
+        let mut mix6 = (0..6)
+            .map(|i| Complex32::new(i as f32, 0.0))
+            .collect::<Vec<_>>();
+        let tw6 = TwiddleFactorBuffer::new(6);
+        fft.fft_mixed_radix_with_twiddles(&mut mix6, &tw6)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_rfft_irfft_empty() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut input: [f32; 0] = [];
+        let mut freq = [Complex32::zero(); 1];
+        assert_eq!(fft.rfft(&mut input, &mut freq), Err(FftError::EmptyInput));
+        let mut out: [f32; 0] = [];
+        assert_eq!(fft.irfft(&mut freq, &mut out), Err(FftError::EmptyInput));
+    }
 }
