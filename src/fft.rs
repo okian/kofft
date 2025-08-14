@@ -23,9 +23,17 @@ const PARALLEL_FFT_THRESHOLD: usize = 4096;
 
 pub use crate::num::{Complex, Complex32, Complex64, Float};
 
+fn compute_bitrev_table(n: usize) -> Vec<usize> {
+    let bits = n.trailing_zeros();
+    (0..n)
+        .map(|i| i.reverse_bits() >> (usize::BITS - bits))
+        .collect()
+}
+
 pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
     stage_cache: HashMap<(usize, usize), Arc<[Complex<T>]>>,
+    bitrev_cache: HashMap<usize, Arc<[usize]>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -39,14 +47,15 @@ impl<T: Float> FftPlanner<T> {
         Self {
             cache: HashMap::new(),
             stage_cache: HashMap::new(),
+            bitrev_cache: HashMap::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
         if !self.cache.contains_key(&n) {
             let vec: Vec<Complex<T>> = (0..n)
                 .map(|k| {
-                    let angle = -T::from_f32(2.0) * T::pi() * T::from_f32(k as f32)
-                        / T::from_f32(n as f32);
+                    let angle =
+                        -T::from_f32(2.0) * T::pi() * T::from_f32(k as f32) / T::from_f32(n as f32);
                     Complex::expi(angle)
                 })
                 .collect();
@@ -64,6 +73,14 @@ impl<T: Float> FftPlanner<T> {
                 .insert((n, len), Arc::<[Complex<T>]>::from(stage));
         }
         self.stage_cache.get(&(n, len)).unwrap().as_ref()
+    }
+
+    pub fn get_bitrev_table(&mut self, n: usize) -> &[usize] {
+        if !self.bitrev_cache.contains_key(&n) {
+            let table = compute_bitrev_table(n);
+            self.bitrev_cache.insert(n, Arc::<[usize]>::from(table));
+        }
+        self.bitrev_cache.get(&n).unwrap().as_ref()
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
@@ -221,16 +238,13 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if (n & (n - 1)) == 0 {
             // Power of two: use radix-4 where possible, then radix-2
-            let mut j = 0;
-            for i in 1..n {
-                let mut bit = n >> 1;
-                while j & bit != 0 {
-                    j ^= bit;
-                    bit >>= 1;
-                }
-                j ^= bit;
-                if i < j {
-                    input.swap(i, j);
+            {
+                let mut planner = self.planner.borrow_mut();
+                let table = planner.get_bitrev_table(n);
+                for (i, &j) in table.iter().enumerate() {
+                    if i < j {
+                        input.swap(i, j);
+                    }
                 }
             }
             // Largest power of four dividing n
@@ -276,10 +290,8 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                         let stage_vec = {
                             let mut planner = self.planner.borrow_mut();
                             let stage = planner.get_stage_twiddles(n, len);
-                            unsafe {
-                                &*(stage as *const [Complex<T>] as *const [Complex32])
-                            }
-                            .to_vec()
+                            unsafe { &*(stage as *const [Complex<T>] as *const [Complex32]) }
+                                .to_vec()
                         };
                         let input32 =
                             unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
@@ -560,16 +572,13 @@ impl<T: Float> ScalarFftImpl<T> {
             return self.fft(input);
         }
         // Bit-reversal for radix-4
-        let mut j = 0usize;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
+        {
+            let mut planner = self.planner.borrow_mut();
+            let table = planner.get_bitrev_table(n);
+            for (i, &j) in table.iter().enumerate() {
+                if i < j {
+                    input.swap(i, j);
+                }
             }
         }
         let mut len = 4;
@@ -713,16 +722,13 @@ impl ScalarFftImpl<f32> {
         twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
         let n = input.len();
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
+        {
+            let mut planner = self.planner.borrow_mut();
+            let table = planner.get_bitrev_table(n);
+            for (i, &j) in table.iter().enumerate() {
+                if i < j {
+                    input.swap(i, j);
+                }
             }
         }
         let mut len = 2;
@@ -754,16 +760,13 @@ impl ScalarFftImpl<f32> {
             return self.fft_radix2_with_twiddles(input, twiddles);
         }
         // Bit-reversal for radix-4
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
+        {
+            let mut planner = self.planner.borrow_mut();
+            let table = planner.get_bitrev_table(n);
+            for (i, &j) in table.iter().enumerate() {
+                if i < j {
+                    input.swap(i, j);
+                }
             }
         }
         let mut len = 4;
@@ -831,16 +834,13 @@ impl ScalarFftImpl<f32> {
     }
     fn fft_radix2(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
+        {
+            let mut planner = self.planner.borrow_mut();
+            let table = planner.get_bitrev_table(n);
+            for (i, &j) in table.iter().enumerate() {
+                if i < j {
+                    input.swap(i, j);
+                }
             }
         }
         let mut len = 2;
@@ -1985,14 +1985,8 @@ pub fn fft_inplace_stack<const N: usize>(buf: &mut [Complex<f32>; N]) -> Result<
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     // Bit-reversal permutation
-    let mut j = 0;
-    for i in 1..N {
-        let mut bit = N >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j ^= bit;
+    let table = compute_bitrev_table(N);
+    for (i, &j) in table.iter().enumerate() {
         if i < j {
             buf.swap(i, j);
         }
