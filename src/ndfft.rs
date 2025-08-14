@@ -105,7 +105,7 @@ pub fn fft3d_inplace<T: Float>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fft::{ScalarFftImpl, Complex};
+    use crate::fft::{ScalarFftImpl, Complex, FftError};
 
     #[test]
     fn test_fft2d_roundtrip_f32() {
@@ -282,7 +282,37 @@ mod tests {
             }
         }
     }
-} 
+
+    #[test]
+    fn test_fft2d_mismatched_lengths() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut data = vec![
+            vec![Complex::new(1.0, 0.0)],
+            vec![Complex::new(2.0, 0.0), Complex::new(3.0, 0.0)],
+        ];
+        let mut col = vec![Complex::zero(); 2];
+        assert_eq!(
+            fft2d_inplace(&mut data, &fft, &mut col),
+            Err(FftError::MismatchedLengths)
+        );
+    }
+
+    #[test]
+    fn test_fft3d_mismatched_lengths() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut data = vec![
+            vec![vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0)]],
+            vec![vec![Complex::new(3.0, 0.0)]],
+        ];
+        let mut tube = vec![Complex::zero(); 2];
+        let mut row = vec![Complex::zero(); 1];
+        let mut col = vec![Complex::zero(); 2];
+        assert_eq!(
+            fft3d_inplace(&mut data, &fft, &mut tube, &mut row, &mut col),
+            Err(FftError::MismatchedLengths)
+        );
+    }
+}
 
 #[cfg(test)]
 mod coverage_tests {

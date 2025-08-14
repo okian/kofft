@@ -635,6 +635,32 @@ mod coverage_tests {
         let res = stft(&signal, &window, 0, &mut frames);
         assert!(res.is_err());
     }
+
+    #[test]
+    fn test_istft_zero_hop() {
+        let window = [1.0, 1.0, 1.0, 1.0];
+        let frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let mut out = vec![0.0f32; 4];
+        let res = istft(&frames, &window, 0, &mut out);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_stft_stream_iteration() {
+        let signal = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let window = [1.0, 1.0, 1.0, 1.0];
+        let mut stream = StftStream::new(&signal, &window, 2).unwrap();
+        let mut buf = vec![Complex32::new(0.0, 0.0); 4];
+        assert!(stream.next_frame(&mut buf).unwrap());
+        while stream.next_frame(&mut buf).unwrap() {}
+    }
+
+    #[test]
+    fn test_stft_stream_invalid_hop() {
+        let signal = [1.0, 2.0, 3.0, 4.0];
+        let window = [1.0, 1.0, 1.0, 1.0];
+        assert!(StftStream::new(&signal, &window, 0).is_err());
+    }
     #[test]
     fn test_stft_all_zero_window() {
         let signal = [1.0, 2.0, 3.0, 4.0];
