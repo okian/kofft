@@ -15,6 +15,12 @@ use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+#[cfg(feature = "parallel")]
+const PARALLEL_FFT_THRESHOLD: usize = 4096;
+
 pub use crate::num::{Complex, Complex32, Complex64, Float};
 
 pub struct FftPlanner<T: Float> {
@@ -170,17 +176,54 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             while len <= n {
                 let stride = n / len;
                 let wlen = twiddles[stride];
-                let mut i = 0;
-                while i < n {
-                    let mut w = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 2) {
-                        let u = input[i + j];
-                        let v = input[i + j + len / 2].mul(w);
-                        input[i + j] = u.add(v);
-                        input[i + j + len / 2] = u.sub(v);
-                        w = w.mul(wlen);
+                #[cfg(feature = "parallel")]
+                {
+                    if n >= PARALLEL_FFT_THRESHOLD
+                        && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
+                    {
+                        let input32 =
+                            unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
+                        let wlen32 = unsafe { *(&wlen as *const Complex<T> as *const Complex32) };
+                        input32.par_chunks_mut(len).for_each(|chunk| {
+                            let mut w = Complex32::new(1.0, 0.0);
+                            let half = len / 2;
+                            for j in 0..half {
+                                let u = chunk[j];
+                                let v = chunk[j + half].mul(w);
+                                chunk[j] = u.add(v);
+                                chunk[j + half] = u.sub(v);
+                                w = w.mul(wlen32);
+                            }
+                        });
+                    } else {
+                        let mut i = 0;
+                        while i < n {
+                            let mut w = Complex::new(T::one(), T::zero());
+                            for j in 0..(len / 2) {
+                                let u = input[i + j];
+                                let v = input[i + j + len / 2].mul(w);
+                                input[i + j] = u.add(v);
+                                input[i + j + len / 2] = u.sub(v);
+                                w = w.mul(wlen);
+                            }
+                            i += len;
+                        }
                     }
-                    i += len;
+                }
+                #[cfg(not(feature = "parallel"))]
+                {
+                    let mut i = 0;
+                    while i < n {
+                        let mut w = Complex::new(T::one(), T::zero());
+                        for j in 0..(len / 2) {
+                            let u = input[i + j];
+                            let v = input[i + j + len / 2].mul(w);
+                            input[i + j] = u.add(v);
+                            input[i + j + len / 2] = u.sub(v);
+                            w = w.mul(wlen);
+                        }
+                        i += len;
+                    }
                 }
                 len <<= 1;
             }
@@ -248,6 +291,23 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if n == 1 {
             return Ok(());
+        }
+        #[cfg(feature = "parallel")]
+        {
+            if n >= PARALLEL_FFT_THRESHOLD
+                && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
+            {
+                let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
+                input32.par_iter_mut().for_each(|c| c.im = -c.im);
+                self.fft(input)?;
+                let scale = 1.0 / n as f32;
+                input32.par_iter_mut().for_each(|c| {
+                    c.im = -c.im;
+                    c.re *= scale;
+                    c.im *= scale;
+                });
+                return Ok(());
+            }
         }
         for c in input.iter_mut() {
             c.im = -c.im;
@@ -1401,6 +1461,20 @@ impl<T: Float> FftPlan<T> {
     }
 }
 
+/// Compute FFT using the default planner. When the `parallel` feature is
+/// enabled and the input length exceeds a threshold, the transform is split
+/// across threads using Rayon. Falls back to single-threaded execution when
+/// Rayon is absent.
+pub fn fft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().fft(input)
+}
+
+/// Compute inverse FFT using the default planner. Parallelism is applied in
+/// the same manner as [`fft_parallel`].
+pub fn ifft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().ifft(input)
+}
+
 /// Batch FFT: process a batch of mutable slices in-place
 pub fn batch<T: Float, F: FftImpl<T>>(
     fft: &F,
@@ -1832,16 +1906,14 @@ mod coverage_tests {
             .map(|i| Complex32::new(i as f32, 0.0))
             .collect::<Vec<_>>();
         let tw6 = TwiddleFactorBuffer::new(6);
-        fft.fft_mixed_radix_with_twiddles(&mut mix6, &tw6)
-            .unwrap();
+        fft.fft_mixed_radix_with_twiddles(&mut mix6, &tw6).unwrap();
     }
 
     #[test]
     fn test_fft_radix4_sizes() {
         let fft = ScalarFftImpl::<f32>::default();
         for &n in &[16usize, 64usize] {
-            let mut data: Vec<Complex32> =
-                (0..n).map(|i| Complex32::new(i as f32, 0.0)).collect();
+            let mut data: Vec<Complex32> = (0..n).map(|i| Complex32::new(i as f32, 0.0)).collect();
             fft.fft_radix4(&mut data).unwrap();
         }
     }

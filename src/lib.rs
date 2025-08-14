@@ -81,12 +81,12 @@ pub mod window;
 
 /// Discrete Cosine Transform (DCT)
 ///
-/// DCT-II, DCT-III, and DCT-IV implementations for audio and image compression.
+/// DCT-I, DCT-II, DCT-III, and DCT-IV implementations for audio and image compression.
 pub mod dct;
 
 /// Discrete Sine Transform (DST)
 ///
-/// DST-II, DST-III, and DST-IV implementations.
+/// DST-I, DST-II, DST-III, and DST-IV implementations.
 pub mod dst;
 
 /// Discrete Hartley Transform (DHT)

@@ -1,5 +1,5 @@
 //! Discrete Cosine Transform (DCT) module
-//! Supports DCT-II and DCT-III for f32 (real input)
+//! Supports DCT-I through DCT-IV for f32 (real input)
 //! no_std + alloc compatible
 
 extern crate alloc;
@@ -8,6 +8,27 @@ use alloc::vec;
 use core::f32::consts::PI;
 #[allow(unused_imports)]
 use crate::fft::{Float, FftError};
+
+/// DCT-I (even symmetry, endpoints not repeated)
+pub fn dct1(input: &[f32]) -> Vec<f32> {
+    let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    if n == 1 {
+        return vec![input[0] * 2.0];
+    }
+    let mut output = vec![0.0; n];
+    let factor = PI / (n as f32 - 1.0);
+    for k in 0..n {
+        let mut sum = input[0] + if k % 2 == 0 { input[n - 1] } else { -input[n - 1] };
+        for i in 1..n - 1 {
+            sum += 2.0 * input[i] * (factor * i as f32 * k as f32).cos();
+        }
+        output[k] = sum;
+    }
+    output
+}
 
 /// DCT-II (the "standard" DCT, used in JPEG, etc.)
 pub fn dct2(input: &[f32]) -> Vec<f32> {
@@ -54,6 +75,27 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
     output
 }
 
+/// MCU/stack-only, const-generic, in-place DCT-I for power-of-two sizes (no heap, no alloc).
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dct1_inplace_stack<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N < 2 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    let factor = core::f32::consts::PI / (N as f32 - 1.0);
+    for k in 0..N {
+        let mut sum = input[0] + if k % 2 == 0 { input[N - 1] } else { -input[N - 1] };
+        for i in 1..N - 1 {
+            sum += 2.0 * input[i] * (factor * i as f32 * k as f32).cos();
+        }
+        output[k] = sum;
+    }
+    Ok(())
+}
+
 /// MCU/stack-only, const-generic, in-place DCT-II for power-of-two sizes (no heap, no alloc).
 ///
 /// `N` must be a positive even power of two. Returns an error otherwise.
@@ -75,6 +117,13 @@ pub fn dct2_inplace_stack<const N: usize>(
     Ok(())
 }
 
+/// Batch DCT-I
+pub fn batch_i(batches: &mut [Vec<f32>]) {
+    for batch in batches.iter_mut() {
+        let out = dct1(batch);
+        batch.copy_from_slice(&out);
+    }
+}
 /// Batch DCT-II
 pub fn batch_ii(batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
@@ -96,6 +145,8 @@ pub fn batch_iv(batches: &mut [Vec<f32>]) {
         batch.copy_from_slice(&out);
     }
 }
+/// Multi-channel DCT-I
+pub fn multi_channel_i(channels: &mut [Vec<f32>]) { batch_i(channels) }
 /// Multi-channel DCT-II
 pub fn multi_channel_ii(channels: &mut [Vec<f32>]) { batch_ii(channels) }
 /// Multi-channel DCT-III
@@ -135,6 +186,41 @@ mod batch_tests {
                 assert!((x - y / 2.0).abs() < 1e-4);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod dct1_tests {
+    use super::*;
+    #[test]
+    fn test_dct1_roundtrip() {
+        let x: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
+        let y = dct1(&x);
+        let z = dct1(&y);
+        let scale = 2.0 * (x.len() as f32 - 1.0);
+        for (a, b) in x.iter().zip(z.iter()) {
+            assert!((a - b / scale).abs() < 1e-2, "{} vs {}", a, b);
+        }
+    }
+    #[test]
+    fn test_dct1_batch() {
+        let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        batch_i(&mut batches);
+        assert_eq!(batches.len(), 2);
+    }
+    #[test]
+    fn test_dct1_inplace_stack_and_multi_channel() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out = [0.0f32; 4];
+        dct1_inplace_stack(&input, &mut out).unwrap();
+        let out_ref = dct1(&input);
+        for (a, b) in out.iter().zip(out_ref.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+
+        let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        multi_channel_i(&mut channels);
+        assert_eq!(channels.len(), 2);
     }
 }
 
