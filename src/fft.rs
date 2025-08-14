@@ -136,10 +136,22 @@ pub trait FftImpl<T: Float> {
         output.copy_from_slice(input);
         self.ifft(output)
     }
-    /// In-place strided FFT: input is a strided mutable slice (stride in elements, not bytes)
-    fn fft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError>;
-    /// In-place strided IFFT
-    fn ifft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError>;
+    /// In-place strided FFT: input is a strided mutable slice (stride in elements, not bytes).
+    ///
+    /// A scratch buffer of length `input.len()/stride` is used to avoid heap allocations.
+    fn fft_strided(
+        &self,
+        input: &mut [Complex<T>],
+        stride: usize,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError>;
+    /// In-place strided IFFT using a caller-provided scratch buffer.
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex<T>],
+        stride: usize,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError>;
     /// Out-of-place strided FFT: input/output can have different strides
     fn fft_out_of_place_strided(
         &self,
@@ -162,6 +174,20 @@ pub trait FftImpl<T: Float> {
         input: &mut [Complex<T>],
         strategy: FftStrategy,
     ) -> Result<(), FftError>;
+    /// Convenience wrapper that allocates a scratch buffer internally for [`fft_strided`].
+    fn fft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+        let n = if stride == 0 { 0 } else { input.len() / stride };
+        let mut scratch = alloc::vec::Vec::with_capacity(n);
+        scratch.resize(n, Complex::zero());
+        self.fft_strided(input, stride, &mut scratch)
+    }
+    /// Convenience wrapper that allocates a scratch buffer internally for [`ifft_strided`].
+    fn ifft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+        let n = if stride == 0 { 0 } else { input.len() / stride };
+        let mut scratch = alloc::vec::Vec::with_capacity(n);
+        scratch.resize(n, Complex::zero());
+        self.ifft_strided(input, stride, &mut scratch)
+    }
 }
 
 pub struct ScalarFftImpl<T: Float> {
@@ -391,33 +417,47 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         Ok(())
     }
-    fn fft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+    fn fft_strided(
+        &self,
+        input: &mut [Complex<T>],
+        stride: usize,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         if stride == 0 || input.len() % stride != 0 {
             return Err(FftError::InvalidStride);
         }
         let n = input.len() / stride;
-        let mut buf = alloc::vec::Vec::with_capacity(n);
-        for i in 0..n {
-            buf.push(input[i * stride]);
+        if scratch.len() < n {
+            return Err(FftError::MismatchedLengths);
         }
-        self.fft(&mut buf)?;
         for i in 0..n {
-            input[i * stride] = buf[i];
+            scratch[i] = input[i * stride];
+        }
+        self.fft(&mut scratch[..n])?;
+        for i in 0..n {
+            input[i * stride] = scratch[i];
         }
         Ok(())
     }
-    fn ifft_strided(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex<T>],
+        stride: usize,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         if stride == 0 || input.len() % stride != 0 {
             return Err(FftError::InvalidStride);
         }
         let n = input.len() / stride;
-        let mut buf = alloc::vec::Vec::with_capacity(n);
-        for i in 0..n {
-            buf.push(input[i * stride]);
+        if scratch.len() < n {
+            return Err(FftError::MismatchedLengths);
         }
-        self.ifft(&mut buf)?;
         for i in 0..n {
-            input[i * stride] = buf[i];
+            scratch[i] = input[i * stride];
+        }
+        self.ifft(&mut scratch[..n])?;
+        for i in 0..n {
+            input[i * stride] = scratch[i];
         }
         Ok(())
     }
@@ -1048,14 +1088,24 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         Ok(())
     }
 
-    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.fft_strided(input, stride)
+        scalar.fft_strided(input, stride, scratch)
     }
 
-    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.ifft_strided(input, stride)
+        scalar.ifft_strided(input, stride, scratch)
     }
 
     fn fft_out_of_place_strided(
@@ -1258,14 +1308,24 @@ impl FftImpl<f32> for SimdFftSseImpl {
         Ok(())
     }
 
-    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.fft_strided(input, stride)
+        scalar.fft_strided(input, stride, scratch)
     }
 
-    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.ifft_strided(input, stride)
+        scalar.ifft_strided(input, stride, scratch)
     }
 
     fn fft_out_of_place_strided(
@@ -1457,14 +1517,24 @@ impl FftImpl<f32> for SimdFftAArch64Impl {
         Ok(())
     }
 
-    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.fft_strided(input, stride)
+        scalar.fft_strided(input, stride, scratch)
     }
 
-    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.ifft_strided(input, stride)
+        scalar.ifft_strided(input, stride, scratch)
     }
 
     fn fft_out_of_place_strided(
@@ -1650,14 +1720,24 @@ impl FftImpl<f32> for SimdFftWasmImpl {
         Ok(())
     }
 
-    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.fft_strided(input, stride)
+        scalar.fft_strided(input, stride, scratch)
     }
 
-    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
-        scalar.ifft_strided(input, stride)
+        scalar.ifft_strided(input, stride, scratch)
     }
 
     fn fft_out_of_place_strided(
@@ -2011,8 +2091,26 @@ mod coverage_tests {
             Complex32::new(4.0, 0.0),
         ];
         let orig = data.clone();
-        fft.fft_strided(&mut data, 2).unwrap();
-        fft.ifft_strided(&mut data, 2).unwrap();
+        let mut scratch = vec![Complex32::zero(); data.len() / 2];
+        fft.fft_strided(&mut data, 2, &mut scratch).unwrap();
+        fft.ifft_strided(&mut data, 2, &mut scratch).unwrap();
+        for (a, b) in orig.iter().zip(data.iter()) {
+            assert!((a.re - b.re).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_strided_fft_ifft_wrapper() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut data = vec![
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+            Complex32::new(3.0, 0.0),
+            Complex32::new(4.0, 0.0),
+        ];
+        let orig = data.clone();
+        fft.fft_strided_alloc(&mut data, 2).unwrap();
+        fft.ifft_strided_alloc(&mut data, 2).unwrap();
         for (a, b) in orig.iter().zip(data.iter()) {
             assert!((a.re - b.re).abs() < 1e-4);
         }
@@ -2140,10 +2238,11 @@ mod coverage_tests {
     fn test_invalid_strides() {
         let fft = ScalarFftImpl::<f32>::default();
         let mut data = vec![Complex32::new(1.0, 0.0); 3];
+        let mut scratch = vec![Complex32::zero(); data.len()];
         // stride 0
-        assert!(fft.fft_strided(&mut data, 0).is_err());
+        assert!(fft.fft_strided(&mut data, 0, &mut scratch).is_err());
         // length not divisible by stride
-        assert!(fft.fft_strided(&mut data, 2).is_err());
+        assert!(fft.fft_strided(&mut data, 2, &mut scratch).is_err());
 
         let input = vec![Complex32::new(1.0, 0.0); 4];
         let mut output = vec![Complex32::zero(); 4];
@@ -2155,7 +2254,7 @@ mod coverage_tests {
             .ifft_out_of_place_strided(&input, 1, &mut output[..3], 1)
             .is_err());
         // invalid stride for ifft_strided
-        assert!(fft.ifft_strided(&mut data, 0).is_err());
+        assert!(fft.ifft_strided(&mut data, 0, &mut scratch).is_err());
         // out-of-place length mismatch
         assert!(fft
             .fft_out_of_place_strided(&input[..3], 1, &mut output, 1)
