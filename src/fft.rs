@@ -43,13 +43,15 @@ impl<T: Float> FftPlanner<T> {
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
         if !self.cache.contains_key(&n) {
-            let vec: Vec<Complex<T>> = (0..n)
-                .map(|k| {
-                    let angle =
-                        -T::from_f32(2.0) * T::pi() * T::from_f32(k as f32) / T::from_f32(n as f32);
-                    Complex::expi(angle)
-                })
-                .collect();
+            let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
+            let (sin, cos) = angle.sin_cos();
+            let w = Complex::new(cos, sin);
+            let mut vec: Vec<Complex<T>> = Vec::with_capacity(n);
+            let mut current = Complex::new(T::one(), T::zero());
+            for _ in 0..n {
+                vec.push(current);
+                current = current * w;
+            }
             self.cache.insert(n, Arc::<[Complex<T>]>::from(vec));
         }
         self.cache.get(&n).unwrap().as_ref()
@@ -58,8 +60,7 @@ impl<T: Float> FftPlanner<T> {
     pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
         if !self.bitrev_cache.contains_key(&n) {
             let vec = compute_bitrev_table(n);
-            self.bitrev_cache
-                .insert(n, Arc::<[usize]>::from(vec));
+            self.bitrev_cache.insert(n, Arc::<[usize]>::from(vec));
         }
         Arc::clone(self.bitrev_cache.get(&n).unwrap())
     }
