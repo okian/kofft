@@ -9,7 +9,9 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
-use kofft::fft::{fft_parallel, Complex32, FftImpl, FftPlanner, FftStrategy, ScalarFftImpl};
+#[cfg(feature = "parallel")]
+use kofft::fft::fft_parallel;
+use kofft::fft::{Complex32, FftImpl, FftPlanner, FftStrategy, ScalarFftImpl};
 use kofft::rfft::RealFftImpl;
 use realfft::RealFftPlanner as RustRealFftPlanner;
 use rustfft::FftPlanner as RustFftPlanner;
@@ -104,7 +106,7 @@ static RESULTS: Lazy<Mutex<Vec<BenchRecord>>> = Lazy::new(|| Mutex::new(Vec::new
 fn bench_complex(c: &mut Criterion, size: usize) {
     let mut group = c.benchmark_group(format!("complex_{}", size));
 
-    let mut input: Vec<Complex32> = (0..size).map(|i| Complex32::new(i as f32, 0.0)).collect();
+    let input: Vec<Complex32> = (0..size).map(|i| Complex32::new(i as f32, 0.0)).collect();
     let mut data = input.clone();
 
     // kofft single-threaded
@@ -244,7 +246,7 @@ fn bench_complex(c: &mut Criterion, size: usize) {
     // rustfft single-threaded
     let mut rust_planner = RustFftPlanner::<f32>::new();
     let rust_fft = rust_planner.plan_fft_forward(size);
-    let mut rust_input: Vec<rustfft::num_complex::Complex<f32>> = (0..size)
+    let rust_input: Vec<rustfft::num_complex::Complex<f32>> = (0..size)
         .map(|i| rustfft::num_complex::Complex::new(i as f32, 0.0))
         .collect();
     let mut rust_data = rust_input.clone();

@@ -5,7 +5,7 @@ use core::f32::consts::PI;
 use libm::sqrtf;
 
 #[cfg(not(feature = "std"))]
-use libm::{cosf, fabsf, powf, sinf, floorf, logf, log10f};
+use libm::{cosf, fabsf, floorf, log10f, logf, powf, sinf};
 
 #[allow(unused_imports)]
 use crate::fft::Float;
@@ -46,8 +46,7 @@ pub fn blackman(len: usize) -> alloc::vec::Vec<f32> {
             let a1 = 0.5;
             let a2 = 0.08;
             let x = i as f32 / len as f32;
-            a0 - a1 * (2.0 * PI * x).cos()
-               + a2 * (4.0 * PI * x).cos()
+            a0 - a1 * (2.0 * PI * x).cos() + a2 * (4.0 * PI * x).cos()
         })
         .collect()
 }
@@ -79,15 +78,15 @@ pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
 
 /// MCU/stack-only, const-generic, in-place Hann window (no heap)
 pub fn hann_inplace_stack<const N: usize>(out: &mut [f32; N]) {
-    for i in 0..N {
-        out[i] = 0.5 - 0.5 * (2.0 * PI * i as f32 / N as f32).cos();
+    for (i, x) in out.iter_mut().enumerate() {
+        *x = 0.5 - 0.5 * (2.0 * PI * i as f32 / N as f32).cos();
     }
 }
 
 /// MCU/stack-only, const-generic, in-place Hamming window (no heap)
 pub fn hamming_inplace_stack<const N: usize>(out: &mut [f32; N]) {
-    for i in 0..N {
-        out[i] = 0.54 - 0.46 * (2.0 * PI * i as f32 / N as f32).cos();
+    for (i, x) in out.iter_mut().enumerate() {
+        *x = 0.54 - 0.46 * (2.0 * PI * i as f32 / N as f32).cos();
     }
 }
 
@@ -96,9 +95,9 @@ pub fn blackman_inplace_stack<const N: usize>(out: &mut [f32; N]) {
     let a0 = 0.42;
     let a1 = 0.5;
     let a2 = 0.08;
-    for i in 0..N {
+    for (i, out_val) in out.iter_mut().enumerate() {
         let x = i as f32 / N as f32;
-        out[i] = a0 - a1 * (2.0 * PI * x).cos() + a2 * (4.0 * PI * x).cos();
+        *out_val = a0 - a1 * (2.0 * PI * x).cos() + a2 * (4.0 * PI * x).cos();
     }
 }
 
@@ -116,13 +115,13 @@ mod tests {
     fn test_hamming() {
         let w = hamming(8);
         assert_eq!(w.len(), 8);
-        assert!(w.iter().all(|&x| x >= 0.0 && x <= 1.0));
+        assert!(w.iter().all(|&x| (0.0..=1.0).contains(&x)));
     }
     #[test]
     fn test_blackman() {
         let w = blackman(8);
         assert_eq!(w.len(), 8);
-        assert!(w.iter().all(|&x| x >= -1e-6 && x <= 1.0));
+        assert!(w.iter().all(|&x| (-1e-6..=1.0).contains(&x)));
     }
     #[test]
     fn test_kaiser() {
@@ -131,8 +130,8 @@ mod tests {
         // Peak amplitude at center
         assert!((w[4] - 1.0).abs() < 1e-6);
         // Symmetry
-        for i in 0..w.len() {
-            assert!((w[i] - w[w.len() - 1 - i]).abs() < 1e-6);
+        for (a, b) in w.iter().zip(w.iter().rev()) {
+            assert!((*a - *b).abs() < 1e-6);
         }
         assert!(w.iter().all(|&x| x.is_finite()));
     }
@@ -145,10 +144,10 @@ mod tests {
 
         let mut hamming_buf = [0.0f32; 8];
         hamming_inplace_stack(&mut hamming_buf);
-        assert!(hamming_buf.iter().all(|&x| x >= 0.0 && x <= 1.0));
+        assert!(hamming_buf.iter().all(|&x| (0.0..=1.0).contains(&x)));
 
         let mut blackman_buf = [0.0f32; 8];
         blackman_inplace_stack(&mut blackman_buf);
-        assert!(blackman_buf.iter().all(|&x| x >= -1e-6 && x <= 1.0));
+        assert!(blackman_buf.iter().all(|&x| (-1e-6..=1.0).contains(&x)));
     }
 }
