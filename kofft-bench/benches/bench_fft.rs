@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "parallel")]
 use kofft::fft::fft_parallel;
 use kofft::fft::{Complex32, FftImpl, FftPlanner, FftStrategy, ScalarFftImpl};
-use kofft::rfft::{rfft_packed, RealFftImpl};
+use kofft::rfft::{rfft_packed, RealFftImpl, RfftPlanner};
 use realfft::RealFftPlanner as RustRealFftPlanner;
 use rustfft::FftPlanner as RustFftPlanner;
 
@@ -352,11 +352,12 @@ fn bench_real(c: &mut Criterion, size: usize) {
             let mut total = Duration::ZERO;
             let mut alloc_total = 0;
             let mut peak = 0;
+            let mut planner = RfftPlanner::<f32>::new();
             for _ in 0..iters {
                 input.copy_from_slice(&input_template);
                 reset_alloc();
                 let start = Instant::now();
-                rfft_packed(&fft, &mut input, &mut output, &mut scratch).unwrap();
+                rfft_packed(&mut planner, &fft, &mut input, &mut output, &mut scratch).unwrap();
                 let dur = start.elapsed();
                 let (a, p) = alloc_stats();
                 alloc_total += a;
