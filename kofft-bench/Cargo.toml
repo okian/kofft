@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-kofft = { path = "..", features = ["parallel", "slow"] }
+kofft = { path = "..", features = ["parallel", "slow", "avx2"] }
 criterion = { version = "0.7", features = ["html_reports"] }
 rustfft = "6"
 realfft = "3"

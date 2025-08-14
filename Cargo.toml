@@ -39,6 +39,8 @@ x86_64 = []
 sse = []
 aarch64 = []
 wasm = []
+avx2 = []
+avx512 = []
 slow = []
 internal-tests = ["proptest", "rand"]
 
