@@ -13,6 +13,9 @@ use alloc::vec::Vec;
 
 use crate::fft::{Complex, FftError, FftImpl, Float, ScalarFftImpl};
 
+/// Result type returned by [`flatten_3d`].
+type Flatten3dResult<T> = (Vec<Complex<T>>, usize, usize, usize);
+
 /// Flatten a 2D `Vec<Vec<Complex<T>>>` into a single `Vec<Complex<T>>` along
 /// with its row/column dimensions.
 pub fn flatten_2d<T: Float>(
@@ -37,7 +40,7 @@ pub fn flatten_2d<T: Float>(
 /// along with its depth/row/column dimensions.
 pub fn flatten_3d<T: Float>(
     data: Vec<Vec<Vec<Complex<T>>>>,
-) -> Result<(Vec<Complex<T>>, usize, usize, usize), FftError> {
+) -> Result<Flatten3dResult<T>, FftError> {
     let depth = data.len();
     if depth == 0 {
         return Ok((Vec::new(), 0, 0, 0));
@@ -102,20 +105,25 @@ pub fn fft2d_inplace<T: Float>(
     Ok(())
 }
 
+/// Scratch buffers for [`fft3d_inplace`].
+pub struct Fft3dScratch<'a, T: Float> {
+    pub tube: &'a mut [Complex<T>],
+    pub row: &'a mut [Complex<T>],
+    pub col: &'a mut [Complex<T>],
+}
+
 /// 3D FFT in-place (row-column-depth algorithm)
 /// Perform a 3D FFT in-place using a row-column-depth algorithm.
 ///
-/// Scratch slices `tube`, `row`, and `col` must have lengths equal to the
-/// depth, rows, and columns respectively.
+/// The scratch buffers must have lengths equal to the depth, rows, and columns
+/// respectively.
 pub fn fft3d_inplace<T: Float>(
     data: &mut [Complex<T>],
     depth: usize,
     rows: usize,
     cols: usize,
     fft: &ScalarFftImpl<T>,
-    tube: &mut [Complex<T>],
-    row: &mut [Complex<T>],
-    col: &mut [Complex<T>],
+    scratch: &mut Fft3dScratch<'_, T>,
 ) -> Result<(), FftError> {
     if depth * rows * cols != data.len() {
         return Err(FftError::MismatchedLengths);
@@ -123,18 +131,18 @@ pub fn fft3d_inplace<T: Float>(
     if depth == 0 || rows == 0 || cols == 0 {
         return Ok(());
     }
-    if tube.len() != depth || row.len() != rows || col.len() != cols {
+    if scratch.tube.len() != depth || scratch.row.len() != rows || scratch.col.len() != cols {
         return Err(FftError::MismatchedLengths);
     }
     // FFT on depth (z axis)
     for r in 0..rows {
         for c in 0..cols {
             for d in 0..depth {
-                tube[d] = data[d * rows * cols + r * cols + c];
+                scratch.tube[d] = data[d * rows * cols + r * cols + c];
             }
-            fft.fft(tube)?;
+            fft.fft(scratch.tube)?;
             for d in 0..depth {
-                data[d * rows * cols + r * cols + c] = tube[d];
+                data[d * rows * cols + r * cols + c] = scratch.tube[d];
             }
         }
     }
@@ -142,11 +150,11 @@ pub fn fft3d_inplace<T: Float>(
     for d in 0..depth {
         for c in 0..cols {
             for r in 0..rows {
-                row[r] = data[d * rows * cols + r * cols + c];
+                scratch.row[r] = data[d * rows * cols + r * cols + c];
             }
-            fft.fft(row)?;
+            fft.fft(scratch.row)?;
             for r in 0..rows {
-                data[d * rows * cols + r * cols + c] = row[r];
+                data[d * rows * cols + r * cols + c] = scratch.row[r];
             }
         }
     }
@@ -289,10 +297,12 @@ mod tests {
         let mut tube = vec![Complex::zero(); depth];
         let mut row = vec![Complex::zero(); rows];
         let mut col = vec![Complex::zero(); cols];
-        fft3d_inplace(
-            &mut data, depth, rows, cols, &fft, &mut tube, &mut row, &mut col,
-        )
-        .unwrap();
+        let mut scratch = Fft3dScratch {
+            tube: &mut tube,
+            row: &mut row,
+            col: &mut col,
+        };
+        fft3d_inplace(&mut data, depth, rows, cols, &fft, &mut scratch).unwrap();
         inverse_3d(&mut data, depth, rows, cols, &fft);
         for (a, b) in data.iter().zip(orig.iter()) {
             let err = (a.re - b.re).abs().max((a.im - b.im).abs());
@@ -318,10 +328,12 @@ mod tests {
         let mut tube = vec![Complex::zero(); depth];
         let mut row = vec![Complex::zero(); rows];
         let mut col = vec![Complex::zero(); cols];
-        fft3d_inplace(
-            &mut data, depth, rows, cols, &fft, &mut tube, &mut row, &mut col,
-        )
-        .unwrap();
+        let mut scratch = Fft3dScratch {
+            tube: &mut tube,
+            row: &mut row,
+            col: &mut col,
+        };
+        fft3d_inplace(&mut data, depth, rows, cols, &fft, &mut scratch).unwrap();
         inverse_3d(&mut data, depth, rows, cols, &fft);
         for (a, b) in data.iter().zip(orig.iter()) {
             let err = (a.re - b.re).abs().max((a.im - b.im).abs());
@@ -347,8 +359,13 @@ mod tests {
         let mut tube = vec![Complex::zero(); 2];
         let mut row = vec![Complex::zero(); 2];
         let mut col = vec![Complex::zero(); 2];
+        let mut scratch = Fft3dScratch {
+            tube: &mut tube,
+            row: &mut row,
+            col: &mut col,
+        };
         assert_eq!(
-            fft3d_inplace(&mut data, 2, 2, 2, &fft, &mut tube, &mut row, &mut col),
+            fft3d_inplace(&mut data, 2, 2, 2, &fft, &mut scratch),
             Err(FftError::MismatchedLengths)
         );
     }
