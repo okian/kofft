@@ -158,7 +158,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         if (n & (n - 1)) == 0 {
-            // Power of two: radix-2
+            // Power of two: use radix-4 where possible, then radix-2
             let mut j = 0;
             for i in 1..n {
                 let mut bit = n >> 1;
@@ -172,7 +172,44 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 }
             }
             let twiddles = self.planner.borrow_mut().get_twiddles(n);
-            let mut len = 2;
+
+            // Largest power of four dividing n
+            let pow4_stages = n.trailing_zeros() / 2;
+            let mut len = 4usize;
+            let max_radix4 = 1usize << (pow4_stages * 2);
+
+            // Radix-4 stages
+            while len <= max_radix4 {
+                let stride = n / len;
+                let w1 = twiddles[stride];
+                let w2 = twiddles[stride * 2];
+                let w3 = twiddles[stride * 3];
+                let mut i = 0;
+                while i < n {
+                    let mut ww1 = Complex::new(T::one(), T::zero());
+                    let mut ww2 = Complex::new(T::one(), T::zero());
+                    let mut ww3 = Complex::new(T::one(), T::zero());
+                    for j in 0..(len / 4) {
+                        let a = input[i + j];
+                        let b = input[i + j + len / 2].mul(ww1);
+                        let c = input[i + j + len / 4].mul(ww2);
+                        let d = input[i + j + len / 2 + len / 4].mul(ww3);
+                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                        input[i + j] = x0;
+                        input[i + j + len / 4] = x1;
+                        input[i + j + len / 2] = x2;
+                        input[i + j + len / 2 + len / 4] = x3;
+                        ww1 = ww1.mul(w1);
+                        ww2 = ww2.mul(w2);
+                        ww3 = ww3.mul(w3);
+                    }
+                    i += len;
+                }
+                len *= 4;
+            }
+
+            // Remaining radix-2 stages
+            let mut len = max_radix4 * 2;
             while len <= n {
                 let stride = n / len;
                 let wlen = twiddles[stride];
