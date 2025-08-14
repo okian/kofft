@@ -3,8 +3,8 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 
 // no additional libm functions needed
 
@@ -20,7 +20,7 @@ pub fn czt_f32(input: &[f32], m: usize, w: (f32, f32), a: (f32, f32)) -> Vec<(f3
     let a_inv_r = if denom == 0.0 { 0.0 } else { ar / denom };
     let a_inv_i = if denom == 0.0 { 0.0 } else { -ai / denom };
     let mut output = vec![(0.0, 0.0); m];
-    for k in 0..m {
+    for (k, out) in output.iter_mut().enumerate() {
         // compute w^k
         let mut w_k_r = 1.0;
         let mut w_k_i = 0.0;
@@ -37,8 +37,8 @@ pub fn czt_f32(input: &[f32], m: usize, w: (f32, f32), a: (f32, f32)) -> Vec<(f3
         for &x in input {
             let tr = a_pow_r * wnk_r - a_pow_i * wnk_i;
             let ti = a_pow_r * wnk_i + a_pow_i * wnk_r;
-            output[k].0 += x * tr;
-            output[k].1 += x * ti;
+            out.0 += x * tr;
+            out.1 += x * ti;
             // update powers
             let wtr = wnk_r * w_k_r - wnk_i * w_k_i;
             let wti = wnk_r * w_k_i + wnk_i * w_k_r;
@@ -56,12 +56,15 @@ pub fn czt_f32(input: &[f32], m: usize, w: (f32, f32), a: (f32, f32)) -> Vec<(f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_czt_basic() {
         let x = [1.0, 0.0, 0.0, 0.0];
         // DFT via CZT: w = exp(-j*2pi/4), a = 1
-        let w = ((-2.0 * core::f32::consts::PI / 4.0).cos(), (-2.0 * core::f32::consts::PI / 4.0).sin());
+        let w = (
+            (-2.0 * core::f32::consts::PI / 4.0).cos(),
+            (-2.0 * core::f32::consts::PI / 4.0).sin(),
+        );
         let a = (1.0, 0.0);
         let y = czt_f32(&x, 4, w, a);
         assert!((y[0].0 - 1.0).abs() < 1e-5);
