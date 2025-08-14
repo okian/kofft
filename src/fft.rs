@@ -25,12 +25,14 @@ pub use crate::num::{Complex, Complex32, Complex64, Float};
 
 pub struct FftPlanner<T: Float> {
     cache: BTreeMap<usize, Rc<Vec<Complex<T>>>>,
+    stage_cache: BTreeMap<(usize, usize), Rc<Vec<Complex<T>>>>,
 }
 
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
             cache: BTreeMap::new(),
+            stage_cache: BTreeMap::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> Rc<Vec<Complex<T>>> {
@@ -48,6 +50,18 @@ impl<T: Float> FftPlanner<T> {
                 )
             })
             .clone()
+    }
+
+    pub fn get_stage_twiddles(&mut self, n: usize, len: usize) -> Rc<Vec<Complex<T>>> {
+        if let Some(twiddles) = self.stage_cache.get(&(n, len)) {
+            return twiddles.clone();
+        }
+        let base = self.get_twiddles(n);
+        let stride = n / len;
+        let stage: Vec<Complex<T>> = (0..len).map(|i| base[i * stride]).collect();
+        let rc = Rc::new(stage);
+        self.stage_cache.insert((n, len), rc.clone());
+        rc
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
