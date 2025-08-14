@@ -11,9 +11,9 @@ use core::f32::consts::PI;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use core::mem::MaybeUninit;
 use once_cell::unsync::OnceCell;
 
 #[cfg(feature = "parallel")]
@@ -170,7 +170,9 @@ fn should_parallelize_fft(n: usize) -> bool {
     n >= per_core_min * cores
 }
 
-pub use crate::num::{Complex, Complex32, Complex64, Float, SplitComplex, copy_from_complex, copy_to_complex};
+pub use crate::num::{
+    copy_from_complex, copy_to_complex, Complex, Complex32, Complex64, Float, SplitComplex,
+};
 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
@@ -203,16 +205,26 @@ impl<T: Float> FftPlanner<T> {
                 let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
                 let (sin, cos) = angle.sin_cos();
                 let w = Complex::new(cos, sin);
-                // Allocate buffer of length `n` and fill it in-place. The buffer
-                // length equals `n`, so indexing is safe and could be optimized
-                // with `get_unchecked` if desired.
-                let mut vec = vec![Complex::zero(); n];
-                let mut current = Complex::new(T::one(), T::zero());
-                for elem in vec.iter_mut() {
-                    *elem = current;
-                    current = current * w;
+                // Allocate uninitialized buffer of length `n` and fill it in-place.
+                let mut vec: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+                // SAFETY: `vec` is set to length `n` and every element is written
+                // before being read. The allocation is then reinterpreted as
+                // initialized `Vec<Complex<T>>`.
+                unsafe {
+                    vec.set_len(n);
+                    let slice =
+                        core::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut Complex<T>, n);
+                    let mut current = Complex::new(T::one(), T::zero());
+                    for elem in slice.iter_mut() {
+                        *elem = current;
+                        current = current * w;
+                    }
+                    let ptr = slice.as_mut_ptr();
+                    let cap = vec.capacity();
+                    core::mem::forget(vec);
+                    let vec = Vec::from_raw_parts(ptr, n, cap);
+                    Arc::<[Complex<T>]>::from(vec)
                 }
-                Arc::<[Complex<T>]>::from(vec)
             })
             .as_ref()
     }
@@ -372,16 +384,28 @@ pub trait FftImpl<T: Float> {
     /// Convenience wrapper that allocates a scratch buffer internally for [`fft_strided`].
     fn fft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
         let n = if stride == 0 { 0 } else { input.len() / stride };
-        let mut scratch = alloc::vec::Vec::with_capacity(n);
-        scratch.resize(n, Complex::zero());
-        self.fft_strided(input, stride, &mut scratch)
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = alloc::vec::Vec::with_capacity(n);
+        // SAFETY: The scratch buffer is uninitialized, but `fft_strided` treats it
+        // purely as workspace and writes to every element before any read.
+        unsafe {
+            scratch.set_len(n);
+            let scratch_slice =
+                core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut Complex<T>, n);
+            self.fft_strided(input, stride, scratch_slice)
+        }
     }
     /// Convenience wrapper that allocates a scratch buffer internally for [`ifft_strided`].
     fn ifft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
         let n = if stride == 0 { 0 } else { input.len() / stride };
-        let mut scratch = alloc::vec::Vec::with_capacity(n);
-        scratch.resize(n, Complex::zero());
-        self.ifft_strided(input, stride, &mut scratch)
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = alloc::vec::Vec::with_capacity(n);
+        // SAFETY: The scratch buffer is uninitialized, but `ifft_strided` treats it
+        // purely as workspace and writes to every element before any read.
+        unsafe {
+            scratch.set_len(n);
+            let scratch_slice =
+                core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut Complex<T>, n);
+            self.ifft_strided(input, stride, scratch_slice)
+        }
     }
 
     fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
