@@ -4,7 +4,7 @@
 //!
 //! When built with `--features parallel`, also showcases the parallel STFT helper.
 
-use kofft::fft::FftError;
+use kofft::fft::{FftError, ScalarFftImpl};
 #[cfg(feature = "parallel")]
 use kofft::stft::parallel;
 use kofft::stft::{istft, stft};
@@ -15,20 +15,28 @@ fn main() -> Result<(), FftError> {
     let window = hann(4);
     let hop = 2;
 
+    let fft = ScalarFftImpl::<f32>::default();
     let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
-    stft(&signal, &window, hop, &mut frames)?;
+    stft(&signal, &window, hop, &mut frames, &fft)?;
     println!("STFT frames: {:?}", frames);
 
     #[cfg(feature = "parallel")]
     {
         let mut frames_par = vec![vec![]; signal.len().div_ceil(hop)];
-        parallel(&signal, &window, hop, &mut frames_par)?;
+        parallel(&signal, &window, hop, &mut frames_par, &fft)?;
         println!("Parallel STFT frames: {:?}", frames_par);
     }
 
     let mut reconstructed = vec![0.0; signal.len()];
     let mut scratch = vec![0.0; reconstructed.len()];
-    istft(&mut frames, &window, hop, &mut reconstructed, &mut scratch)?;
+    istft(
+        &mut frames,
+        &window,
+        hop,
+        &mut reconstructed,
+        &mut scratch,
+        &fft,
+    )?;
     println!("Reconstructed signal: {:?}", reconstructed);
     Ok(())
 }

@@ -240,17 +240,19 @@ For background on STFT, see [Wikipedia](https://en.wikipedia.org/wiki/Short-time
 ```rust
 use kofft::stft::{stft, istft};
 use kofft::window::hann;
+use kofft::fft::ScalarFftImpl;
 
 let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let window = hann(4);
 let hop_size = 2;
+let fft = ScalarFftImpl::<f32>::default();
 
 let mut frames = vec![vec![]; (signal.len() + hop_size - 1) / hop_size];
-stft(&signal, &window, hop_size, &mut frames)?;
+stft(&signal, &window, hop_size, &mut frames, &fft)?;
 
 let mut output = vec![0.0; signal.len()];
 let mut scratch = vec![0.0; output.len()];
-istft(&mut frames, &window, hop_size, &mut output, &mut scratch)?;
+istft(&mut frames, &window, hop_size, &mut output, &mut scratch, &fft)?;
 ```
 
 #### Streaming STFT/ISTFT
@@ -258,12 +260,13 @@ istft(&mut frames, &window, hop_size, &mut output, &mut scratch)?;
 ```rust
 use kofft::stft::{StftStream, istft};
 use kofft::window::hann;
-use kofft::fft::Complex32;
+use kofft::fft::{Complex32, ScalarFftImpl};
 
 let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let window = hann(4);
 let hop_size = 2;
-let mut stream = StftStream::new(&signal, &window, hop_size)?;
+let fft = ScalarFftImpl::<f32>::default();
+let mut stream = StftStream::new(&signal, &window, hop_size, &fft)?;
 let mut frames = Vec::new();
 let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
 while stream.next_frame(&mut frame)? {
@@ -271,7 +274,7 @@ while stream.next_frame(&mut frame)? {
 }
 let mut output = vec![0.0; signal.len()];
 let mut scratch = vec![0.0; output.len()];
-istft(&mut frames, &window, hop_size, &mut output, &mut scratch)?;
+istft(&mut frames, &window, hop_size, &mut output, &mut scratch, &fft)?;
 ```
 
 ### Batch Processing
