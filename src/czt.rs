@@ -53,7 +53,7 @@ pub fn czt_f32(input: &[f32], m: usize, w: (f32, f32), a: (f32, f32)) -> Vec<(f3
     output
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
 

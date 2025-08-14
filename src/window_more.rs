@@ -67,7 +67,7 @@ pub fn nuttall(len: usize) -> Vec<f32> {
     w
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]

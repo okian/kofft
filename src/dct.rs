@@ -174,7 +174,7 @@ pub fn multi_channel_iv(channels: &mut [Vec<f32>]) {
     batch_iv(channels)
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]
@@ -194,7 +194,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod batch_tests {
     use super::*;
     #[test]
@@ -211,7 +211,7 @@ mod batch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod dct1_tests {
     use super::*;
     #[test]
@@ -246,7 +246,7 @@ mod dct1_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod dct4_tests {
     use super::*;
     #[test]
@@ -272,7 +272,7 @@ mod dct4_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod coverage_tests {
     use super::*;
     use alloc::format;

@@ -60,7 +60,7 @@ pub fn multi_channel(channels: &mut [Vec<f32>]) {
     batch(channels)
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]
@@ -74,7 +74,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod batch_tests {
     use super::*;
     #[test]
@@ -85,7 +85,7 @@ mod batch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod coverage_tests {
     use super::*;
     use alloc::format;

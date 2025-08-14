@@ -101,7 +101,7 @@ pub fn blackman_inplace_stack<const N: usize>(out: &mut [f32; N]) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]

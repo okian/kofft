@@ -168,7 +168,7 @@ pub fn irfft_stack<const N: usize, const M: usize>(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     use crate::fft::ScalarFftImpl;

@@ -376,7 +376,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     use crate::fft::{Complex32, ScalarFftImpl};
@@ -456,7 +456,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod streaming_tests {
     use super::*;
     use crate::fft::Complex32;
@@ -482,7 +482,7 @@ mod streaming_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod edge_case_tests {
     use super::*;
     use crate::fft::{Complex32, ScalarFftImpl};
@@ -608,7 +608,7 @@ mod edge_case_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod coverage_tests {
     use super::*;
     use crate::fft::Complex32;

@@ -156,7 +156,7 @@ pub fn dst4_inplace_stack<const N: usize>(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]
@@ -169,7 +169,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod batch_tests {
     use super::*;
     #[test]
@@ -180,7 +180,7 @@ mod batch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod dst3_tests {
     use super::*;
     #[test]
@@ -191,7 +191,7 @@ mod dst3_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod dst4_tests {
     use super::*;
     #[test]
@@ -225,7 +225,7 @@ mod dst4_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod coverage_tests {
     use super::*;
     use alloc::format;

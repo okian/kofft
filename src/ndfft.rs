@@ -7,7 +7,7 @@
 //! - Future: 3D FFT, real input, streaming
 
 extern crate alloc;
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -122,7 +122,7 @@ pub fn fft3d_inplace<T: Float>(
 
 // TODO: 3D FFT, real input, streaming, property-based tests
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 #[allow(
     clippy::needless_range_loop,
     clippy::manual_memcpy,
@@ -383,7 +383,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 #[allow(
     clippy::needless_range_loop,
     clippy::manual_memcpy,

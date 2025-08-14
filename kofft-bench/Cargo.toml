@@ -1,0 +1,22 @@
+[package]
+name = "kofft-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kofft = { path = "..", features = ["parallel"] }
+criterion = { version = "0.7", features = ["html_reports"] }
+rustfft = "6"
+realfft = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+once_cell = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[[bench]]
+name = "bench_fft"
+harness = false
+
+[[example]]
+name = "update_bench_readme"
+path = "examples/update_bench_readme.rs"

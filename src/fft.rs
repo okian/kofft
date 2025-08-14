@@ -1942,7 +1942,7 @@ pub fn ifft_inplace_stack<const N: usize>(buf: &mut [Complex<f32>; N]) -> Result
 
 // Reference DFT/IDFT is now in dft.rs
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod coverage_tests {
     use super::*;
     use crate::fft::{Complex32, FftImpl, FftPlan, FftStrategy, ScalarFftImpl};

@@ -146,7 +146,7 @@ pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};

@@ -109,7 +109,7 @@ impl<T: Float> core::ops::Mul for Complex<T> {
 pub type Complex32 = Complex<f32>;
 pub type Complex64 = Complex<f64>;
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
 

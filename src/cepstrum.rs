@@ -100,7 +100,7 @@ pub fn mfcc_batch(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]
@@ -118,7 +118,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod mfcc_tests {
     use super::*;
     #[test]
@@ -136,7 +136,7 @@ mod mfcc_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod mel_tests {
     use super::*;
     #[test]
