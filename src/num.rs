@@ -21,6 +21,10 @@ pub trait Float:
     fn sin(self) -> Self;
     fn sin_cos(self) -> (Self, Self);
     fn pi() -> Self;
+    #[inline(always)]
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        self * a + b
+    }
 }
 
 ///
@@ -53,6 +57,10 @@ impl Float for f32 {
     }
     fn pi() -> Self {
         PI32
+    }
+    #[inline(always)]
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        f32::mul_add(self, a, b)
     }
 }
 
@@ -87,6 +95,10 @@ impl Float for f64 {
     fn pi() -> Self {
         core::f64::consts::PI
     }
+    #[inline(always)]
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        f64::mul_add(self, a, b)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -105,11 +117,13 @@ impl<T: Float> Complex<T> {
             im: T::zero(),
         }
     }
+    #[inline(always)]
     pub fn expi(theta: T) -> Self {
         let (sin, cos) = theta.sin_cos();
         Self { re: cos, im: sin }
     }
     #[allow(clippy::should_implement_trait)]
+    #[inline(always)]
     pub fn add(self, other: Self) -> Self {
         Self {
             re: self.re + other.re,
@@ -117,6 +131,7 @@ impl<T: Float> Complex<T> {
         }
     }
     #[allow(clippy::should_implement_trait)]
+    #[inline(always)]
     pub fn sub(self, other: Self) -> Self {
         Self {
             re: self.re - other.re,
@@ -124,16 +139,18 @@ impl<T: Float> Complex<T> {
         }
     }
     #[allow(clippy::should_implement_trait)]
+    #[inline(always)]
     pub fn mul(self, other: Self) -> Self {
         Self {
-            re: self.re * other.re - self.im * other.im,
-            im: self.re * other.im + self.im * other.re,
+            re: self.re.mul_add(other.re, -(self.im * other.im)),
+            im: self.re.mul_add(other.im, self.im * other.re),
         }
     }
 }
 
 impl<T: Float> core::ops::Neg for Complex<T> {
     type Output = Self;
+    #[inline(always)]
     fn neg(self) -> Self {
         Self {
             re: -self.re,
@@ -144,6 +161,7 @@ impl<T: Float> core::ops::Neg for Complex<T> {
 
 impl<T: Float> core::ops::Add for Complex<T> {
     type Output = Self;
+    #[inline(always)]
     fn add(self, other: Self) -> Self {
         Self {
             re: self.re + other.re,
@@ -154,6 +172,7 @@ impl<T: Float> core::ops::Add for Complex<T> {
 
 impl<T: Float> core::ops::Sub for Complex<T> {
     type Output = Self;
+    #[inline(always)]
     fn sub(self, other: Self) -> Self {
         Self {
             re: self.re - other.re,
@@ -164,10 +183,11 @@ impl<T: Float> core::ops::Sub for Complex<T> {
 
 impl<T: Float> core::ops::Mul for Complex<T> {
     type Output = Self;
+    #[inline(always)]
     fn mul(self, other: Self) -> Self {
         Self {
-            re: self.re * other.re - self.im * other.im,
-            im: self.re * other.im + self.im * other.re,
+            re: self.re.mul_add(other.re, -(self.im * other.im)),
+            im: self.re.mul_add(other.im, self.im * other.re),
         }
     }
 }
