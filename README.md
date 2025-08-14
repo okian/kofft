@@ -12,7 +12,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
 - **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
-- **🔧 Multiple transform types**: FFT, DCT, DST, Hartley, Wavelet, STFT, CZT, Goertzel
+- **🔧 Multiple transform types**: FFT, DCT (Types I-IV), DST (Types I-IV), Hartley, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**
 - **🌐 WebAssembly support**
@@ -79,6 +79,17 @@ let mut buf: [Complex32; 8] = [
 fft_inplace_stack(&mut buf)?;
 ```
 
+### DCT-I (Stack-Only)
+
+```rust
+use kofft::dct::dct1_inplace_stack;
+
+let input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let mut output: [f32; 8] = [0.0; 8];
+
+dct1_inplace_stack(&input, &mut output);
+```
+
 ### DCT-II (Stack-Only)
 
 ```rust
@@ -99,6 +110,17 @@ let input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 let mut output: [f32; 8] = [0.0; 8];
 
 dst2_inplace_stack(&input, &mut output);
+```
+
+### DST-IV (Stack-Only)
+
+```rust
+use kofft::dst::dst4_inplace_stack;
+
+let input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let mut output: [f32; 8] = [0.0; 8];
+
+dst4_inplace_stack(&input, &mut output);
 ```
 
 ### Haar Wavelet (Stack-Only)
