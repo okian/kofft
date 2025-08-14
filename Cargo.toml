@@ -41,6 +41,7 @@ aarch64 = []
 wasm = []
 slow = []
 internal-tests = ["proptest", "rand"]
+compile-time-rfft = []
 
 [dependencies.rayon]
 version = "1.7"
