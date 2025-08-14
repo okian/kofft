@@ -12,11 +12,22 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
 - **⚡ SIMD acceleration** (x86_64 AVX2 & SSE, AArch64 NEON, WebAssembly SIMD)
+- **🧮 Radix-4 and mixed-radix FFTs** for power-of-two and composite sizes
 - **🔧 Multiple transform types**: FFT, DCT (Types I-IV), DST (Types I-IV), Hartley, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**
 - **🌐 WebAssembly support**
 - **📱 Parallel processing** (optional)
+
+## Benchmarks
+
+Latest benchmarks on an Intel Xeon Platinum 8370C show:
+
+- 1024-point complex FFT: ~81 µs
+- 4096-point complex FFT: ~1.0 ms
+- 1,048,576-point real FFT: ~67 ms
+
+See [benchmarks/latest.json](benchmarks/latest.json) for full results.
 
 ## Quick Start
 
