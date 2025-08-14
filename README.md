@@ -35,7 +35,7 @@ See [benchmarks/latest.json](benchmarks/latest.json) for full results.
 
 ```toml
 [dependencies]
-kofft = { version = "0.1.1", features = [
+kofft = { version = "0.1.4", features = [
     # "x86_64",   # enable AVX2 on x86_64
     # "sse",      # enable SSE on x86_64 without AVX2
     # "aarch64",  # enable NEON on AArch64
@@ -252,6 +252,26 @@ let mut output = vec![0.0; signal.len()];
 istft(&frames, &window, hop_size, &mut output)?;
 ```
 
+#### Streaming STFT/ISTFT
+
+```rust
+use kofft::stft::{StftStream, istft};
+use kofft::window::hann;
+use kofft::fft::Complex32;
+
+let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+let window = hann(4);
+let hop_size = 2;
+let mut stream = StftStream::new(&signal, &window, hop_size)?;
+let mut frames = Vec::new();
+let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
+while stream.next_frame(&mut frame)? {
+    frames.push(frame.clone());
+}
+let mut output = vec![0.0; signal.len()];
+istft(&frames, &window, hop_size, &mut output)?;
+```
+
 ### Batch Processing
 
 ```rust
@@ -285,7 +305,7 @@ Enable optional features in `Cargo.toml`:
 
 ```toml
 [dependencies]
-kofft = { version = "0.1.1", features = [
+kofft = { version = "0.1.4", features = [
     # "x86_64",   # AVX2 on x86_64
     # "aarch64",  # NEON on AArch64
     # "wasm",     # WebAssembly SIMD

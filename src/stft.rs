@@ -1,4 +1,39 @@
-//! Short-Time Fourier Transform (STFT) implementation using ScalarFftImpl.
+//! Short-Time Fourier Transform (STFT) utilities.
+//!
+//! # Examples
+//!
+//! Batch STFT/ISTFT:
+//! ```no_run
+//! use kofft::stft::{stft, istft};
+//! use kofft::window::hann;
+//!
+//! let signal = vec![1.0, 2.0, 3.0, 4.0];
+//! let window = hann(2);
+//! let hop = 1;
+//! let mut frames = vec![vec![]; 4];
+//! stft(&signal, &window, hop, &mut frames).unwrap();
+//! let mut out = vec![0.0; signal.len()];
+//! istft(&frames, &window, hop, &mut out).unwrap();
+//! ```
+//!
+//! Streaming STFT:
+//! ```no_run
+//! use kofft::stft::{StftStream, istft};
+//! use kofft::window::hann;
+//! use kofft::fft::Complex32;
+//!
+//! let signal = vec![1.0, 2.0, 3.0, 4.0];
+//! let window = hann(2);
+//! let hop = 1;
+//! let mut stream = StftStream::new(&signal, &window, hop).unwrap();
+//! let mut frames = Vec::new();
+//! let mut buf = vec![Complex32::new(0.0, 0.0); window.len()];
+//! while stream.next_frame(&mut buf).unwrap() {
+//!     frames.push(buf.clone());
+//! }
+//! let mut out = vec![0.0; signal.len()];
+//! istft(&frames, &window, hop, &mut out).unwrap();
+//! ```
 
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
@@ -83,7 +118,9 @@ pub fn istft(
     }
     Ok(())
 }
-
+/// Streaming STFT helper.
+///
+/// See the module-level documentation for an example.
 pub struct StftStream<'a> {
     signal: &'a [f32],
     window: &'a [f32],
