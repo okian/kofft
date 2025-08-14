@@ -622,3 +622,67 @@ mod multilevel_tests {
     }
 
 }
+
+#[cfg(all(feature = "internal-tests", test))]
+mod additional_tests {
+    use super::*;
+
+    #[test]
+    fn test_haar_inplace_stack_roundtrip() {
+        let input = [1.0_f32, 2.0, 3.0, 4.0];
+        let mut avg = [0.0_f32; 2];
+        let mut diff = [0.0_f32; 2];
+        haar_forward_inplace_stack(&input, &mut avg[..], &mut diff[..]);
+
+        let mut out = [0.0_f32; 4];
+        // const generic parameter is inferred from avg length (2)
+        haar_inverse_inplace_stack::<2>(&avg[..], &diff[..], &mut out[..]);
+        for (a, b) in input.iter().zip(out.iter()) {
+            assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
+        }
+    }
+
+    #[test]
+    fn test_multi_level_batch_roundtrip() {
+        let inputs = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
+        let (avgs, diffs) = multi_level_forward_batch(&inputs, 2, haar_forward);
+        let recon = multi_level_inverse_batch(&avgs, &diffs, haar_inverse);
+        for (orig, rec) in inputs.iter().zip(recon.iter()) {
+            for (a, b) in orig.iter().zip(rec.iter()) {
+                assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
+            }
+        }
+    }
+
+    #[test]
+    fn test_db2_single_roundtrip() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let (a, d) = db2_forward(&x);
+        let recon = db2_inverse(&a, &d);
+        let mut max_err = 0.0;
+        let mut max_val = 0.0;
+        for (orig, rec) in x.iter().zip(recon.iter()) {
+            let err = (orig - rec).abs();
+            if err > max_err {
+                max_err = err;
+            }
+            if orig.abs() > max_val {
+                max_val = orig.abs();
+            }
+        }
+        assert!(max_err < max_val, "max error for db2 roundtrip: {} (max signal value: {})", max_err, max_val);
+    }
+
+    #[test]
+    fn test_sym4_and_coif1_multi_roundtrip() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+
+        let (sa, sd) = sym4_forward_multi(&x, 2);
+        let srecon = sym4_inverse_multi(&sa, &sd);
+        assert_eq!(srecon.len(), x.len());
+
+        let (ca, cd) = coif1_forward_multi(&x, 2);
+        let crecon = coif1_inverse_multi(&ca, &cd);
+        assert_eq!(crecon.len(), x.len());
+    }
+}
