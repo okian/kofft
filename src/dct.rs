@@ -3,11 +3,11 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::vec;
-use core::f32::consts::PI;
 #[allow(unused_imports)]
-use crate::fft::{Float, FftError};
+use crate::fft::{FftError, Float};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::f32::consts::PI;
 
 /// DCT-I (even symmetry, endpoints not repeated)
 pub fn dct1(input: &[f32]) -> Vec<f32> {
@@ -20,12 +20,17 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
     }
     let mut output = vec![0.0; n];
     let factor = PI / (n as f32 - 1.0);
-    for k in 0..n {
-        let mut sum = input[0] + if k % 2 == 0 { input[n - 1] } else { -input[n - 1] };
-        for i in 1..n - 1 {
-            sum += 2.0 * input[i] * (factor * i as f32 * k as f32).cos();
+    for (k, out_k) in output.iter_mut().enumerate() {
+        let mut sum = input[0]
+            + if k % 2 == 0 {
+                input[n - 1]
+            } else {
+                -input[n - 1]
+            };
+        for (i, &x) in input.iter().enumerate().skip(1).take(n - 2) {
+            sum += 2.0 * x * (factor * i as f32 * k as f32).cos();
         }
-        output[k] = sum;
+        *out_k = sum;
     }
     output
 }
@@ -35,12 +40,12 @@ pub fn dct2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
-    for k in 0..n {
+    for (k, out_k) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
         }
-        output[k] = sum;
+        *out_k = sum;
     }
     output
 }
@@ -50,12 +55,12 @@ pub fn dct3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
-    for k in 0..n {
+    for (k, out_k) in output.iter_mut().enumerate() {
         let mut sum = input[0] / 2.0;
-        for i in 1..n {
-            sum += input[i] * (factor * i as f32 * (k as f32 + 0.5)).cos();
+        for (i, &x) in input.iter().enumerate().skip(1) {
+            sum += x * (factor * i as f32 * (k as f32 + 0.5)).cos();
         }
-        output[k] = sum;
+        *out_k = sum;
     }
     output
 }
@@ -65,12 +70,12 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
-    for k in 0..n {
+    for (k, out_k) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
             sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).cos();
         }
-        output[k] = sum;
+        *out_k = sum;
     }
     output
 }
@@ -86,12 +91,17 @@ pub fn dct1_inplace_stack<const N: usize>(
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / (N as f32 - 1.0);
-    for k in 0..N {
-        let mut sum = input[0] + if k % 2 == 0 { input[N - 1] } else { -input[N - 1] };
-        for i in 1..N - 1 {
-            sum += 2.0 * input[i] * (factor * i as f32 * k as f32).cos();
+    for (k, out_k) in output.iter_mut().enumerate() {
+        let mut sum = input[0]
+            + if k % 2 == 0 {
+                input[N - 1]
+            } else {
+                -input[N - 1]
+            };
+        for (i, &x) in input.iter().enumerate().skip(1).take(N - 2) {
+            sum += 2.0 * x * (factor * i as f32 * k as f32).cos();
         }
-        output[k] = sum;
+        *out_k = sum;
     }
     Ok(())
 }
@@ -107,12 +117,12 @@ pub fn dct2_inplace_stack<const N: usize>(
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / N as f32;
-    for k in 0..N {
+    for (k, out_k) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
-        for i in 0..N {
-            sum += input[i] * (factor * (i as f32 + 0.5) * k as f32).cos();
+        for (i, &x) in input.iter().enumerate() {
+            sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
         }
-        output[k] = sum;
+        *out_k = sum;
     }
     Ok(())
 }
@@ -146,13 +156,21 @@ pub fn batch_iv(batches: &mut [Vec<f32>]) {
     }
 }
 /// Multi-channel DCT-I
-pub fn multi_channel_i(channels: &mut [Vec<f32>]) { batch_i(channels) }
+pub fn multi_channel_i(channels: &mut [Vec<f32>]) {
+    batch_i(channels)
+}
 /// Multi-channel DCT-II
-pub fn multi_channel_ii(channels: &mut [Vec<f32>]) { batch_ii(channels) }
+pub fn multi_channel_ii(channels: &mut [Vec<f32>]) {
+    batch_ii(channels)
+}
 /// Multi-channel DCT-III
-pub fn multi_channel_iii(channels: &mut [Vec<f32>]) { batch_iii(channels) }
+pub fn multi_channel_iii(channels: &mut [Vec<f32>]) {
+    batch_iii(channels)
+}
 /// Multi-channel DCT-IV
-pub fn multi_channel_iv(channels: &mut [Vec<f32>]) { batch_iv(channels) }
+pub fn multi_channel_iv(channels: &mut [Vec<f32>]) {
+    batch_iv(channels)
+}
 
 #[cfg(test)]
 mod tests {
@@ -163,7 +181,9 @@ mod tests {
         let nonzero = x.iter().filter(|&&v| v != 0.0).count();
         let mean = x.iter().map(|&v| v.abs()).sum::<f32>() / x.len() as f32;
         let max = x.iter().map(|&v| v.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let y = dct2(&x);
         let z = dct3(&y);
         for (a, b) in x.iter().zip(z.iter()) {
@@ -233,7 +253,9 @@ mod dct4_tests {
         let nonzero = x.iter().filter(|&&v| v != 0.0).count();
         let mean = x.iter().map(|&v| v.abs()).sum::<f32>() / x.len() as f32;
         let max = x.iter().map(|&v| v.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let y = dct4(&x);
         let z = dct4(&y);
         for (a, b) in x.iter().zip(z.iter()) {
@@ -252,9 +274,8 @@ mod dct4_tests {
 mod coverage_tests {
     use super::*;
     use alloc::format;
-    use proptest::proptest;
     use proptest::prop_assert;
-    
+    use proptest::proptest;
 
     #[test]
     fn test_dct_empty() {
@@ -272,7 +293,9 @@ mod coverage_tests {
     fn test_dct_all_zeros() {
         let x = [0.0; 8];
         let y = dct2(&x);
-        for v in y { assert_eq!(v, 0.0); }
+        for v in y {
+            assert_eq!(v, 0.0);
+        }
     }
     #[test]
     fn test_dct_all_ones() {
@@ -286,7 +309,9 @@ mod coverage_tests {
         let nonzero = x.iter().filter(|&&v| v != 0.0).count();
         let mean = x.iter().map(|&v| v.abs()).sum::<f32>() / x.len() as f32;
         let max = x.iter().map(|&v| v.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let y = dct2(&x);
         let z = dct3(&y);
         for (a, b) in x.iter().zip(z.iter()) {
@@ -314,7 +339,10 @@ mod coverage_tests {
     fn test_dct2_inplace_stack_invalid() {
         let input = [1.0f32, 2.0, 3.0];
         let mut out = [0.0f32; 3];
-        assert_eq!(dct2_inplace_stack(&input, &mut out).unwrap_err(), FftError::NonPowerOfTwoNoStd);
+        assert_eq!(
+            dct2_inplace_stack(&input, &mut out).unwrap_err(),
+            FftError::NonPowerOfTwoNoStd
+        );
     }
     #[test]
     fn test_dct4_roundtrip() {
@@ -322,7 +350,9 @@ mod coverage_tests {
         let nonzero = x.iter().filter(|&&v| v != 0.0).count();
         let mean = x.iter().map(|&v| v.abs()).sum::<f32>() / x.len() as f32;
         let max = x.iter().map(|&v| v.abs()).fold(0.0, f32::max);
-        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return; } // skip pathological
+        if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
+            return;
+        } // skip pathological
         let y = dct4(&x);
         let z = dct4(&y);
         for (a, b) in x.iter().zip(z.iter()) {
@@ -347,4 +377,4 @@ mod coverage_tests {
             }
         }
     }
-} 
+}

@@ -84,6 +84,22 @@ pub fn istft(
     Ok(())
 }
 
+/// Streaming STFT helper that yields successive FFT frames.
+///
+/// # Example
+/// ```no_run
+/// use kofft::stft::StftStream;
+/// use kofft::window::hann;
+/// use kofft::fft::Complex32;
+///
+/// let signal = vec![1.0, 2.0, 3.0, 4.0];
+/// let window = hann(2);
+/// let mut stream = StftStream::new(&signal, &window, 1).unwrap();
+/// let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
+/// while stream.next_frame(&mut frame).unwrap() {
+///     // process frame
+/// }
+/// ```
 pub struct StftStream<'a> {
     signal: &'a [f32],
     window: &'a [f32],
@@ -347,10 +363,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     }
 
     /// Feed in the next STFT frame, get a slice of output samples (may be empty if not enough overlap)
-    pub fn push_frame(
-        &mut self,
-        frame: &[crate::fft::Complex32],
-    ) -> Result<&[f32], FftError> {
+    pub fn push_frame(&mut self, frame: &[crate::fft::Complex32]) -> Result<&[f32], FftError> {
         if frame.len() != self.win_len {
             return Err(FftError::MismatchedLengths);
         }
@@ -387,9 +400,9 @@ mod tests {
     #[test]
     fn test_stft_istft_frame_roundtrip() {
         let fft = ScalarFftImpl::<f32>::default();
-        let n = 8;
-        let win_len = 4;
-        let hop = 2;
+        let n: usize = 8;
+        let win_len: usize = 4;
+        let hop: usize = 2;
         let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let window = [1.0, 1.0, 1.0, 1.0];
         let mut output = [0.0f32; 8];
@@ -419,12 +432,12 @@ mod tests {
 
     #[test]
     fn test_stft_istft_batch_roundtrip() {
-        let n = 8;
-        let win_len = 4;
-        let hop = 2;
+        let n: usize = 8;
+        let win_len: usize = 4;
+        let hop: usize = 2;
         let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let window = [1.0, 1.0, 1.0, 1.0];
-        let num_frames = (n + hop - 1) / hop;
+        let num_frames = n.div_ceil(hop);
         let mut frames = alloc::vec::Vec::new();
         for _ in 0..num_frames {
             frames.push(alloc::vec::Vec::with_capacity(win_len));
@@ -440,12 +453,12 @@ mod tests {
     #[cfg(feature = "parallel")]
     #[test]
     fn test_stft_istft_parallel_roundtrip() {
-        let n = 8;
-        let win_len = 4;
-        let hop = 2;
+        let n: usize = 8;
+        let win_len: usize = 4;
+        let hop: usize = 2;
         let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let window = [1.0, 1.0, 1.0, 1.0];
-        let num_frames = (n + hop - 1) / hop;
+        let num_frames = n.div_ceil(hop);
         let mut frames = alloc::vec::Vec::new();
         for _ in 0..num_frames {
             frames.push(alloc::vec::Vec::with_capacity(win_len));
@@ -565,14 +578,14 @@ mod edge_case_tests {
 
     #[test]
     fn test_hann_window() {
-        let n = 8;
-        let win_len = 4;
-        let hop = 2;
+        let n: usize = 8;
+        let win_len: usize = 4;
+        let hop: usize = 2;
         let signal = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let window: Vec<f32> = (0..win_len)
             .map(|i| 0.5 - 0.5 * (core::f32::consts::PI * 2.0 * i as f32 / win_len as f32).cos())
             .collect();
-        let num_frames = (n + hop - 1) / hop;
+        let num_frames = n.div_ceil(hop);
         let mut frames = alloc::vec::Vec::new();
         for _ in 0..num_frames {
             frames.push(alloc::vec::Vec::with_capacity(win_len));
@@ -696,7 +709,10 @@ mod coverage_tests {
         let window = [1.0, 1.0, 1.0, 1.0];
         let mut stream = StftStream::new(&signal, &window, 2).unwrap();
         let mut buf = vec![Complex32::new(0.0, 0.0); 3];
-        assert_eq!(stream.next_frame(&mut buf).unwrap_err(), FftError::MismatchedLengths);
+        assert_eq!(
+            stream.next_frame(&mut buf).unwrap_err(),
+            FftError::MismatchedLengths
+        );
     }
 
     #[test]
@@ -731,7 +747,7 @@ mod coverage_tests {
             let win_len = win_len.min(len);
             let hop = hop.min(win_len);
             let window = vec![1.0f32; win_len];
-            let num_frames = (len + hop - 1) / hop;
+            let num_frames = len.div_ceil(hop);
             let mut frames = alloc::vec::Vec::new();
             for _ in 0..num_frames {
                 frames.push(alloc::vec::Vec::with_capacity(win_len));

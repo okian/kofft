@@ -563,6 +563,7 @@ impl<T: Float> ScalarFftImpl<T> {
 }
 
 #[cfg(feature = "std")]
+#[derive(Clone, Debug)]
 pub struct TwiddleFactorBuffer {
     pub n: usize,
     pub twiddles: alloc::vec::Vec<Complex32>,
@@ -857,6 +858,15 @@ pub struct SimdFftX86_64Impl;
     target_arch = "x86_64",
     any(feature = "x86_64", target_feature = "avx2")
 ))]
+impl Default for SimdFftX86_64Impl {
+    fn default() -> Self {
+        Self
+    }
+}
+#[cfg(all(
+    target_arch = "x86_64",
+    any(feature = "x86_64", target_feature = "avx2")
+))]
 impl FftImpl<f32> for SimdFftX86_64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
@@ -1076,6 +1086,12 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
 // x86_64 SSE SIMD implementation
 #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
 pub struct SimdFftSseImpl;
+#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+impl Default for SimdFftSseImpl {
+    fn default() -> Self {
+        Self
+    }
+}
 #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
 impl FftImpl<f32> for SimdFftSseImpl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
@@ -1299,6 +1315,15 @@ pub struct SimdFftAArch64Impl;
     target_arch = "aarch64",
     any(feature = "aarch64", target_feature = "neon")
 ))]
+impl Default for SimdFftAArch64Impl {
+    fn default() -> Self {
+        Self
+    }
+}
+#[cfg(all(
+    target_arch = "aarch64",
+    any(feature = "aarch64", target_feature = "neon")
+))]
 impl FftImpl<f32> for SimdFftAArch64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let n = input.len();
@@ -1492,6 +1517,15 @@ use core::arch::wasm32::*;
     any(feature = "wasm", target_feature = "simd128")
 ))]
 pub struct SimdFftWasmImpl;
+#[cfg(all(
+    target_arch = "wasm32",
+    any(feature = "wasm", target_feature = "simd128")
+))]
+impl Default for SimdFftWasmImpl {
+    fn default() -> Self {
+        Self
+    }
+}
 #[cfg(all(
     target_arch = "wasm32",
     any(feature = "wasm", target_feature = "simd128")

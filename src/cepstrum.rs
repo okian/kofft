@@ -3,13 +3,13 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
+use crate::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
 use alloc::vec;
-use crate::fft::{ScalarFftImpl, Complex32, FftImpl, FftError};
-use libm::{sqrtf, powf, floorf, logf, log10f};
+use alloc::vec::Vec;
+use libm::{floorf, log10f, logf, powf, sqrtf};
 
 #[cfg(not(feature = "std"))]
-use libm::{sqrtf, logf, log10f, powf, floorf};
+use libm::{floorf, log10f, logf, powf, sqrtf};
 
 /// Compute the real cepstrum of a real input signal
 pub fn real_cepstrum(input: &[f32]) -> Result<Vec<f32>, FftError> {
@@ -132,7 +132,10 @@ mod mfcc_tests {
     #[test]
     fn test_mfcc_error() {
         let frame = vec![1.0; 32];
-        assert_eq!(mfcc(&frame, 16000.0, 8, 20).unwrap_err(), FftError::InvalidValue);
+        assert_eq!(
+            mfcc(&frame, 16000.0, 8, 20).unwrap_err(),
+            FftError::InvalidValue
+        );
     }
 }
 

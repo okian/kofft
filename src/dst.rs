@@ -257,7 +257,7 @@ mod coverage_tests {
     fn test_dst_all_ones() {
         let x = [1.0; 8];
         let y = dst1(&x);
-        assert!(y.iter().all(|&v| (v as f32).abs() > 0.0));
+        assert!(y.iter().all(|&v| v.abs() > 0.0));
     }
     #[test]
     fn test_dst2_dst3_roundtrip() {

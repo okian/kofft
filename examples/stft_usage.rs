@@ -15,13 +15,13 @@ fn main() -> Result<(), FftError> {
     let window = hann(4);
     let hop = 2;
 
-    let mut frames = vec![vec![]; (signal.len() + hop - 1) / hop];
+    let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
     stft(&signal, &window, hop, &mut frames)?;
     println!("STFT frames: {:?}", frames);
 
     #[cfg(feature = "parallel")]
     {
-        let mut frames_par = vec![vec![]; (signal.len() + hop - 1) / hop];
+        let mut frames_par = vec![vec![]; signal.len().div_ceil(hop)];
         parallel(&signal, &window, hop, &mut frames_par)?;
         println!("Parallel STFT frames: {:?}", frames_par);
     }

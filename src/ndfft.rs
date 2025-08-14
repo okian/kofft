@@ -123,6 +123,11 @@ pub fn fft3d_inplace<T: Float>(
 // TODO: 3D FFT, real input, streaming, property-based tests
 
 #[cfg(test)]
+#[allow(
+    clippy::needless_range_loop,
+    clippy::manual_memcpy,
+    clippy::zero_repeat_side_effects
+)]
 mod tests {
     use super::*;
     use crate::fft::{Complex, FftError, ScalarFftImpl};
@@ -379,6 +384,11 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::needless_range_loop,
+    clippy::manual_memcpy,
+    clippy::zero_repeat_side_effects
+)]
 mod coverage_tests {
     use super::*;
     use crate::fft::{Complex32, ScalarFftImpl};

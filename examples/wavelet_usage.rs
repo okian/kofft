@@ -1,5 +1,5 @@
 use kofft::wavelet::{
-    haar_forward_multi, haar_inverse_multi, db4_forward_multi, db4_inverse_multi,
+    db4_forward_multi, db4_inverse_multi, haar_forward_multi, haar_inverse_multi,
 };
 
 fn main() {

@@ -108,17 +108,17 @@ fn main() {
     ];
 
     // Apply window function (multiply signal by window)
-    for i in 0..8 {
-        signal[i].re *= hann_window[i];
+    for (sig, w) in signal.iter_mut().zip(hann_window.iter()) {
+        sig.re *= *w;
     }
 
     // Compute FFT
     if let Ok(()) = fft_inplace_stack(&mut signal) {
         // Process in frequency domain
         // For example, apply a simple low-pass filter
-        for i in 4..8 {
-            signal[i].re *= 0.1; // Attenuate high frequencies
-            signal[i].im *= 0.1;
+        for bin in signal.iter_mut().skip(4) {
+            bin.re *= 0.1; // Attenuate high frequencies
+            bin.im *= 0.1;
         }
 
         // Compute IFFT
