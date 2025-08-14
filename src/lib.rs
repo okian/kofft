@@ -63,6 +63,7 @@
 //!
 //! at your option.
 
+#![feature(portable_simd)]
 #![no_std]
 extern crate alloc;
 #[cfg(feature = "std")]
