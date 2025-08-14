@@ -2,13 +2,13 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 use core::f32::consts::PI;
 
-use libm::{cosf, fabsf, sinf, floorf};
 #[allow(unused_imports)]
 use crate::fft::Float;
+use libm::{cosf, fabsf, floorf, sinf};
 
 /// Tukey window (tapered cosine)
 pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
@@ -17,15 +17,12 @@ pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
     let edge = floorf(alpha * (len as f32 - 1.0) / 2.0) as usize;
     for (n, w_n) in w.iter_mut().enumerate() {
         *w_n = if n < edge {
-            0.5 * (1.0
-                + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 1.0)).cos())
+            0.5 * (1.0 + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 1.0)).cos())
         } else if n < len - edge {
             1.0
         } else {
             0.5 * (1.0
-                + (PI
-                    * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 2.0 / alpha + 1.0))
-                .cos())
+                + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 2.0 / alpha + 1.0)).cos())
         };
     }
     w

@@ -5,8 +5,8 @@
 #![allow(clippy::excessive_precision)]
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 
 /// Forward Haar wavelet transform (single level)
 pub fn haar_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
@@ -44,7 +44,10 @@ pub fn batch_forward(inputs: &[Vec<f32>]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
 }
 /// Batch Haar inverse transform
 pub fn batch_inverse(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Vec<Vec<f32>> {
-    avgs.iter().zip(diffs.iter()).map(|(a, d)| haar_inverse(a, d)).collect()
+    avgs.iter()
+        .zip(diffs.iter())
+        .map(|(a, d)| haar_inverse(a, d))
+        .collect()
 }
 
 /// Multi-level decomposition using a single-level forward function.
@@ -80,7 +83,11 @@ where
 }
 
 /// Batch multi-level decomposition.
-pub fn multi_level_forward_batch<F>(inputs: &[Vec<f32>], levels: usize, forward: F) -> (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>)
+pub fn multi_level_forward_batch<F>(
+    inputs: &[Vec<f32>],
+    levels: usize,
+    forward: F,
+) -> (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>)
 where
     F: Fn(&[f32]) -> (Vec<f32>, Vec<f32>),
 {
@@ -95,12 +102,15 @@ where
 }
 
 /// Batch multi-level reconstruction.
-pub fn multi_level_inverse_batch<F>(avgs: &[Vec<f32>], diffs: &[Vec<Vec<f32>>], inverse: F) -> Vec<Vec<f32>>
+pub fn multi_level_inverse_batch<F>(
+    avgs: &[Vec<f32>],
+    diffs: &[Vec<Vec<f32>>],
+    inverse: F,
+) -> Vec<Vec<f32>>
 where
     F: Fn(&[f32], &[f32]) -> Vec<f32>,
 {
-    avgs
-        .iter()
+    avgs.iter()
         .zip(diffs.iter())
         .map(|(a, d)| multi_level_inverse(a, d, &inverse))
         .collect()
@@ -108,9 +118,16 @@ where
 
 /// MCU/stack-only, const-generic, in-place Haar wavelet forward (N must be even, no heap)
 /// Output buffers avg and diff must be of length N/2.
-pub fn haar_forward_inplace_stack<const N: usize>(input: &[f32; N], avg: &mut [f32], diff: &mut [f32]) {
+pub fn haar_forward_inplace_stack<const N: usize>(
+    input: &[f32; N],
+    avg: &mut [f32],
+    diff: &mut [f32],
+) {
     let n = N / 2;
-    assert!(avg.len() == n && diff.len() == n, "Output buffers must be of length N/2");
+    assert!(
+        avg.len() == n && diff.len() == n,
+        "Output buffers must be of length N/2"
+    );
     for i in 0..n {
         avg[i] = (input[2 * i] + input[2 * i + 1]) / 2.0;
         diff[i] = (input[2 * i] - input[2 * i + 1]) / 2.0;
@@ -121,7 +138,10 @@ pub fn haar_forward_inplace_stack<const N: usize>(input: &[f32; N], avg: &mut [f
 /// Output buffer out must be of length 2*N.
 pub fn haar_inverse_inplace_stack<const N: usize>(avg: &[f32], diff: &[f32], out: &mut [f32]) {
     let n = avg.len();
-    assert!(diff.len() == n && out.len() == 2 * n, "Output buffer must be of length 2*N");
+    assert!(
+        diff.len() == n && out.len() == 2 * n,
+        "Output buffer must be of length 2*N"
+    );
     for i in 0..n {
         out[2 * i] = avg[i] + diff[i];
         out[2 * i + 1] = avg[i] - diff[i];
@@ -158,8 +178,10 @@ pub fn db2_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
     };
     for i in 0..n {
         let j = 2 * i as isize;
-        approx[i] = h0 * reflect(j) + h1 * reflect(j + 1) + h2 * reflect(j + 2) + h3 * reflect(j + 3);
-        detail[i] = g0 * reflect(j) + g1 * reflect(j + 1) + g2 * reflect(j + 2) + g3 * reflect(j + 3);
+        approx[i] =
+            h0 * reflect(j) + h1 * reflect(j + 1) + h2 * reflect(j + 2) + h3 * reflect(j + 3);
+        detail[i] =
+            g0 * reflect(j) + g1 * reflect(j + 1) + g2 * reflect(j + 2) + g3 * reflect(j + 3);
     }
     (approx, detail)
 }
@@ -231,7 +253,10 @@ pub fn db2_forward_batch(inputs: &[Vec<f32>]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) 
 }
 /// Batch db2 inverse transform
 pub fn db2_inverse_batch(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Vec<Vec<f32>> {
-    avgs.iter().zip(diffs.iter()).map(|(a, d)| db2_inverse(a, d)).collect()
+    avgs.iter()
+        .zip(diffs.iter())
+        .map(|(a, d)| db2_inverse(a, d))
+        .collect()
 }
 
 /// Daubechies-4 (db4) wavelet transform (single level)
@@ -578,7 +603,10 @@ mod db2_tests {
     fn test_db2_batch_roundtrip() {
         // For short signals, db2 is not perfectly invertible due to boundary effects.
         // This test demonstrates the limitation: the error is small relative to the signal.
-        let xs = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], vec![5.0, 6.0, 7.0, 8.0, 1.0, 2.0, 3.0, 4.0]];
+        let xs = vec![
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            vec![5.0, 6.0, 7.0, 8.0, 1.0, 2.0, 3.0, 4.0],
+        ];
         let (avgs, diffs) = db2_forward_batch(&xs);
         let recon = db2_inverse_batch(&avgs, &diffs);
         let mut max_err = 0.0;
@@ -586,17 +614,29 @@ mod db2_tests {
         for (orig, rec) in xs.iter().zip(recon.iter()) {
             for (a, b) in orig.iter().zip(rec.iter()) {
                 let err = (a - b).abs();
-                if err > max_err { max_err = err; }
-                if a.abs() > max_val { max_val = a.abs(); }
+                if err > max_err {
+                    max_err = err;
+                }
+                if a.abs() > max_val {
+                    max_val = a.abs();
+                }
             }
         }
         // For short signals, db2 is not suitable for strict roundtrip. Error should be less than the max signal value.
-        assert!(max_err < max_val, "max error for db2 roundtrip: {} (max signal value: {})", max_err, max_val);
+        assert!(
+            max_err < max_val,
+            "max error for db2 roundtrip: {} (max signal value: {})",
+            max_err,
+            max_val
+        );
     }
     #[test]
     fn test_haar_batch_roundtrip_strict() {
         // Haar wavelet is perfectly invertible for all signal lengths
-        let xs = vec![vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], vec![5.0, 6.0, 7.0, 8.0, 1.0, 2.0, 3.0, 4.0]];
+        let xs = vec![
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            vec![5.0, 6.0, 7.0, 8.0, 1.0, 2.0, 3.0, 4.0],
+        ];
         let (avgs, diffs) = batch_forward(&xs);
         let recon = batch_inverse(&avgs, &diffs);
         for (orig, rec) in xs.iter().zip(recon.iter()) {
@@ -620,7 +660,6 @@ mod multilevel_tests {
             assert!((o - r).abs() < 1e-5);
         }
     }
-
 }
 
 #[cfg(all(feature = "internal-tests", test))]
@@ -670,7 +709,12 @@ mod additional_tests {
                 max_val = orig.abs();
             }
         }
-        assert!(max_err < max_val, "max error for db2 roundtrip: {} (max signal value: {})", max_err, max_val);
+        assert!(
+            max_err < max_val,
+            "max error for db2 roundtrip: {} (max signal value: {})",
+            max_err,
+            max_val
+        );
     }
 
     #[test]

@@ -241,6 +241,7 @@ fn bench_complex(c: &mut Criterion, size: usize) {
     };
     run_strategy("Radix2", FftStrategy::Radix2);
     run_strategy("Radix4", FftStrategy::Radix4);
+    run_strategy("SplitRadix", FftStrategy::SplitRadix);
     run_strategy("Auto", FftStrategy::Auto);
 
     // rustfft single-threaded
