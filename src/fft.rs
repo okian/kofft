@@ -170,7 +170,7 @@ fn should_parallelize_fft(n: usize) -> bool {
     n >= per_core_min * cores
 }
 
-pub use crate::num::{Complex, Complex32, Complex64, Float};
+pub use crate::num::{Complex, Complex32, Complex64, Float, SplitComplex, copy_from_complex, copy_to_complex};
 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
@@ -382,6 +382,38 @@ pub trait FftImpl<T: Float> {
         let mut scratch = alloc::vec::Vec::with_capacity(n);
         scratch.resize(n, Complex::zero());
         self.ifft_strided(input, stride, &mut scratch)
+    }
+
+    fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        let mut buf = alloc::vec::Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.fft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
+    }
+
+    fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        let mut buf = alloc::vec::Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.ifft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
     }
 }
 
@@ -2105,6 +2137,20 @@ impl<T: Float> FftPlan<T> {
         output.copy_from_slice(input);
         self.ifft(output)
     }
+
+    pub fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != self.n || im.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.fft_split(re, im)
+    }
+
+    pub fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != self.n || im.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.ifft_split(re, im)
+    }
 }
 
 /// Compute FFT using the default planner. When the `parallel` feature is
@@ -2119,6 +2165,14 @@ pub fn fft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> 
 /// the same manner as [`fft_parallel`].
 pub fn ifft_parallel<T: Float>(input: &mut [Complex<T>]) -> Result<(), FftError> {
     ScalarFftImpl::<T>::default().ifft(input)
+}
+
+pub fn fft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().fft_split(re, im)
+}
+
+pub fn ifft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().ifft_split(re, im)
 }
 
 /// Batch FFT: process a batch of mutable slices in-place
