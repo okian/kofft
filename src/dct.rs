@@ -27,8 +27,7 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
             } else {
                 -input[n - 1]
             };
-        for (offset, &x) in input[1..n - 1].iter().enumerate() {
-            let i = offset + 1;
+        for (i, &x) in input.iter().take(n - 1).enumerate().skip(1) {
             sum += 2.0 * x * (factor * i as f32 * k as f32).cos();
         }
         *out = sum;
@@ -99,8 +98,7 @@ pub fn dct1_inplace_stack<const N: usize>(
             } else {
                 -input[N - 1]
             };
-        for (offset, &x) in input[1..N - 1].iter().enumerate() {
-            let i = offset + 1;
+        for (i, &x) in input.iter().take(N - 1).enumerate().skip(1) {
             sum += 2.0 * x * (factor * i as f32 * k as f32).cos();
         }
         *out = sum;

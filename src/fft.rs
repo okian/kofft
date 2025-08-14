@@ -563,6 +563,7 @@ impl<T: Float> ScalarFftImpl<T> {
 }
 
 #[cfg(feature = "std")]
+#[derive(Clone, Debug)]
 pub struct TwiddleFactorBuffer {
     pub n: usize,
     pub twiddles: alloc::vec::Vec<Complex32>,
@@ -852,6 +853,7 @@ use core::arch::x86_64::*;
     target_arch = "x86_64",
     any(feature = "x86_64", target_feature = "avx2")
 ))]
+#[derive(Default)]
 pub struct SimdFftX86_64Impl;
 #[cfg(all(
     target_arch = "x86_64",
@@ -1075,6 +1077,7 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
 
 // x86_64 SSE SIMD implementation
 #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+#[derive(Default)]
 pub struct SimdFftSseImpl;
 #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
 impl FftImpl<f32> for SimdFftSseImpl {
@@ -1294,6 +1297,7 @@ use core::arch::aarch64::*;
     target_arch = "aarch64",
     any(feature = "aarch64", target_feature = "neon")
 ))]
+#[derive(Default)]
 pub struct SimdFftAArch64Impl;
 #[cfg(all(
     target_arch = "aarch64",
@@ -1491,6 +1495,7 @@ use core::arch::wasm32::*;
     target_arch = "wasm32",
     any(feature = "wasm", target_feature = "simd128")
 ))]
+#[derive(Default)]
 pub struct SimdFftWasmImpl;
 #[cfg(all(
     target_arch = "wasm32",
