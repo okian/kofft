@@ -421,7 +421,7 @@ fn save_results() {
     let date = chrono::Utc::now().to_rfc3339();
     let runner = env::var("RUNNER_NAME").unwrap_or_else(|_| "local".to_string());
 
-    let prev = fs::read("benchmarks/latest.json")
+    let prev = fs::read("../benchmarks/latest.json")
         .ok()
         .and_then(|d| serde_json::from_slice::<BenchFile>(&d).ok());
 
@@ -489,11 +489,11 @@ fn save_results() {
         results,
     };
     let json = serde_json::to_string_pretty(&file).unwrap();
-    fs::create_dir_all("benchmarks").unwrap();
+    fs::create_dir_all("../benchmarks").unwrap();
     if prev.is_some() {
-        let _ = fs::rename("benchmarks/latest.json", "benchmarks/previous.json");
+        let _ = fs::rename("../benchmarks/latest.json", "../benchmarks/previous.json");
     }
-    fs::write("benchmarks/latest.json", json).unwrap();
+    fs::write("../benchmarks/latest.json", json).unwrap();
 }
 
 fn main_bench(c: &mut Criterion) {

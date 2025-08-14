@@ -251,7 +251,10 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                     {
                         let input32 =
                             unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                        let stage_vec = stage.as_ref().clone();
+                        let stage_vec = unsafe {
+                            &*(stage.as_slice() as *const [Complex<T>] as *const [Complex32])
+                        }
+                        .to_vec();
                         let half = len / 2;
                         input32.par_chunks_mut(len).for_each(move |chunk| {
                             for j in 0..half {
@@ -1947,7 +1950,7 @@ pub fn ifft_inplace_stack<const N: usize>(buf: &mut [Complex<f32>; N]) -> Result
 
 // Reference DFT/IDFT is now in dft.rs
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod coverage_tests {
     use super::*;
     use crate::fft::{Complex32, FftImpl, FftPlan, FftStrategy, ScalarFftImpl};

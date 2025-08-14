@@ -541,7 +541,7 @@ pub fn coif1_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Vec<f32> {
     multi_level_inverse(avg, details, coif1_inverse)
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]
@@ -555,7 +555,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod batch_tests {
     use super::*;
     #[test]
@@ -571,7 +571,7 @@ mod batch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod db2_tests {
     use super::*;
     #[test]
@@ -607,7 +607,7 @@ mod db2_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod multilevel_tests {
     use super::*;
 

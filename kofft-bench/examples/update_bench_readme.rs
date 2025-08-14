@@ -31,7 +31,7 @@ struct BenchRecord {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let data = fs::read_to_string("benchmarks/latest.json")?;
+    let data = fs::read_to_string("../benchmarks/latest.json")?;
     let bf: BenchFile = serde_json::from_str(&data)?;
 
     let mut table = String::new();

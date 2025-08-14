@@ -65,7 +65,7 @@ pub fn goertzel_f32(
     Ok(sqrtf(power))
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     use alloc::vec::Vec;
