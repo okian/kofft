@@ -4,6 +4,7 @@
 //! and features of the kofft library.
 
 use kofft::fft::{Complex32, ScalarFftImpl, FftImpl};
+use kofft::rfft::RealFftImpl;
 use std::time::Instant;
 
 fn main() {

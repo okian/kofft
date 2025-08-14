@@ -552,51 +552,6 @@ fn factorize(mut n: usize) -> alloc::vec::Vec<usize> {
 }
 
 impl ScalarFftImpl<f32> {
-    /// Real-input FFT: input is real-valued, output is N/2+1 complex values (Hermitian symmetry)
-    pub fn rfft(&self, input: &mut [f32], output: &mut [Complex32]) -> Result<(), FftError> {
-        let n = input.len();
-        if n == 0 {
-            return Err(FftError::EmptyInput);
-        }
-        if output.len() != n / 2 + 1 {
-            return Err(FftError::MismatchedLengths);
-        }
-        // Copy real input into complex buffer
-        let mut buf = alloc::vec::Vec::with_capacity(n);
-        for &x in input.iter() {
-            buf.push(Complex32::new(x, 0.0));
-        }
-        self.fft(&mut buf)?;
-        // Output first N/2+1 values (Hermitian symmetry)
-        for k in 0..=n / 2 {
-            output[k] = buf[k];
-        }
-        Ok(())
-    }
-    /// Inverse real-input FFT: input is N/2+1 complex values, output is N real values
-    pub fn irfft(&self, input: &mut [Complex32], output: &mut [f32]) -> Result<(), FftError> {
-        let n = output.len();
-        if n == 0 {
-            return Err(FftError::EmptyInput);
-        }
-        if input.len() != n / 2 + 1 {
-            return Err(FftError::MismatchedLengths);
-        }
-        // Reconstruct full Hermitian-symmetric spectrum
-        let mut buf = alloc::vec::Vec::with_capacity(n);
-        for &c in input.iter() {
-            buf.push(c);
-        }
-        for k in (1..n / 2).rev() {
-            let conj = Complex32::new(input[k].re, -input[k].im);
-            buf.push(conj);
-        }
-        self.ifft(&mut buf)?;
-        for (i, c) in buf.iter().enumerate() {
-            output[i] = c.re;
-        }
-        Ok(())
-    }
     #[cfg(feature = "std")]
     pub fn fft_radix2_with_twiddles(
         &self,
@@ -1952,16 +1907,6 @@ mod coverage_tests {
             .collect::<Vec<_>>();
         let tw6 = TwiddleFactorBuffer::new(6);
         fft.fft_mixed_radix_with_twiddles(&mut mix6, &tw6).unwrap();
-    }
-
-    #[test]
-    fn test_rfft_irfft_empty() {
-        let fft = ScalarFftImpl::<f32>::default();
-        let mut input: [f32; 0] = [];
-        let mut freq = [Complex32::zero(); 1];
-        assert_eq!(fft.rfft(&mut input, &mut freq), Err(FftError::EmptyInput));
-        let mut out: [f32; 0] = [];
-        assert_eq!(fft.irfft(&mut freq, &mut out), Err(FftError::EmptyInput));
     }
 
     #[test]
