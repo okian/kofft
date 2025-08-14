@@ -24,7 +24,9 @@ exclude = [
 libm = "0.2"
 
 [features]
-default = ["std"]
+# Enable parallel helpers by default; architecture-specific SIMD features can be
+# activated explicitly for benchmarking or when targeting those platforms.
+default = ["std", "parallel"]
 std = []
 parallel = ["rayon"]
 x86_64 = []
@@ -76,6 +78,10 @@ required-features = ["parallel"]
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"
+
+[[example]]
+name = "simd_speedup"
+path = "examples/simd_speedup.rs"
 
 [[bench]]
 name = "bench_fft"

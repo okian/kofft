@@ -24,12 +24,12 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 ```toml
 [dependencies]
-kofft = { version = "0.1.1", features = [
-    # "x86_64",   # enable AVX2 on x86_64
-    # "sse",      # enable SSE on x86_64 without AVX2
+kofft = { version = "0.1.4", features = [
+    # "x86_64",   # enable AVX2/FMA on x86_64
+    # "sse",      # enable SSE2 on x86_64 without AVX2
     # "aarch64",  # enable NEON on AArch64
     # "wasm",     # enable WebAssembly SIMD
-    # "parallel", # enable Rayon-based parallel helpers
+    # parallel is enabled by default
 ] }
 ```
 
@@ -404,6 +404,21 @@ fn main() -> ! {
 | Generic  | Scalar      | Default fallback |
 
 Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.
+
+### Benchmarking with SIMD features
+
+For benchmarking on x86_64, enable the `x86_64` feature and compile for your
+native CPU so that AVX2/FMA instructions are used:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo bench --features "x86_64"
+```
+
+An example comparing scalar and SIMD implementations is available:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo run --release --example simd_speedup --features "x86_64"
+```
 
 ## Benchmark
 <!-- BENCH_START -->
