@@ -15,14 +15,18 @@ pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
     let alpha = alpha.clamp(0.0, 1.0);
     let mut w = vec![0.0; len];
     let edge = floorf(alpha * (len as f32 - 1.0) / 2.0) as usize;
-    for n in 0..len {
-        if n < edge {
-            w[n] = 0.5 * (1.0 + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 1.0)).cos());
+    for (n, w_n) in w.iter_mut().enumerate() {
+        *w_n = if n < edge {
+            0.5 * (1.0
+                + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 1.0)).cos())
         } else if n < len - edge {
-            w[n] = 1.0;
+            1.0
         } else {
-            w[n] = 0.5 * (1.0 + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 2.0 / alpha + 1.0)).cos());
-        }
+            0.5 * (1.0
+                + (PI
+                    * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 2.0 / alpha + 1.0))
+                .cos())
+        };
     }
     w
 }
@@ -31,9 +35,9 @@ pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
 pub fn bartlett(len: usize) -> Vec<f32> {
     let mut w = vec![0.0; len];
     let n = len as f32;
-    for i in 0..len {
+    for (i, w_i) in w.iter_mut().enumerate() {
         let x = (i as f32 - (n - 1.0) / 2.0) / ((n - 1.0) / 2.0);
-        w[i] = 1.0 - fabsf(x);
+        *w_i = 1.0 - fabsf(x);
     }
     w
 }
@@ -42,9 +46,9 @@ pub fn bartlett(len: usize) -> Vec<f32> {
 pub fn bohman(len: usize) -> Vec<f32> {
     let mut w = vec![0.0; len];
     let n = len as f32;
-    for i in 0..len {
+    for (i, w_i) in w.iter_mut().enumerate() {
         let x = (i as f32 / (n - 1.0)) - 0.5;
-        w[i] = (1.0 - fabsf(x)) * cosf(PI * x) + 1.0 / PI * sinf(PI * x);
+        *w_i = (1.0 - fabsf(x)) * cosf(PI * x) + 1.0 / PI * sinf(PI * x);
     }
     w
 }
@@ -56,9 +60,9 @@ pub fn nuttall(len: usize) -> Vec<f32> {
     let a1 = 0.487396;
     let a2 = 0.144232;
     let a3 = 0.012604;
-    for n in 0..len {
+    for (n, w_n) in w.iter_mut().enumerate() {
         let x = 2.0 * PI * n as f32 / (len as f32 - 1.0);
-        w[n] = a0 - a1 * cosf(x) + a2 * cosf(2.0 * x) - a3 * cosf(3.0 * x);
+        *w_n = a0 - a1 * cosf(x) + a2 * cosf(2.0 * x) - a3 * cosf(3.0 * x);
     }
     w
 }

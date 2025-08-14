@@ -2,6 +2,8 @@
 //! Supports Haar wavelet transform (forward and inverse) for f32
 //! no_std + alloc compatible
 
+#![allow(clippy::excessive_precision)]
+
 extern crate alloc;
 use alloc::vec::Vec;
 use alloc::vec;

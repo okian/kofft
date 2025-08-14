@@ -113,13 +113,13 @@ impl<'a> StftStream<'a> {
         if self.pos >= self.signal.len() {
             return Ok(false);
         }
-        for i in 0..win_len {
+        for (i, out_i) in out.iter_mut().enumerate() {
             let x = if self.pos + i < self.signal.len() {
                 self.signal[self.pos + i] * self.window[i]
             } else {
                 0.0
             };
-            out[i] = Complex32::new(x, 0.0);
+            *out_i = Complex32::new(x, 0.0);
         }
         self.fft.fft(out)?;
         self.pos += self.hop_size;
