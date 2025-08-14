@@ -481,7 +481,12 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if n == 1 {
             return Ok(());
         }
-        match strategy {
+        let chosen = if strategy == FftStrategy::Auto {
+            self.planner.borrow_mut().plan_strategy(n)
+        } else {
+            strategy
+        };
+        match chosen {
             FftStrategy::Radix2 => self.fft(input),
             FftStrategy::Radix4 => self.fft_radix4(input),
             FftStrategy::Auto => self.fft(input),
@@ -2101,6 +2106,22 @@ mod coverage_tests {
             .unwrap();
         // Auto strategy on power-of-two length
         fft.fft_with_strategy(&mut data, FftStrategy::Auto).unwrap();
+    }
+
+    #[test]
+    fn test_fft_with_strategy_auto_matches_radix4() {
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut auto_data = (1..=16)
+            .map(|i| Complex32::new(i as f32, 0.0))
+            .collect::<Vec<_>>();
+        let mut radix4_data = auto_data.clone();
+        fft.fft_radix4(&mut radix4_data).unwrap();
+        fft.fft_with_strategy(&mut auto_data, FftStrategy::Auto)
+            .unwrap();
+        for (a, b) in radix4_data.iter().zip(auto_data.iter()) {
+            assert!((a.re - b.re).abs() < 1e-4);
+            assert!((a.im - b.im).abs() < 1e-4);
+        }
     }
 
     #[test]
