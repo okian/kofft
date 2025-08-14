@@ -13,3 +13,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test
         run: cargo test --all --verbose
+  test-sse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test SSE
+        run: cargo test --no-default-features --features "sse std" --verbose

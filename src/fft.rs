@@ -3,7 +3,7 @@
 //! This module implements real and complex FFT routines based on the
 //! [Cooley–Tukey algorithm](https://en.wikipedia.org/wiki/Cooley%E2%80%93Tukey_FFT_algorithm).
 //! A [`FftPlanner`] caches twiddle factors for reuse. Optional SIMD features
-//! (`x86_64`, `aarch64`, `wasm`) accelerate computation, and both in-place and
+//! (`x86_64`, `sse`, `aarch64`, `wasm`) accelerate computation, and both in-place and
 //! out-of-place APIs are provided for single or batched transforms.
 
 use core::f32::consts::PI;
@@ -747,8 +747,8 @@ impl ScalarFftImpl<f32> {
 
 // SIMD FFT implementations (feature-gated)
 
-// x86_64 AVX2/FMA SIMD implementation
-#[cfg(all(feature = "x86_64", target_arch = "x86_64"))]
+// x86_64 SIMD implementations
+#[cfg(all(any(feature = "x86_64", feature = "sse"), target_arch = "x86_64"))]
 use core::arch::x86_64::*;
 
 // x86_64 AVX2/FMA
@@ -828,7 +828,8 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         }
         // Only use SIMD for lengths that are multiples of 4
         if n % 4 != 0 {
-            ScalarFftImpl::<f32>::fft(input)?;
+            let scalar = ScalarFftImpl::<f32>::default();
+            scalar.fft(input)?;
             return Ok(());
         }
         unsafe {
@@ -923,6 +924,215 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         // Fallback to scalar for now
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft(input)?;
+        Ok(())
+    }
+
+    fn fft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_strided(input, stride)
+    }
+
+    fn ifft_strided(&self, input: &mut [Complex32], stride: usize) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_strided(input, stride)
+    }
+
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
+        let scalar = ScalarFftImpl::<f32>::default();
+        scalar.fft_with_strategy(input, strategy)
+    }
+}
+
+// x86_64 SSE SIMD implementation
+#[cfg(all(feature = "sse", target_arch = "x86_64"))]
+pub struct SimdFftSseImpl;
+#[cfg(all(feature = "sse", target_arch = "x86_64"))]
+impl FftImpl<f32> for SimdFftSseImpl {
+    fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        let n = input.len();
+        if n <= 1 {
+            return Ok(());
+        }
+        let aligned = (input.as_ptr() as usize) % 16 == 0;
+        if n >= 4 {
+            unsafe {
+                let mut j = 0;
+                let mut i = 1;
+                while i + 3 < n {
+                    let mut bit = n >> 1;
+                    while j & bit != 0 {
+                        j ^= bit;
+                        bit >>= 1;
+                    }
+                    j ^= bit;
+                    if i < j {
+                        let ptr_i = input.as_mut_ptr().add(i);
+                        let ptr_j = input.as_mut_ptr().add(j);
+                        if aligned {
+                            let re_i = _mm_load_ps(ptr_i as *const f32);
+                            let im_i = _mm_load_ps(ptr_i.add(1) as *const f32);
+                            let re_j = _mm_load_ps(ptr_j as *const f32);
+                            let im_j = _mm_load_ps(ptr_j.add(1) as *const f32);
+                            _mm_store_ps(ptr_i as *mut f32, re_j);
+                            _mm_store_ps(ptr_i.add(1) as *mut f32, im_j);
+                            _mm_store_ps(ptr_j as *mut f32, re_i);
+                            _mm_store_ps(ptr_j.add(1) as *mut f32, im_i);
+                        } else {
+                            let re_i = _mm_loadu_ps(ptr_i as *const f32);
+                            let im_i = _mm_loadu_ps(ptr_i.add(1) as *const f32);
+                            let re_j = _mm_loadu_ps(ptr_j as *const f32);
+                            let im_j = _mm_loadu_ps(ptr_j.add(1) as *const f32);
+                            _mm_storeu_ps(ptr_i as *mut f32, re_j);
+                            _mm_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
+                            _mm_storeu_ps(ptr_j as *mut f32, re_i);
+                            _mm_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
+                        }
+                    }
+                    i += 4;
+                }
+                for k in i..n {
+                    let mut bit = n >> 1;
+                    while j & bit != 0 {
+                        j ^= bit;
+                        bit >>= 1;
+                    }
+                    j ^= bit;
+                    if k < j {
+                        input.swap(k, j);
+                    }
+                }
+            }
+        } else {
+            let mut j = 0;
+            for i in 1..n {
+                let mut bit = n >> 1;
+                while j & bit != 0 {
+                    j ^= bit;
+                    bit >>= 1;
+                }
+                j ^= bit;
+                if i < j {
+                    input.swap(i, j);
+                }
+            }
+        }
+        if n % 4 != 0 {
+            let scalar = ScalarFftImpl::<f32>::default();
+            scalar.fft(input)?;
+            return Ok(());
+        }
+        unsafe {
+            let mut len = 2;
+            while len <= n {
+                let ang = -2.0 * PI / (len as f32);
+                let wlen = Complex32::expi(ang);
+                let mut i = 0;
+                while i < n {
+                    let mut w = Complex32::new(1.0, 0.0);
+                    let half = len / 2;
+                    let simd_width = 4;
+                    let simd_iters = half / simd_width;
+                    for s in 0..simd_iters {
+                        let j = s * simd_width;
+                        let mut w_re = [0.0f32; 4];
+                        let mut w_im = [0.0f32; 4];
+                        let mut wj = w;
+                        for k in 0..simd_width {
+                            w_re[k] = wj.re;
+                            w_im[k] = wj.im;
+                            wj = wj.mul(wlen);
+                        }
+                        let w_re_v = _mm_loadu_ps(w_re.as_ptr());
+                        let w_im_v = _mm_loadu_ps(w_im.as_ptr());
+                        let u_re = if aligned {
+                            _mm_load_ps(&input[i + j].re as *const f32)
+                        } else {
+                            _mm_loadu_ps(&input[i + j].re as *const f32)
+                        };
+                        let u_im = if aligned {
+                            _mm_load_ps(&input[i + j].im as *const f32)
+                        } else {
+                            _mm_loadu_ps(&input[i + j].im as *const f32)
+                        };
+                        let v_re = if aligned {
+                            _mm_load_ps(&input[i + j + half].re as *const f32)
+                        } else {
+                            _mm_loadu_ps(&input[i + j + half].re as *const f32)
+                        };
+                        let v_im = if aligned {
+                            _mm_load_ps(&input[i + j + half].im as *const f32)
+                        } else {
+                            _mm_loadu_ps(&input[i + j + half].im as *const f32)
+                        };
+                        let t1 = _mm_mul_ps(v_re, w_re_v);
+                        let t2 = _mm_mul_ps(v_im, w_im_v);
+                        let t3 = _mm_mul_ps(v_re, w_im_v);
+                        let t4 = _mm_mul_ps(v_im, w_re_v);
+                        let vw_re = _mm_sub_ps(t1, t2);
+                        let vw_im = _mm_add_ps(t3, t4);
+                        let out_re = _mm_add_ps(u_re, vw_re);
+                        let out_im = _mm_add_ps(u_im, vw_im);
+                        let out2_re = _mm_sub_ps(u_re, vw_re);
+                        let out2_im = _mm_sub_ps(u_im, vw_im);
+                        if aligned {
+                            _mm_store_ps(&mut input[i + j].re as *mut f32, out_re);
+                            _mm_store_ps(&mut input[i + j].im as *mut f32, out_im);
+                            _mm_store_ps(&mut input[i + j + half].re as *mut f32, out2_re);
+                            _mm_store_ps(&mut input[i + j + half].im as *mut f32, out2_im);
+                        } else {
+                            _mm_storeu_ps(&mut input[i + j].re as *mut f32, out_re);
+                            _mm_storeu_ps(&mut input[i + j].im as *mut f32, out_im);
+                            _mm_storeu_ps(&mut input[i + j + half].re as *mut f32, out2_re);
+                            _mm_storeu_ps(&mut input[i + j + half].im as *mut f32, out2_im);
+                        }
+                        for _ in 0..simd_width {
+                            w = w.mul(wlen);
+                        }
+                    }
+                    for j in (simd_iters * simd_width)..half {
+                        let u = input[i + j];
+                        let v = input[i + j + half].mul(w);
+                        input[i + j] = u.add(v);
+                        input[i + j + half] = u.sub(v);
+                        w = w.mul(wlen);
+                    }
+                    i += len;
+                }
+                len <<= 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.ifft(input)?;
         Ok(())
@@ -1225,7 +1435,8 @@ impl FftImpl<f32> for SimdFftWasmImpl {
             }
         }
         if n % 4 != 0 {
-            ScalarFftImpl::<f32>::fft(input)?;
+            let scalar = ScalarFftImpl::<f32>::default();
+            scalar.fft(input)?;
             return Ok(());
         }
         unsafe {
@@ -1347,6 +1558,10 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     {
         return Box::new(SimdFftX86_64Impl);
     }
+    #[cfg(all(feature = "sse", target_arch = "x86_64"))]
+    {
+        return Box::new(SimdFftSseImpl);
+    }
     #[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
     {
         return Box::new(SimdFftAArch64Impl);
@@ -1357,6 +1572,7 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     }
     #[cfg(not(any(
         all(feature = "x86_64", target_arch = "x86_64"),
+        all(feature = "sse", target_arch = "x86_64"),
         all(feature = "aarch64", target_arch = "aarch64"),
         all(feature = "wasm", target_arch = "wasm32")
     )))]
