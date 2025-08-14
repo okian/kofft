@@ -84,10 +84,12 @@ fn should_parallelize_fft(n: usize) -> bool {
 
 pub use crate::num::{Complex, Complex32, Complex64, Float};
 
+type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
+
 pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
     bitrev_cache: HashMap<usize, Arc<[usize]>>,
-    bluestein_cache: HashMap<usize, (Arc<[Complex<T>]>, Arc<[Complex<T>]>)>,
+    bluestein_cache: HashMap<usize, BluesteinPair<T>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -114,8 +116,8 @@ impl<T: Float> FftPlanner<T> {
             // with `get_unchecked` if desired.
             let mut vec = vec![Complex::zero(); n];
             let mut current = Complex::new(T::one(), T::zero());
-            for i in 0..n {
-                vec[i] = current;
+            for elem in vec.iter_mut() {
+                *elem = current;
                 current = current * w;
             }
             Arc::<[Complex<T>]>::from(vec)
@@ -132,17 +134,13 @@ impl<T: Float> FftPlanner<T> {
     }
 
     #[cfg(feature = "std")]
-    pub fn get_bluestein(
-        &mut self,
-        n: usize,
-    ) -> (Arc<[Complex<T>]>, Arc<[Complex<T>]>) {
+    pub fn get_bluestein(&mut self, n: usize) -> BluesteinPair<T> {
         if !self.bluestein_cache.contains_key(&n) {
             let m = (2 * n - 1).next_power_of_two();
             let mut chirp: Vec<Complex<T>> = Vec::with_capacity(n);
             let mut b: Vec<Complex<T>> = Vec::with_capacity(m);
             for i in 0..n {
-                let angle =
-                    T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
+                let angle = T::pi() * T::from_f32((i * i) as f32) / T::from_f32(n as f32);
                 chirp.push(Complex::expi(-angle));
                 b.push(Complex::expi(angle));
             }
