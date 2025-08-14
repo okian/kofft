@@ -1,4 +1,5 @@
 use core::f32::consts::PI as PI32;
+use libm::{cos, cosf, sin, sinf};
 
 // Minimal float trait for generic FFT (no_std, no external deps)
 pub trait Float: Copy + Clone + PartialEq + PartialOrd + core::fmt::Debug +
@@ -12,39 +13,21 @@ pub trait Float: Copy + Clone + PartialEq + PartialOrd + core::fmt::Debug +
     fn pi() -> Self;
 }
 
-///
-/// # Note
-/// The #[allow(unconditional_recursion)] attribute is used here because rustc/Clippy
-/// sometimes issues a false positive warning when calling inherent methods (e.g., f32::cos(self))
-/// inside a trait implementation with the same method name. This is not actual recursion:
-/// - f32::cos(self) and f64::cos(self) call the standard library's inherent method, not the trait method.
-/// - All tests pass and no stack overflow occurs.
-/// - This is a known linter false positive and is safe to suppress.
-#[allow(unconditional_recursion)]
 impl Float for f32 {
     fn zero() -> Self { 0.0 }
     fn one() -> Self { 1.0 }
     fn from_f32(x: f32) -> Self { x }
-    fn cos(self) -> Self { f32::cos(self) }
-    fn sin(self) -> Self { f32::sin(self) }
+    fn cos(self) -> Self { cosf(self) }
+    fn sin(self) -> Self { sinf(self) }
     fn pi() -> Self { PI32 }
 }
 
-///
-/// # Note
-/// The #[allow(unconditional_recursion)] attribute is used here because rustc/Clippy
-/// sometimes issues a false positive warning when calling inherent methods (e.g., f64::cos(self))
-/// inside a trait implementation with the same method name. This is not actual recursion:
-/// - f64::cos(self) calls the standard library's inherent method, not the trait method.
-/// - All tests pass and no stack overflow occurs.
-/// - This is a known linter false positive and is safe to suppress.
-#[allow(unconditional_recursion)]
 impl Float for f64 {
     fn zero() -> Self { 0.0 }
     fn one() -> Self { 1.0 }
     fn from_f32(x: f32) -> Self { x as f64 }
-    fn cos(self) -> Self { f64::cos(self) }
-    fn sin(self) -> Self { f64::sin(self) }
+    fn cos(self) -> Self { cos(self) }
+    fn sin(self) -> Self { sin(self) }
     fn pi() -> Self { core::f64::consts::PI }
 }
 

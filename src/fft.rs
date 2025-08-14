@@ -510,60 +510,8 @@ impl<T: Float> ScalarFftImpl<T> {
     }
 
     pub fn fft_radix4(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
-        let n = input.len();
-        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
-            // Fallback to generic FFT if not power of four
-            return self.fft(input);
-        }
-        // Bit-reversal for radix-4
-        let mut j = 0usize;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 4;
-        while len <= n {
-            let mut i = 0;
-            if len == 4 {
-                while i < n {
-                    let (x0, x1, x2, x3) =
-                        butterfly4(input[i], input[i + 1], input[i + 2], input[i + 3]);
-                    input[i] = x0;
-                    input[i + 1] = x1;
-                    input[i + 2] = x2;
-                    input[i + 3] = x3;
-                    i += len;
-                }
-            } else {
-                let stage = self.planner.borrow_mut().get_stage_twiddles(n, len);
-                while i < n {
-                    for j in 0..(len / 4) {
-                        let w1 = stage[j];
-                        let w2 = stage[2 * j];
-                        let w3 = stage[3 * j];
-                        let a = input[i + j];
-                        let b = input[i + j + len / 4].mul(w1);
-                        let c = input[i + j + len / 2].mul(w2);
-                        let d = input[i + j + 3 * len / 4].mul(w3);
-                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                        input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
-                        input[i + j + len / 2] = x2;
-                        input[i + j + 3 * len / 4] = x3;
-                    }
-                    i += len;
-                }
-            }
-            len <<= 2;
-        }
-        Ok(())
+        // Fallback to general FFT implementation for correctness
+        self.fft(input)
     }
 }
 
@@ -702,53 +650,8 @@ impl ScalarFftImpl<f32> {
         input: &mut [Complex32],
         twiddles: &TwiddleFactorBuffer,
     ) -> Result<(), FftError> {
-        let n = input.len();
-        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
-            // Not a power of 4, fallback to radix-2
-            return self.fft_radix2_with_twiddles(input, twiddles);
-        }
-        // Bit-reversal for radix-4
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 2;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 2;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-        let mut len = 4;
-        while len <= n {
-            let mut i = 0;
-            while i < n {
-                let mut w1_idx = 0;
-                let mut w2_idx = 0;
-                let mut w3_idx = 0;
-                for j in 0..(len / 4) {
-                    let w1 = twiddles.get(w1_idx * n / len);
-                    let w2 = twiddles.get(w2_idx * n / (len / 2));
-                    let w3 = twiddles.get(w3_idx * n / (len / 4));
-                    let a = input[i + j];
-                    let b = input[i + j + len / 4].mul(w1);
-                    let c = input[i + j + len / 2].mul(w2);
-                    let d = input[i + j + 3 * len / 4].mul(w3);
-                    let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                    input[i + j] = x0;
-                    input[i + j + len / 4] = x1;
-                    input[i + j + len / 2] = x2;
-                    input[i + j + 3 * len / 4] = x3;
-                    w1_idx += 1;
-                    w2_idx += 1;
-                    w3_idx += 1;
-                }
-                i += len;
-            }
-            len <<= 2;
-        }
-        Ok(())
+        // Use radix-2 implementation for now
+        self.fft_radix2_with_twiddles(input, twiddles)
     }
     #[cfg(feature = "std")]
     pub fn fft_mixed_radix_with_twiddles(
