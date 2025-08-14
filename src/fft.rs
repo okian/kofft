@@ -28,6 +28,12 @@ pub struct FftPlanner<T: Float> {
     stage_cache: BTreeMap<(usize, usize), Rc<Vec<Complex<T>>>>,
 }
 
+impl<T: Float> Default for FftPlanner<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
@@ -84,8 +90,6 @@ impl<T: Float> FftPlanner<T> {
             } else {
                 FftStrategy::Radix2
             }
-        } else if has_two && has_other {
-            FftStrategy::Auto
         } else {
             FftStrategy::Auto
         }
@@ -103,17 +107,14 @@ pub enum FftError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum FftStrategy {
     Radix2,
     Radix4,
+    #[default]
     Auto,
 }
 
-impl Default for FftStrategy {
-    fn default() -> Self {
-        FftStrategy::Auto
-    }
-}
 
 // Refactor FftImpl and ScalarFftImpl to be generic over T: Float
 pub trait FftImpl<T: Float> {
@@ -681,14 +682,12 @@ impl ScalarFftImpl<f32> {
         while len <= n {
             let mut i = 0;
             while i < n {
-                let mut w_idx = 0;
-                for j in 0..(len / 2) {
+                for (w_idx, j) in (0..(len / 2)).enumerate() {
                     let w = twiddles.get(w_idx * n / len);
                     let u = input[i + j];
                     let v = input[i + j + len / 2].mul(w);
                     input[i + j] = u.add(v);
                     input[i + j + len / 2] = u.sub(v);
-                    w_idx += 1;
                 }
                 i += len;
             }
@@ -724,13 +723,10 @@ impl ScalarFftImpl<f32> {
         while len <= n {
             let mut i = 0;
             while i < n {
-                let mut w1_idx = 0;
-                let mut w2_idx = 0;
-                let mut w3_idx = 0;
-                for j in 0..(len / 4) {
-                    let w1 = twiddles.get(w1_idx * n / len);
-                    let w2 = twiddles.get(w2_idx * n / (len / 2));
-                    let w3 = twiddles.get(w3_idx * n / (len / 4));
+                for (w_idx, j) in (0..(len / 4)).enumerate() {
+                    let w1 = twiddles.get(w_idx * n / len);
+                    let w2 = twiddles.get(w_idx * n / (len / 2));
+                    let w3 = twiddles.get(w_idx * n / (len / 4));
                     let a = input[i + j];
                     let b = input[i + j + len / 4].mul(w1);
                     let c = input[i + j + len / 2].mul(w2);
@@ -740,9 +736,6 @@ impl ScalarFftImpl<f32> {
                     input[i + j + len / 4] = x1;
                     input[i + j + len / 2] = x2;
                     input[i + j + 3 * len / 4] = x3;
-                    w1_idx += 1;
-                    w2_idx += 1;
-                    w3_idx += 1;
                 }
                 i += len;
             }
@@ -760,9 +753,9 @@ impl ScalarFftImpl<f32> {
         let factors = factorize(n);
         if factors.iter().all(|&f| f == 2 || f == 4) {
             if factors.iter().all(|&f| f == 4) {
-                return self.fft_radix4_with_twiddles(input, twiddles);
+                self.fft_radix4_with_twiddles(input, twiddles)
             } else {
-                return self.fft_radix2_with_twiddles(input, twiddles);
+                self.fft_radix2_with_twiddles(input, twiddles)
             }
         } else {
             self.fft(input)
@@ -780,9 +773,9 @@ impl ScalarFftImpl<f32> {
         if factors.iter().all(|&f| f == 2 || f == 4) {
             // Use radix-2/radix-4 as appropriate
             if factors.iter().all(|&f| f == 4) {
-                return self.fft_radix4(input);
+                self.fft_radix4(input)
             } else {
-                return self.fft_radix2(input);
+                self.fft_radix2(input)
             }
         } else {
             // Fallback to Bluestein's for unsupported factors
@@ -1696,7 +1689,7 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     }
     #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
     {
-        return Box::new(SimdFftSseImpl);
+        Box::new(SimdFftSseImpl)
     }
     #[cfg(all(
         target_arch = "aarch64",
@@ -1769,15 +1762,13 @@ impl<T: Float> FftPlan<T> {
                 FftStrategy::Radix2 => {
                     if let Some(tw) = &self.twiddles {
                         return ScalarFftImpl::<f32>::default()
-                            .fft_radix2_with_twiddles(input32, tw)
-                            .map_err(|e| e);
+                            .fft_radix2_with_twiddles(input32, tw);
                     }
                 }
                 FftStrategy::Radix4 => {
                     if let Some(tw) = &self.twiddles {
                         return ScalarFftImpl::<f32>::default()
-                            .fft_radix4_with_twiddles(input32, tw)
-                            .map_err(|e| e);
+                            .fft_radix4_with_twiddles(input32, tw);
                     }
                 }
                 FftStrategy::Auto => {}
