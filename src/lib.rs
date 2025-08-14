@@ -22,6 +22,9 @@
 //! - `aarch64`: Enable AArch64 SIMD optimizations
 //! - `wasm`: Enable WebAssembly SIMD optimizations
 //!
+//! SIMD backends are also activated automatically when compiling with the
+//! appropriate `target-feature` flags (e.g., `-C target-feature=+avx2`).
+//!
 //! ## Performance
 //!
 //! - **Stack-only APIs**: No heap allocation, suitable for MCUs with limited RAM
@@ -31,12 +34,12 @@
 //!
 //! ## Platform Support
 //!
-//! | Platform | SIMD Support | Features |
-//! |----------|-------------|----------|
-//! | x86_64   | AVX2/FMA    | `x86_64` feature |
-//! | x86_64 (SSE) | SSE2 | `sse` feature |
-//! | AArch64  | NEON        | `aarch64` feature |
-//! | WebAssembly | SIMD128   | `wasm` feature |
+//! | Platform | SIMD Support | Enable via |
+//! |----------|-------------|-----------|
+//! | x86_64   | AVX2/FMA    | `x86_64` feature or `-C target-feature=+avx2` |
+//! | x86_64 (SSE) | SSE2 | `sse` feature or default `sse2` target |
+//! | AArch64  | NEON        | `aarch64` feature or `-C target-feature=+neon` |
+//! | WebAssembly | SIMD128   | `wasm` feature or `-C target-feature=+simd128` |
 //! | Generic  | Scalar      | Default fallback |
 
 //! Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.
