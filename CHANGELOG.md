@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened FFT helpers with stride checks, new error cases, and radix-4/mixed-radix paths ([benchmark results](benchmarks/latest.json))
 - Verified matrix dimensions for multi-dimensional FFT utilities
 
+### Fixed
+- Corrected author name spelling in license files
+
 ## [0.1.0] - 2024-12-19
 
 ### Added
