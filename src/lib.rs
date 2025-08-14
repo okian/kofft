@@ -420,6 +420,7 @@ mod tests {
     #[test]
     fn test_rfft_irfft_roundtrip() {
         let mut input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let orig = input.clone();
         let mut freq = vec![Complex32::zero(); input.len() / 2 + 1];
         let mut output = vec![0.0; input.len()];
         let mut scratch = vec![Complex32::zero(); input.len() / 2];
@@ -430,7 +431,7 @@ mod tests {
         fft.irfft_with_scratch(&mut freq, &mut output, &mut scratch)
             .unwrap();
 
-        for (a, b) in input.iter().zip(output.iter()) {
+        for (a, b) in orig.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
         }
     }

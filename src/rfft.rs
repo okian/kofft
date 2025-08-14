@@ -111,9 +111,8 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     if output.len() != m + 1 {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex<T>] = unsafe {
-        core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex<T>, m)
-    };
+    let data: &mut [Complex<T>] =
+        unsafe { core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex<T>, m) };
     fft.fft(data)?;
     let y0 = data[0];
     output[0] = Complex::new(y0.re + y0.im, T::zero());
@@ -150,9 +149,8 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     if input.len() != m + 1 {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex<T>] = unsafe {
-        core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex<T>, m)
-    };
+    let data: &mut [Complex<T>] =
+        unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex<T>, m) };
     let half = T::from_f32(0.5);
     data[0] = Complex::new(
         (input[0].re + input[m].re) * half,
@@ -200,9 +198,8 @@ where
     if output.len() != m + 1 {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex32] = unsafe {
-        core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex32, m)
-    };
+    let data: &mut [Complex32] =
+        unsafe { core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex32, m) };
     fft(data)?;
     let y0 = data[0];
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
@@ -261,9 +258,8 @@ where
     if input.len() != m + 1 {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex32] = unsafe {
-        core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex32, m)
-    };
+    let data: &mut [Complex32] =
+        unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex32, m) };
     let half = unsafe { _mm_set1_ps(0.5) };
     unsafe {
         let a0 = _mm_set_ss(input[0].re + input[m].re);
@@ -443,14 +439,15 @@ mod tests {
     fn rfft_irfft_roundtrip() {
         let fft = ScalarFftImpl::<f32>::default();
         let mut input = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let orig = input.clone();
         let mut freq = vec![Complex32::new(0.0, 0.0); input.len() / 2 + 1];
         let mut scratch = vec![Complex32::new(0.0, 0.0); input.len() / 2];
         fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
             .unwrap();
-        let mut out = vec![0.0f32; input.len()];
+        let mut out = vec![0.0f32; orig.len()];
         fft.irfft_with_scratch(&mut freq, &mut out, &mut scratch)
             .unwrap();
-        for (a, b) in input.iter().zip(out.iter()) {
+        for (a, b) in orig.iter().zip(out.iter()) {
             assert!((a - b).abs() < 1e-5);
         }
     }
