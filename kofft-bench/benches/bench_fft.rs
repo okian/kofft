@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "parallel")]
 use kofft::fft::fft_parallel;
 use kofft::fft::{Complex32, FftImpl, FftPlanner, FftStrategy, ScalarFftImpl};
-use kofft::rfft::RealFftImpl;
+use kofft::rfft::{rfft_packed, RealFftImpl};
 use realfft::RealFftPlanner as RustRealFftPlanner;
 use rustfft::FftPlanner as RustFftPlanner;
 
@@ -299,17 +299,19 @@ fn bench_real(c: &mut Criterion, size: usize) {
     let mut input: Vec<f32> = (0..size).map(|i| i as f32).collect();
     let mut output = vec![Complex32::new(0.0, 0.0); size / 2 + 1];
     let mut scratch = vec![Complex32::new(0.0, 0.0); size / 2];
+    let input_template = input.clone();
 
-    // kofft real
+    // kofft real direct
     let planner = FftPlanner::<f32>::new();
     let fft = ScalarFftImpl::with_planner(planner);
     let mut first = true;
-    group.bench_function(BenchmarkId::new("kofft/single", size), |b| {
+    group.bench_function(BenchmarkId::new("kofft/direct", size), |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             let mut alloc_total = 0;
             let mut peak = 0;
             for _ in 0..iters {
+                input.copy_from_slice(&input_template);
                 reset_alloc();
                 let start = Instant::now();
                 fft.rfft_with_scratch(&mut input, &mut output, &mut scratch)
@@ -328,7 +330,7 @@ fn bench_real(c: &mut Criterion, size: usize) {
                     library: "kofft".into(),
                     transform: "Real".into(),
                     size,
-                    mode: "Single".into(),
+                    mode: "Direct".into(),
                     time_per_op_ns: t * 1e9,
                     ops_per_sec: 1.0 / t,
                     allocations: alloc_total / iters as usize,
@@ -343,10 +345,51 @@ fn bench_real(c: &mut Criterion, size: usize) {
         });
     });
 
+    // kofft packed (legacy)
+    let mut first_packed = true;
+    group.bench_function(BenchmarkId::new("kofft/packed", size), |b| {
+        b.iter_custom(|iters| {
+            let mut total = Duration::ZERO;
+            let mut alloc_total = 0;
+            let mut peak = 0;
+            for _ in 0..iters {
+                input.copy_from_slice(&input_template);
+                reset_alloc();
+                let start = Instant::now();
+                rfft_packed(&fft, &mut input, &mut output, &mut scratch).unwrap();
+                let dur = start.elapsed();
+                let (a, p) = alloc_stats();
+                alloc_total += a;
+                if p > peak {
+                    peak = p;
+                }
+                total += dur;
+            }
+            if first_packed {
+                let t = total.as_secs_f64() / iters as f64;
+                RESULTS.lock().unwrap().push(BenchRecord {
+                    library: "kofft".into(),
+                    transform: "Real".into(),
+                    size,
+                    mode: "Packed".into(),
+                    time_per_op_ns: t * 1e9,
+                    ops_per_sec: 1.0 / t,
+                    allocations: alloc_total / iters as usize,
+                    peak_bytes: peak,
+                    prev_time_per_op_ns: None,
+                    change_vs_prev: None,
+                    best: false,
+                });
+                first_packed = false;
+            }
+            total
+        });
+    });
+
     // realfft crate
     let mut planner = RustRealFftPlanner::<f32>::new();
     let rfft = planner.plan_fft_forward(size);
-    let mut in_data = input.clone();
+    let mut in_data = input_template.clone();
     let mut out_data = rfft.make_output_vec();
     let mut first_realfft = true;
     group.bench_function(BenchmarkId::new("realfft/single", size), |b| {
@@ -355,7 +398,7 @@ fn bench_real(c: &mut Criterion, size: usize) {
             let mut alloc_total = 0;
             let mut peak = 0;
             for _ in 0..iters {
-                in_data.copy_from_slice(&input);
+                in_data.copy_from_slice(&input_template);
                 reset_alloc();
                 let start = Instant::now();
                 rfft.process(&mut in_data, &mut out_data).unwrap();
