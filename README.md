@@ -59,6 +59,21 @@ fft.fft(&mut data)?;
 fft.ifft(&mut data)?;
 ```
 
+### Parallel FFT
+
+Enable the `parallel` feature to automatically split large transforms across
+threads via [Rayon](https://crates.io/crates/rayon). Use the `fft_parallel` and
+`ifft_parallel` helpers which safely fall back to single-threaded execution when
+Rayon is not available.
+
+```rust
+use kofft::fft::{fft_parallel, ifft_parallel, Complex32};
+
+let mut data = vec![Complex32::new(1.0, 0.0); 1 << 14];
+fft_parallel(&mut data)?;
+ifft_parallel(&mut data)?;
+```
+
 ## Embedded/MCU Usage (No Heap)
 
 All stack-only APIs require you to provide output buffers. This enables `no_std` operation without any heap allocation.
@@ -213,6 +228,7 @@ cargo run --example stft_usage
 cargo run --example ndfft_usage
 cargo run --example embedded_example
 cargo run --example benchmark
+cargo run --features parallel --example parallel_benchmark
 ```
 
 ## Advanced Features
@@ -330,6 +346,7 @@ fn main() -> ! {
 
 - **Stack-only APIs**: No heap allocation, suitable for MCUs with limited RAM
 - **SIMD acceleration**: 2-4x speedup on supported platforms
+- **Parallel FFT**: Enable the `parallel` feature to scale across CPU cores
 - **Power-of-two sizes**: Most efficient for FFT operations
 - **Memory usage**: Stack usage scales with transform size (e.g., 8-point FFT uses ~64 bytes for `Complex32`)
 
