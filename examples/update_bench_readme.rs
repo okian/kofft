@@ -11,7 +11,7 @@ struct BenchFile {
 #[derive(Deserialize)]
 struct EnvInfo {
     cpu: String,
-    os: String,
+    _os: String,
     rustc: String,
     flags: String,
     date: String,
@@ -27,7 +27,7 @@ struct BenchRecord {
     time_per_op_ns: f64,
     ops_per_sec: f64,
     allocations: usize,
-    peak_bytes: usize,
+    _peak_bytes: usize,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

@@ -37,7 +37,7 @@ pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
             freq[i].re *= 2.0;
             freq[i].im *= 2.0;
         }
-        for i in ((n + 1) / 2)..n {
+        for i in n.div_ceil(2)..n {
             freq[i] = Complex32::zero();
         }
     }

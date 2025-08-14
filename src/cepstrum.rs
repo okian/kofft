@@ -40,30 +40,31 @@ pub fn mel_filterbank(fft_mags: &[f32], sample_rate: f32, num_filters: usize) ->
     let n_fft = fft_mags.len();
     let f_min = 0.0;
     let f_max = sample_rate / 2.0;
-    let mel_min = 2595.0 * log10f((1.0 + f_min / 700.0) as f32);
-    let mel_max = 2595.0 * log10f((1.0 + f_max / 700.0) as f32);
+    let mel_min = 2595.0 * log10f(1.0 + f_min / 700.0);
+    let mel_max = 2595.0 * log10f(1.0 + f_max / 700.0);
     let mut mel_points = vec![0.0; num_filters + 2];
-    for i in 0..num_filters + 2 {
-        mel_points[i] = mel_min + (mel_max - mel_min) * i as f32 / (num_filters + 1) as f32;
-        mel_points[i] = 700.0 * (powf(10.0, mel_points[i] / 2595.0) - 1.0);
+    for (i, mel_point) in mel_points.iter_mut().enumerate() {
+        *mel_point = mel_min + (mel_max - mel_min) * i as f32 / (num_filters + 1) as f32;
+        *mel_point = 700.0 * (powf(10.0, *mel_point / 2595.0) - 1.0);
     }
     let mut bins = vec![0usize; num_filters + 2];
     for (i, &f) in mel_points.iter().enumerate() {
         bins[i] = floorf(f * (n_fft as f32 + 1.0) / sample_rate) as usize;
     }
     let mut energies = vec![0.0; num_filters];
-    for m in 1..=num_filters {
+    for (m_idx, energy) in energies.iter_mut().enumerate() {
+        let m = m_idx + 1;
         if bins[m] == bins[m - 1] || bins[m + 1] == bins[m] {
             continue;
         }
         for k in bins[m - 1]..bins[m] {
-            if k < n_fft {
-                energies[m - 1] += (k - bins[m - 1]) as f32 / (bins[m] - bins[m - 1]) as f32 * fft_mags[k];
+            if let Some(&fft_val) = fft_mags.get(k) {
+                *energy += (k - bins[m - 1]) as f32 / (bins[m] - bins[m - 1]) as f32 * fft_val;
             }
         }
         for k in bins[m]..bins[m + 1] {
-            if k < n_fft {
-                energies[m - 1] += (bins[m + 1] - k) as f32 / (bins[m + 1] - bins[m]) as f32 * fft_mags[k];
+            if let Some(&fft_val) = fft_mags.get(k) {
+                *energy += (bins[m + 1] - k) as f32 / (bins[m + 1] - bins[m]) as f32 * fft_val;
             }
         }
     }
