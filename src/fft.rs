@@ -1689,9 +1689,13 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     {
         return Box::new(SimdFftX86_64Impl);
     }
-    #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+    #[cfg(all(
+        target_arch = "x86_64",
+        any(feature = "sse", target_feature = "sse2"),
+        not(any(feature = "x86_64", target_feature = "avx2"))
+    ))]
     {
-        Box::new(SimdFftSseImpl)
+        return Box::new(SimdFftSseImpl);
     }
     #[cfg(all(
         target_arch = "aarch64",
