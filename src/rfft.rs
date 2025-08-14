@@ -5,9 +5,10 @@
 //! [`crate::fft`]. It also exposes stack-only helpers analogous to
 //! [`crate::fft::fft_inplace_stack`] for embedded/`no_std` environments.
 
-use alloc::{sync::Arc, vec, vec::Vec};
+use alloc::{sync::Arc, vec::Vec};
 
 use core::any::TypeId;
+use core::mem::MaybeUninit;
 
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
@@ -129,8 +130,18 @@ impl<T: Float> RfftPlanner<T> {
         input: &mut [T],
         output: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let mut scratch = vec![Complex::zero(); input.len() / 2];
-        self.rfft_with_scratch(fft, input, output, &mut scratch)
+        let scratch_len = input.len() / 2;
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
+        // SAFETY: `rfft_with_scratch` treats the buffer purely as workspace and
+        // writes to every element before any read.
+        unsafe {
+            scratch.set_len(scratch_len);
+            let scratch_slice = core::slice::from_raw_parts_mut(
+                scratch.as_mut_ptr() as *mut Complex<T>,
+                scratch_len,
+            );
+            self.rfft_with_scratch(fft, input, output, scratch_slice)
+        }
     }
 
     /// Compute the inverse real FFT using cached twiddle tables.
@@ -171,8 +182,18 @@ impl<T: Float> RfftPlanner<T> {
         input: &mut [Complex<T>],
         output: &mut [T],
     ) -> Result<(), FftError> {
-        let mut scratch = vec![Complex::zero(); output.len() / 2];
-        self.irfft_with_scratch(fft, input, output, &mut scratch)
+        let scratch_len = output.len() / 2;
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
+        // SAFETY: `irfft_with_scratch` treats the buffer purely as workspace and
+        // writes to every element before any read.
+        unsafe {
+            scratch.set_len(scratch_len);
+            let scratch_slice = core::slice::from_raw_parts_mut(
+                scratch.as_mut_ptr() as *mut Complex<T>,
+                scratch_len,
+            );
+            self.irfft_with_scratch(fft, input, output, scratch_slice)
+        }
     }
 }
 
@@ -491,8 +512,18 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
 
     /// Convenience wrapper that allocates a scratch buffer internally.
     fn rfft(&self, input: &mut [T], output: &mut [Complex<T>]) -> Result<(), FftError> {
-        let mut scratch = vec![Complex::zero(); input.len() / 2];
-        self.rfft_with_scratch(input, output, &mut scratch)
+        let scratch_len = input.len() / 2;
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
+        // SAFETY: `rfft_with_scratch` initializes every element of the buffer
+        // before any read occurs.
+        unsafe {
+            scratch.set_len(scratch_len);
+            let scratch_slice = core::slice::from_raw_parts_mut(
+                scratch.as_mut_ptr() as *mut Complex<T>,
+                scratch_len,
+            );
+            self.rfft_with_scratch(input, output, scratch_slice)
+        }
     }
 
     /// Compute the inverse real FFT, consuming `N/2 + 1` complex samples and
@@ -510,8 +541,18 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
 
     /// Convenience wrapper that allocates scratch internally.
     fn irfft(&self, input: &mut [Complex<T>], output: &mut [T]) -> Result<(), FftError> {
-        let mut scratch = vec![Complex::zero(); output.len() / 2];
-        self.irfft_with_scratch(input, output, &mut scratch)
+        let scratch_len = output.len() / 2;
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
+        // SAFETY: `irfft_with_scratch` initializes every element of the buffer
+        // before any read occurs.
+        unsafe {
+            scratch.set_len(scratch_len);
+            let scratch_slice = core::slice::from_raw_parts_mut(
+                scratch.as_mut_ptr() as *mut Complex<T>,
+                scratch_len,
+            );
+            self.irfft_with_scratch(input, output, scratch_slice)
+        }
     }
 }
 
