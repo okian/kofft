@@ -107,6 +107,9 @@ impl<'a> StftStream<'a> {
     }
     pub fn next_frame(&mut self, out: &mut [Complex32]) -> Result<bool, FftError> {
         let win_len = self.window.len();
+        if out.len() != win_len {
+            return Err(FftError::MismatchedLengths);
+        }
         if self.pos >= self.signal.len() {
             return Ok(false);
         }
@@ -685,6 +688,15 @@ mod coverage_tests {
         let mut buf = vec![Complex32::new(0.0, 0.0); 4];
         assert!(stream.next_frame(&mut buf).unwrap());
         while stream.next_frame(&mut buf).unwrap() {}
+    }
+
+    #[test]
+    fn test_stream_buffer_mismatch() {
+        let signal = [1.0, 2.0, 3.0, 4.0];
+        let window = [1.0, 1.0, 1.0, 1.0];
+        let mut stream = StftStream::new(&signal, &window, 2).unwrap();
+        let mut buf = vec![Complex32::new(0.0, 0.0); 3];
+        assert_eq!(stream.next_frame(&mut buf).unwrap_err(), FftError::MismatchedLengths);
     }
 
     #[test]

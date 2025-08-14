@@ -5,25 +5,44 @@
 extern crate alloc;
 use alloc::vec::Vec;
 use alloc::vec;
-use crate::fft::{ScalarFftImpl, Complex32};
+use crate::fft::{ScalarFftImpl, Complex32, FftError};
 use crate::fft::FftImpl;
 
 /// Compute the analytic signal (Hilbert transform) of a real input
 /// Returns a Vec<Complex32> of the analytic signal
-pub fn hilbert_analytic(input: &[f32]) -> Vec<Complex32> {
+pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
+    if input.is_empty() {
+        return Err(FftError::EmptyInput);
+    }
+    if !input.len().is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
     let n = input.len();
     let mut freq = vec![Complex32::zero(); n];
-    // Copy real input to complex
     for (i, &x) in input.iter().enumerate() {
         freq[i] = Complex32::new(x, 0.0);
     }
-    ScalarFftImpl::<f32>::default().fft(&mut freq).unwrap();
-    // Zero negative frequencies
-    for i in (n / 2 + 1)..n {
-        freq[i] = Complex32::zero();
+    let fft = ScalarFftImpl::<f32>::default();
+    fft.fft(&mut freq)?;
+    if n % 2 == 0 {
+        for i in 1..(n / 2) {
+            freq[i].re *= 2.0;
+            freq[i].im *= 2.0;
+        }
+        for i in (n / 2 + 1)..n {
+            freq[i] = Complex32::zero();
+        }
+    } else {
+        for i in 1..=((n - 1) / 2) {
+            freq[i].re *= 2.0;
+            freq[i].im *= 2.0;
+        }
+        for i in ((n + 1) / 2)..n {
+            freq[i] = Complex32::zero();
+        }
     }
-    ScalarFftImpl::<f32>::default().ifft(&mut freq).unwrap();
-    freq
+    fft.ifft(&mut freq)?;
+    Ok(freq)
 }
 
 #[cfg(test)]
@@ -32,7 +51,14 @@ mod tests {
     #[test]
     fn test_hilbert_analytic() {
         let x = [1.0, 0.0, -1.0, 0.0];
-        let analytic = hilbert_analytic(&x);
+        let analytic = hilbert_analytic(&x).unwrap();
         assert_eq!(analytic.len(), x.len());
     }
-} 
+
+    #[test]
+    fn test_hilbert_errors() {
+        assert_eq!(hilbert_analytic(&[]).unwrap_err(), FftError::EmptyInput);
+        let x = [1.0, 2.0, 3.0];
+        assert_eq!(hilbert_analytic(&x).unwrap_err(), FftError::NonPowerOfTwoNoStd);
+    }
+}

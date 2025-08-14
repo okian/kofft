@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use core::f32::consts::PI;
 #[allow(unused_imports)]
-use crate::fft::Float;
+use crate::fft::{Float, FftError};
 
 /// DST-I (sine transform, odd symmetry)
 pub fn dst1(input: &[f32]) -> Vec<f32> {
@@ -83,8 +83,15 @@ pub fn multi_channel_ii(channels: &mut [Vec<f32>]) { batch_ii(channels) }
 pub fn multi_channel_iii(channels: &mut [Vec<f32>]) { batch_iii(channels) }
 
 /// MCU/stack-only, const-generic, in-place DST-II for power-of-two sizes (no heap, no alloc)
-/// User must provide output buffer of length N.
-pub fn dst2_inplace_stack<const N: usize>(input: &[f32; N], output: &mut [f32; N]) {
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dst2_inplace_stack<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
     let factor = core::f32::consts::PI / N as f32;
     for k in 0..N {
         let mut sum = 0.0;
@@ -93,6 +100,7 @@ pub fn dst2_inplace_stack<const N: usize>(input: &[f32; N], output: &mut [f32; N
         }
         output[k] = sum;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -185,7 +193,7 @@ mod coverage_tests {
     fn test_dst2_inplace_stack_and_multi_channel() {
         let input = [1.0f32, 2.0, 3.0, 4.0];
         let mut out = [0.0f32; 4];
-        dst2_inplace_stack(&input, &mut out);
+        dst2_inplace_stack(&input, &mut out).unwrap();
         let out_ref = dst2(&input);
         for (a, b) in out.iter().zip(out_ref.iter()) {
             assert!((a - b).abs() < 1e-4);
@@ -196,6 +204,12 @@ mod coverage_tests {
         multi_channel_ii(&mut channels);
         multi_channel_iii(&mut channels);
         assert_eq!(channels.len(), 2);
+    }
+    #[test]
+    fn test_dst2_inplace_stack_invalid() {
+        let input = [1.0f32, 2.0, 3.0];
+        let mut out = [0.0f32; 3];
+        assert_eq!(dst2_inplace_stack(&input, &mut out).unwrap_err(), FftError::NonPowerOfTwoNoStd);
     }
     proptest! {
         #[test]

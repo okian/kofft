@@ -54,7 +54,7 @@ fn main() {
     let dct_input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let mut dct_output: [f32; 8] = [0.0; 8];
 
-    dct2_inplace_stack(&dct_input, &mut dct_output);
+    dct2_inplace_stack(&dct_input, &mut dct_output).unwrap();
     log!("   DCT-II completed");
 
     // 3. DST-II Example
@@ -62,7 +62,7 @@ fn main() {
     let dst_input: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let mut dst_output: [f32; 8] = [0.0; 8];
 
-    dst2_inplace_stack(&dst_input, &mut dst_output);
+    dst2_inplace_stack(&dst_input, &mut dst_output).unwrap();
     log!("   DST-II completed");
 
     // 4. Haar Wavelet Transform
