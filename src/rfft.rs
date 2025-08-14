@@ -5,7 +5,9 @@
 //! [`crate::fft`]. It also exposes stack-only helpers analogous to
 //! [`crate::fft::fft_inplace_stack`] for embedded/`no_std` environments.
 
-use alloc::{sync::Arc, vec};
+use alloc::{sync::Arc, vec, vec::Vec};
+
+use core::mem::MaybeUninit;
 
 use core::any::TypeId;
 
@@ -92,8 +94,17 @@ impl<T: Float> RfftPlanner<T> {
         input: &mut [T],
         output: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let mut scratch = vec![Complex::zero(); input.len() / 2];
-        self.rfft_with_scratch(fft, input, output, &mut scratch)
+        let n = input.len() / 2;
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+        unsafe {
+            scratch.set_len(n);
+            // SAFETY: `rfft_with_scratch` does not read from the provided
+            // scratch buffer before writing to it (it currently does not use
+            // it at all), so casting to an initialized slice is sound.
+            let ptr = scratch.as_mut_ptr() as *mut Complex<T>;
+            let scratch_init = core::slice::from_raw_parts_mut(ptr, n);
+            self.rfft_with_scratch(fft, input, output, scratch_init)
+        }
     }
 
     /// Compute the inverse real FFT using cached twiddle tables.
@@ -134,8 +145,17 @@ impl<T: Float> RfftPlanner<T> {
         input: &mut [Complex<T>],
         output: &mut [T],
     ) -> Result<(), FftError> {
-        let mut scratch = vec![Complex::zero(); output.len() / 2];
-        self.irfft_with_scratch(fft, input, output, &mut scratch)
+        let n = output.len() / 2;
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+        unsafe {
+            scratch.set_len(n);
+            // SAFETY: `irfft_with_scratch` does not read from `scratch`
+            // before any potential writes, so treating it as initialized is
+            // valid.
+            let ptr = scratch.as_mut_ptr() as *mut Complex<T>;
+            let scratch_init = core::slice::from_raw_parts_mut(ptr, n);
+            self.irfft_with_scratch(fft, input, output, scratch_init)
+        }
     }
 }
 

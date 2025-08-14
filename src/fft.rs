@@ -11,9 +11,9 @@ use core::f32::consts::PI;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use core::mem::MaybeUninit;
 use hashbrown::HashMap;
 
 #[cfg(feature = "parallel")]
@@ -111,15 +111,26 @@ impl<T: Float> FftPlanner<T> {
             let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
             let (sin, cos) = angle.sin_cos();
             let w = Complex::new(cos, sin);
-            // Allocate buffer of length `n` and fill it in-place. The buffer
-            // length equals `n`, so indexing is safe and could be optimized
-            // with `get_unchecked` if desired.
-            let mut vec = vec![Complex::zero(); n];
+
+            // Allocate an uninitialized buffer of length `n` and fill it
+            // directly to avoid an intermediate zero-initialization.
+            let mut buf: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+            let ptr = buf.as_mut_ptr();
+            let cap = buf.capacity();
             let mut current = Complex::new(T::one(), T::zero());
-            for elem in vec.iter_mut() {
-                *elem = current;
+            for i in 0..n {
+                // SAFETY: `i < n <= cap`, so writes are in-bounds and the
+                // pointer is valid for `MaybeUninit` writes.
+                unsafe { ptr.add(i).write(MaybeUninit::new(current)); }
                 current = current * w;
             }
+
+            // SAFETY: All `n` elements were initialized above, so it is safe
+            // to convert the buffer into a `Vec<Complex<T>>`.
+            let vec = unsafe {
+                core::mem::forget(buf);
+                Vec::from_raw_parts(ptr as *mut Complex<T>, n, cap)
+            };
             Arc::<[Complex<T>]>::from(vec)
         });
         self.cache.get(&n).unwrap().as_ref()
@@ -279,16 +290,28 @@ pub trait FftImpl<T: Float> {
     /// Convenience wrapper that allocates a scratch buffer internally for [`fft_strided`].
     fn fft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
         let n = if stride == 0 { 0 } else { input.len() / stride };
-        let mut scratch = alloc::vec::Vec::with_capacity(n);
-        scratch.resize(n, Complex::zero());
-        self.fft_strided(input, stride, &mut scratch)
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+        unsafe {
+            scratch.set_len(n);
+            // SAFETY: `fft_strided` writes to every element of `scratch`
+            // before reading, so casting to an initialized slice is valid.
+            let ptr = scratch.as_mut_ptr() as *mut Complex<T>;
+            let scratch_init = core::slice::from_raw_parts_mut(ptr, n);
+            self.fft_strided(input, stride, scratch_init)
+        }
     }
     /// Convenience wrapper that allocates a scratch buffer internally for [`ifft_strided`].
     fn ifft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
         let n = if stride == 0 { 0 } else { input.len() / stride };
-        let mut scratch = alloc::vec::Vec::with_capacity(n);
-        scratch.resize(n, Complex::zero());
-        self.ifft_strided(input, stride, &mut scratch)
+        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+        unsafe {
+            scratch.set_len(n);
+            // SAFETY: `ifft_strided` writes to every element of `scratch`
+            // before any reads occur.
+            let ptr = scratch.as_mut_ptr() as *mut Complex<T>;
+            let scratch_init = core::slice::from_raw_parts_mut(ptr, n);
+            self.ifft_strided(input, stride, scratch_init)
+        }
     }
 }
 
