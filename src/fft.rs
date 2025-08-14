@@ -25,7 +25,6 @@ pub use crate::num::{Complex, Complex32, Complex64, Float};
 
 pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
-    stage_cache: HashMap<(usize, usize), Arc<[Complex<T>]>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -38,32 +37,20 @@ impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
-            stage_cache: HashMap::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
         if !self.cache.contains_key(&n) {
             let vec: Vec<Complex<T>> = (0..n)
                 .map(|k| {
-                    let angle = -T::from_f32(2.0) * T::pi() * T::from_f32(k as f32)
-                        / T::from_f32(n as f32);
+                    let angle =
+                        -T::from_f32(2.0) * T::pi() * T::from_f32(k as f32) / T::from_f32(n as f32);
                     Complex::expi(angle)
                 })
                 .collect();
             self.cache.insert(n, Arc::<[Complex<T>]>::from(vec));
         }
         self.cache.get(&n).unwrap().as_ref()
-    }
-
-    pub fn get_stage_twiddles(&mut self, n: usize, len: usize) -> &[Complex<T>] {
-        if !self.stage_cache.contains_key(&(n, len)) {
-            let base = self.get_twiddles(n);
-            let stride = n / len;
-            let stage: Vec<Complex<T>> = (0..len).map(|i| base[i * stride]).collect();
-            self.stage_cache
-                .insert((n, len), Arc::<[Complex<T>]>::from(stage));
-        }
-        self.stage_cache.get(&(n, len)).unwrap().as_ref()
     }
 
     /// Determine an FFT strategy based on the factorization of `n`.
@@ -240,27 +227,29 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
 
             // Radix-4 stages
             while len <= max_radix4 {
-                {
+                let w_step = {
                     let mut planner = self.planner.borrow_mut();
-                    let stage = planner.get_stage_twiddles(n, len);
-                    let mut i = 0;
-                    while i < n {
-                        for j in 0..(len / 4) {
-                            let w1 = stage[j];
-                            let w2 = stage[2 * j];
-                            let w3 = stage[3 * j];
-                            let a = input[i + j];
-                            let b = input[i + j + len / 2].mul(w1);
-                            let c = input[i + j + len / 4].mul(w2);
-                            let d = input[i + j + len / 2 + len / 4].mul(w3);
-                            let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                            input[i + j] = x0;
-                            input[i + j + len / 4] = x1;
-                            input[i + j + len / 2] = x2;
-                            input[i + j + len / 2 + len / 4] = x3;
-                        }
-                        i += len;
+                    let twiddles = planner.get_twiddles(n);
+                    twiddles[n / len]
+                };
+                let mut i = 0;
+                while i < n {
+                    let mut w1 = Complex::new(T::one(), T::zero());
+                    for j in 0..(len / 4) {
+                        let w2 = w1.mul(w1);
+                        let w3 = w2.mul(w1);
+                        let a = input[i + j];
+                        let b = input[i + j + len / 2].mul(w1);
+                        let c = input[i + j + len / 4].mul(w2);
+                        let d = input[i + j + len / 2 + len / 4].mul(w3);
+                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                        input[i + j] = x0;
+                        input[i + j + len / 4] = x1;
+                        input[i + j + len / 2] = x2;
+                        input[i + j + len / 2 + len / 4] = x3;
+                        w1 = w1.mul(w_step);
                     }
+                    i += len;
                 }
                 len *= 4;
             }
@@ -273,37 +262,40 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                     if n >= PARALLEL_FFT_THRESHOLD
                         && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
                     {
-                        let stage_vec = {
+                        let w_step32 = {
                             let mut planner = self.planner.borrow_mut();
-                            let stage = planner.get_stage_twiddles(n, len);
-                            unsafe {
-                                &*(stage as *const [Complex<T>] as *const [Complex32])
-                            }
-                            .to_vec()
+                            let twiddles = planner.get_twiddles(n);
+                            let ws = twiddles[n / len];
+                            unsafe { *(&ws as *const Complex<T> as *const Complex32) }
                         };
                         let input32 =
                             unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
                         let half = len / 2;
                         input32.par_chunks_mut(len).for_each(move |chunk| {
+                            let mut w = Complex32::new(1.0, 0.0);
                             for j in 0..half {
-                                let w = stage_vec[j];
                                 let u = chunk[j];
                                 let v = chunk[j + half].mul(w);
                                 chunk[j] = u.add(v);
                                 chunk[j + half] = u.sub(v);
+                                w = w.mul(w_step32);
                             }
                         });
                     } else {
-                        let mut planner = self.planner.borrow_mut();
-                        let stage = planner.get_stage_twiddles(n, len);
+                        let w_step = {
+                            let mut planner = self.planner.borrow_mut();
+                            let twiddles = planner.get_twiddles(n);
+                            twiddles[n / len]
+                        };
                         let mut i = 0;
                         while i < n {
+                            let mut w = Complex::new(T::one(), T::zero());
                             for j in 0..(len / 2) {
-                                let w = stage[j];
                                 let u = input[i + j];
                                 let v = input[i + j + len / 2].mul(w);
                                 input[i + j] = u.add(v);
                                 input[i + j + len / 2] = u.sub(v);
+                                w = w.mul(w_step);
                             }
                             i += len;
                         }
@@ -311,16 +303,20 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 }
                 #[cfg(not(feature = "parallel"))]
                 {
-                    let mut planner = self.planner.borrow_mut();
-                    let stage = planner.get_stage_twiddles(n, len);
+                    let w_step = {
+                        let mut planner = self.planner.borrow_mut();
+                        let twiddles = planner.get_twiddles(n);
+                        twiddles[n / len]
+                    };
                     let mut i = 0;
                     while i < n {
+                        let mut w = Complex::new(T::one(), T::zero());
                         for j in 0..(len / 2) {
-                            let w = stage[j];
                             let u = input[i + j];
                             let v = input[i + j + len / 2].mul(w);
                             input[i + j] = u.add(v);
                             input[i + j + len / 2] = u.sub(v);
+                            w = w.mul(w_step);
                         }
                         i += len;
                     }
@@ -586,26 +582,28 @@ impl<T: Float> ScalarFftImpl<T> {
                     i += len;
                 }
             } else {
-                {
+                let w_step = {
                     let mut planner = self.planner.borrow_mut();
-                    let stage = planner.get_stage_twiddles(n, len);
-                    while i < n {
-                        for j in 0..(len / 4) {
-                            let w1 = stage[j];
-                            let w2 = stage[2 * j];
-                            let w3 = stage[3 * j];
-                            let a = input[i + j];
-                            let b = input[i + j + len / 4].mul(w1);
-                            let c = input[i + j + len / 2].mul(w2);
-                            let d = input[i + j + 3 * len / 4].mul(w3);
-                            let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
-                            input[i + j] = x0;
-                            input[i + j + len / 4] = x1;
-                            input[i + j + len / 2] = x2;
-                            input[i + j + 3 * len / 4] = x3;
-                        }
-                        i += len;
+                    let twiddles = planner.get_twiddles(n);
+                    twiddles[n / len]
+                };
+                while i < n {
+                    let mut w1 = Complex::new(T::one(), T::zero());
+                    for j in 0..(len / 4) {
+                        let w2 = w1.mul(w1);
+                        let w3 = w2.mul(w1);
+                        let a = input[i + j];
+                        let b = input[i + j + len / 4].mul(w1);
+                        let c = input[i + j + len / 2].mul(w2);
+                        let d = input[i + j + 3 * len / 4].mul(w3);
+                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                        input[i + j] = x0;
+                        input[i + j + len / 4] = x1;
+                        input[i + j + len / 2] = x2;
+                        input[i + j + 3 * len / 4] = x3;
+                        w1 = w1.mul(w_step);
                     }
+                    i += len;
                 }
             }
             len <<= 2;
@@ -728,13 +726,15 @@ impl ScalarFftImpl<f32> {
         let mut len = 2;
         while len <= n {
             let mut i = 0;
+            let w_step = twiddles.get(n / len);
             while i < n {
-                for (w_idx, j) in (0..(len / 2)).enumerate() {
-                    let w = twiddles.get(w_idx * n / len);
+                let mut w = Complex32::new(1.0, 0.0);
+                for j in 0..(len / 2) {
                     let u = input[i + j];
                     let v = input[i + j + len / 2].mul(w);
                     input[i + j] = u.add(v);
                     input[i + j + len / 2] = u.sub(v);
+                    w = w.mul(w_step);
                 }
                 i += len;
             }
@@ -768,12 +768,13 @@ impl ScalarFftImpl<f32> {
         }
         let mut len = 4;
         while len <= n {
+            let w_step = twiddles.get(n / len);
             let mut i = 0;
             while i < n {
-                for (w_idx, j) in (0..(len / 4)).enumerate() {
-                    let w1 = twiddles.get(w_idx * n / len);
-                    let w2 = twiddles.get(w_idx * n / (len / 2));
-                    let w3 = twiddles.get(w_idx * n / (len / 4));
+                let mut w1 = Complex32::new(1.0, 0.0);
+                for j in 0..(len / 4) {
+                    let w2 = w1.mul(w1);
+                    let w3 = w2.mul(w1);
                     let a = input[i + j];
                     let b = input[i + j + len / 4].mul(w1);
                     let c = input[i + j + len / 2].mul(w2);
@@ -783,6 +784,7 @@ impl ScalarFftImpl<f32> {
                     input[i + j + len / 4] = x1;
                     input[i + j + len / 2] = x2;
                     input[i + j + 3 * len / 4] = x3;
+                    w1 = w1.mul(w_step);
                 }
                 i += len;
             }
@@ -867,19 +869,21 @@ impl ScalarFftImpl<f32> {
                     i += len;
                 }
             } else {
-                {
+                let w_step = {
                     let mut planner = self.planner.borrow_mut();
-                    let stage = planner.get_stage_twiddles(n, len);
-                    while i < n {
-                        for j in 0..(len / 2) {
-                            let w = stage[j];
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
-                        }
-                        i += len;
+                    let twiddles = planner.get_twiddles(n);
+                    twiddles[n / len]
+                };
+                while i < n {
+                    let mut w = Complex32::new(1.0, 0.0);
+                    for j in 0..(len / 2) {
+                        let u = input[i + j];
+                        let v = input[i + j + len / 2].mul(w);
+                        input[i + j] = u.add(v);
+                        input[i + j + len / 2] = u.sub(v);
+                        w = w.mul(w_step);
                     }
+                    i += len;
                 }
             }
             len <<= 1;
