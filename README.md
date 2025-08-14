@@ -78,6 +78,12 @@ threads via [Rayon](https://crates.io/crates/rayon). Use the `fft_parallel` and
 `ifft_parallel` helpers which safely fall back to single-threaded execution when
 Rayon is not available.
 
+By default, kofft parallelizes an FFT when each CPU core would process roughly
+4,096 points (~32&nbsp;KiB for `f32`). The heuristic scales with the number of
+detected cores (via [`num_cpus`](https://crates.io/crates/num_cpus)) and can be
+overridden by setting the `KOFFT_PAR_FFT_THRESHOLD` environment variable or by
+calling `kofft::fft::set_parallel_fft_threshold` at runtime.
+
 ```rust
 use kofft::fft::{fft_parallel, ifft_parallel, Complex32};
 
