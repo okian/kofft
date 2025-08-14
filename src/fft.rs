@@ -729,16 +729,15 @@ impl ScalarFftImpl<f32> {
         }
         let mut len = 2;
         while len <= n {
+            let step = n / len;
             let mut i = 0;
-            let w_step = twiddles.get(n / len);
             while i < n {
-                let mut w = Complex32::new(1.0, 0.0);
                 for j in 0..(len / 2) {
+                    let w = twiddles.get(j * step);
                     let u = input[i + j];
                     let v = input[i + j + len / 2].mul(w);
                     input[i + j] = u.add(v);
                     input[i + j + len / 2] = u.sub(v);
-                    w = w.mul(w_step);
                 }
                 i += len;
             }
@@ -772,13 +771,13 @@ impl ScalarFftImpl<f32> {
         }
         let mut len = 4;
         while len <= n {
-            let w_step = twiddles.get(n / len);
+            let step = n / len;
             let mut i = 0;
             while i < n {
-                let mut w1 = Complex32::new(1.0, 0.0);
                 for j in 0..(len / 4) {
-                    let w2 = w1.mul(w1);
-                    let w3 = w2.mul(w1);
+                    let w1 = twiddles.get(j * step);
+                    let w2 = twiddles.get(2 * j * step);
+                    let w3 = twiddles.get(3 * j * step);
                     let a = input[i + j];
                     let b = input[i + j + len / 4].mul(w1);
                     let c = input[i + j + len / 2].mul(w2);
@@ -788,7 +787,6 @@ impl ScalarFftImpl<f32> {
                     input[i + j + len / 4] = x1;
                     input[i + j + len / 2] = x2;
                     input[i + j + 3 * len / 4] = x3;
-                    w1 = w1.mul(w_step);
                 }
                 i += len;
             }
