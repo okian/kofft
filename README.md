@@ -249,7 +249,8 @@ let mut frames = vec![vec![]; (signal.len() + hop_size - 1) / hop_size];
 stft(&signal, &window, hop_size, &mut frames)?;
 
 let mut output = vec![0.0; signal.len()];
-istft(&frames, &window, hop_size, &mut output)?;
+let mut scratch = vec![0.0; output.len()];
+istft(&mut frames, &window, hop_size, &mut output, &mut scratch)?;
 ```
 
 #### Streaming STFT/ISTFT
@@ -269,7 +270,8 @@ while stream.next_frame(&mut frame)? {
     frames.push(frame.clone());
 }
 let mut output = vec![0.0; signal.len()];
-istft(&frames, &window, hop_size, &mut output)?;
+let mut scratch = vec![0.0; output.len()];
+istft(&mut frames, &window, hop_size, &mut output, &mut scratch)?;
 ```
 
 ### Batch Processing

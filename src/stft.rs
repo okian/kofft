@@ -13,7 +13,8 @@
 //! let mut frames = vec![vec![]; 4];
 //! stft(&signal, &window, hop, &mut frames).unwrap();
 //! let mut out = vec![0.0; signal.len()];
-//! istft(&frames, &window, hop, &mut out).unwrap();
+//! let mut scratch = vec![0.0; out.len()];
+//! istft(&mut frames, &window, hop, &mut out, &mut scratch).unwrap();
 //! ```
 //!
 //! Streaming STFT:
@@ -32,7 +33,8 @@
 //!     frames.push(buf.clone());
 //! }
 //! let mut out = vec![0.0; signal.len()];
-//! istft(&frames, &window, hop, &mut out).unwrap();
+//! let mut scratch = vec![0.0; out.len()];
+//! istft(&mut frames, &window, hop, &mut out, &mut scratch).unwrap();
 //! ```
 
 extern crate alloc;
@@ -60,60 +62,65 @@ pub fn stft(
     let fft = ScalarFftImpl::<f32>::default();
     for (frame_idx, frame) in output.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
-        if start + win_len > signal.len() {
-            // Zero-pad if signal is too short
-            frame.clear();
-            for i in 0..win_len {
-                let x = if start + i < signal.len() {
-                    signal[start + i] * window[i]
-                } else {
-                    0.0
-                };
-                frame.push(Complex32::new(x, 0.0));
-            }
-        } else {
-            frame.clear();
-            for i in 0..win_len {
-                frame.push(Complex32::new(signal[start + i] * window[i], 0.0));
-            }
+        frame.resize(win_len, Complex32::new(0.0, 0.0));
+        for i in 0..win_len {
+            let x = if start + i < signal.len() {
+                signal[start + i] * window[i]
+            } else {
+                0.0
+            };
+            frame[i] = Complex32::new(x, 0.0);
         }
         fft.fft(frame)?;
     }
     Ok(())
 }
 
+/// Compute the inverse STFT of frequency-domain frames in-place.
+///
+/// - `frames`: mutable frequency-domain frames (each of length `window.len()`)
+/// - `window`: synthesis window
+/// - `hop_size`: hop size between frames
+/// - `output`: buffer to receive the reconstructed signal
+/// - `scratch`: scratch buffer for overlap-add normalization (length = `output.len()`)
+///
+/// Returns Ok(()) on success, or [`FftError`] on failure.
 pub fn istft(
-    frames: &[alloc::vec::Vec<Complex32>],
+    frames: &mut [alloc::vec::Vec<Complex32>],
     window: &[f32],
     hop_size: usize,
     output: &mut [f32],
+    scratch: &mut [f32],
 ) -> Result<(), FftError> {
     if hop_size == 0 {
         return Err(FftError::InvalidHopSize);
     }
+    if scratch.len() != output.len() {
+        return Err(FftError::MismatchedLengths);
+    }
     let win_len = window.len();
     let fft = ScalarFftImpl::<f32>::default();
-    let mut norm = alloc::vec::Vec::with_capacity(output.len());
-    norm.resize(output.len(), 0.0);
+    for x in scratch.iter_mut() {
+        *x = 0.0;
+    }
     // Overlap-add
-    for (frame_idx, frame) in frames.iter().enumerate() {
+    for (frame_idx, frame) in frames.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
         if frame.len() != win_len {
             return Err(FftError::MismatchedLengths);
         }
-        let mut time_buf = frame.clone();
-        fft.ifft(&mut time_buf)?;
+        fft.ifft(frame)?;
         for i in 0..win_len {
             if start + i < output.len() {
-                output[start + i] += time_buf[i].re * window[i];
-                norm[start + i] += window[i] * window[i];
+                output[start + i] += frame[i].re * window[i];
+                scratch[start + i] += window[i] * window[i];
             }
         }
     }
     // Normalize by window sum
     for i in 0..output.len() {
-        if norm[i] > 1e-8 {
-            output[i] /= norm[i];
+        if scratch[i] > 1e-8 {
+            output[i] /= scratch[i];
         }
     }
     Ok(())
@@ -464,7 +471,8 @@ mod tests {
         }
         stft(&signal, &window, hop, &mut frames).unwrap();
         let mut output = vec![0.0f32; n];
-        istft(&frames, &window, hop, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; n];
+        istft(&mut frames, &window, hop, &mut output, &mut scratch).unwrap();
         for (a, b) in signal.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
@@ -511,7 +519,8 @@ mod streaming_tests {
             frames.push(frame.clone());
         }
         let mut output = vec![0.0f32; signal.len()];
-        istft(&frames, &window, hop, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, hop, &mut output, &mut scratch).unwrap();
         for (a, b) in signal.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
@@ -532,17 +541,19 @@ mod edge_case_tests {
         let res = stft(&signal, &window, 2, &mut frames);
         assert!(res.is_ok());
         let mut output = vec![0.0f32; 0];
-        let res = istft(&frames, &window, 2, &mut output);
+        let mut scratch = vec![0.0f32; 0];
+        let res = istft(&mut frames, &window, 2, &mut output, &mut scratch);
         assert!(res.is_ok());
     }
 
     #[test]
     fn test_mismatched_lengths_batch() {
         let window = [1.0, 1.0, 1.0, 1.0];
-        let frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         // Output buffer too short
         let mut output = vec![0.0f32; 2];
-        let res = istft(&frames, &window, 2, &mut output);
+        let mut scratch = vec![0.0f32; output.len()];
+        let res = istft(&mut frames, &window, 2, &mut output, &mut scratch);
         assert!(res.is_ok()); // Should not panic, just not fill all output
     }
 
@@ -550,9 +561,10 @@ mod edge_case_tests {
     fn test_istft_frame_size_mismatch() {
         let window = [1.0, 1.0, 1.0, 1.0];
         // Frame shorter than window length
-        let frames = vec![vec![Complex32::new(0.0, 0.0); 3]];
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 3]];
         let mut output = vec![0.0f32; 4];
-        let res = istft(&frames, &window, 2, &mut output);
+        let mut scratch = vec![0.0f32; output.len()];
+        let res = istft(&mut frames, &window, 2, &mut output, &mut scratch);
         assert!(matches!(res, Err(FftError::MismatchedLengths)));
     }
 
@@ -590,7 +602,8 @@ mod edge_case_tests {
             }
         }
         let mut output = vec![0.0f32; 4];
-        istft(&frames, &window, 2, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, 2, &mut output, &mut scratch).unwrap();
         for &x in &output {
             assert_eq!(x, 0.0);
         }
@@ -612,7 +625,8 @@ mod edge_case_tests {
         }
         stft(&signal, &window, hop, &mut frames).unwrap();
         let mut output = vec![0.0f32; n];
-        istft(&frames, &window, hop, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, hop, &mut output, &mut scratch).unwrap();
         // Should roughly reconstruct signal (Hann window has edge attenuation)
         for (a, b) in signal.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1.1, "{} vs {}", a, b);
@@ -666,7 +680,8 @@ mod coverage_tests {
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         stft(&signal, &window, 4, &mut frames).unwrap();
         let mut output = vec![0.0f32; 4];
-        istft(&frames, &window, 4, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, 4, &mut output, &mut scratch).unwrap();
         for (a, b) in signal.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-4);
         }
@@ -678,7 +693,8 @@ mod coverage_tests {
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]; 2];
         stft(&signal, &window, 4, &mut frames).unwrap();
         let mut output = vec![0.0f32; 8];
-        istft(&frames, &window, 4, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, 4, &mut output, &mut scratch).unwrap();
         for &x in &output {
             assert_eq!(x, 0.0);
         }
@@ -690,7 +706,8 @@ mod coverage_tests {
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]; 2];
         stft(&signal, &window, 4, &mut frames).unwrap();
         let mut output = vec![0.0f32; 8];
-        istft(&frames, &window, 4, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, 4, &mut output, &mut scratch).unwrap();
         for &x in &output {
             assert!(x > 0.0);
         }
@@ -707,9 +724,10 @@ mod coverage_tests {
     #[test]
     fn test_istft_zero_hop() {
         let window = [1.0, 1.0, 1.0, 1.0];
-        let frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         let mut out = vec![0.0f32; 4];
-        let res = istft(&frames, &window, 0, &mut out);
+        let mut scratch = vec![0.0f32; out.len()];
+        let res = istft(&mut frames, &window, 0, &mut out, &mut scratch);
         assert!(res.is_err());
     }
 
@@ -754,7 +772,8 @@ mod coverage_tests {
             }
         }
         let mut output = vec![0.0f32; 4];
-        istft(&frames, &window, 2, &mut output).unwrap();
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, 2, &mut output, &mut scratch).unwrap();
         for &x in &output {
             assert_eq!(x, 0.0);
         }
@@ -774,7 +793,8 @@ mod coverage_tests {
             }
             stft(signal, &window, hop, &mut frames).unwrap();
             let mut output = vec![0.0f32; len];
-            istft(&frames, &window, hop, &mut output).unwrap();
+            let mut scratch = vec![0.0f32; output.len()];
+            istft(&mut frames, &window, hop, &mut output, &mut scratch).unwrap();
             for (a, b) in signal.iter().zip(output.iter()) {
                 prop_assert!((a - b).abs() < 1e-2);
             }
