@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real Cepstrum
 - Window functions: Hann, Hamming, Blackman, Kaiser
 - Stack-only APIs for embedded/MCU usage
-- SIMD acceleration for x86_64 (AVX2), AArch64 (NEON), and WebAssembly
+- SIMD acceleration for x86_64 (AVX2 & SSE), AArch64 (NEON), and WebAssembly
 - Parallel processing support with Rayon
 - Batch and multi-channel processing
 - Real FFT optimization for real input signals

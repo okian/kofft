@@ -6,7 +6,7 @@
 //! ## Features
 //!
 //! - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
-//! - **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
+//! - **⚡ SIMD acceleration** (x86_64 AVX2 & SSE, AArch64 NEON, WebAssembly SIMD)
 //! - **🔧 Multiple transform types**: FFT, DCT, DST, Hartley, Wavelet, STFT, CZT, Goertzel
 //! - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 //! - **🔄 Batch and multi-channel processing**
@@ -17,8 +17,9 @@
 //!
 //! - `std` (default): Enable standard library features
 //! - `parallel`: Enable parallel processing with Rayon
-//! - `x86_64`: Enable x86_64 SIMD optimizations
-//! - `aarch64`: Enable AArch64 SIMD optimizations  
+//! - `x86_64`: Enable x86_64 AVX2/FMA optimizations
+//! - `sse`: Enable SSE optimizations for x86_64 without AVX2
+//! - `aarch64`: Enable AArch64 SIMD optimizations
 //! - `wasm`: Enable WebAssembly SIMD optimizations
 //!
 //! ## Performance
@@ -33,9 +34,12 @@
 //! | Platform | SIMD Support | Features |
 //! |----------|-------------|----------|
 //! | x86_64   | AVX2/FMA    | `x86_64` feature |
+//! | x86_64 (SSE) | SSE2 | `sse` feature |
 //! | AArch64  | NEON        | `aarch64` feature |
 //! | WebAssembly | SIMD128   | `wasm` feature |
 //! | Generic  | Scalar      | Default fallback |
+
+//! Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.
 //!
 //! ## Examples
 //!
@@ -60,14 +64,14 @@
 extern crate alloc;
 
 pub mod fft;
+/// Real-input FFT helpers built on top of complex FFT routines
+/// for converting between real and complex domains.
+pub mod num;
 /// Fast Fourier Transform (FFT) implementations
 ///
 /// Provides both scalar and SIMD-optimized FFT implementations.
 /// Supports complex and real input signals.
 pub mod rfft;
-/// Real-input FFT helpers built on top of complex FFT routines
-/// for converting between real and complex domains.
-pub mod num;
 
 /// N-dimensional FFT operations
 ///

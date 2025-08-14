@@ -11,7 +11,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 ## Features
 
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
-- **⚡ SIMD acceleration** (x86_64 AVX2, AArch64 NEON, WebAssembly SIMD)
+- **⚡ SIMD acceleration** (x86_64 AVX2 & SSE, AArch64 NEON, WebAssembly SIMD)
 - **🔧 Multiple transform types**: FFT, DCT (Types I-IV), DST (Types I-IV), Hartley, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**
@@ -26,6 +26,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 [dependencies]
 kofft = { version = "0.1.1", features = [
     # "x86_64",   # enable AVX2 on x86_64
+    # "sse",      # enable SSE on x86_64 without AVX2
     # "aarch64",  # enable NEON on AArch64
     # "wasm",     # enable WebAssembly SIMD
     # "parallel", # enable Rayon-based parallel helpers
@@ -391,9 +392,12 @@ fn main() -> ! {
 | Platform | SIMD Support | Features |
 |----------|-------------|----------|
 | x86_64   | AVX2/FMA    | `x86_64` feature |
+| x86_64 (SSE) | SSE2 | `sse` feature |
 | AArch64  | NEON        | `aarch64` feature |
 | WebAssembly | SIMD128   | `wasm` feature |
 | Generic  | Scalar      | Default fallback |
+
+Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.
 
 ## License
 
