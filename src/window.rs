@@ -55,8 +55,7 @@ pub fn blackman(len: usize) -> alloc::vec::Vec<f32> {
 /// Generate a Kaiser window of length `len` and shape parameter `beta`.
 #[cfg(feature = "std")]
 pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
-    use core::f32::consts::PI;
-    let denom = sqrtf(PI * beta);
+    let denom = bessel0(beta);
     let m = (len - 1) as f32 / 2.0;
     (0..len)
         .map(|i| {
@@ -68,8 +67,7 @@ pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
 
 #[cfg(not(feature = "std"))]
 pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
-    use core::f32::consts::PI;
-    let denom = sqrtf(PI * beta);
+    let denom = bessel0(beta);
     let m = (len - 1) as f32 / 2.0;
     (0..len)
         .map(|i| {
@@ -128,8 +126,14 @@ mod tests {
     }
     #[test]
     fn test_kaiser() {
-        let w = kaiser(8, 5.0);
-        assert_eq!(w.len(), 8);
+        let w = kaiser(9, 5.0);
+        assert_eq!(w.len(), 9);
+        // Peak amplitude at center
+        assert!((w[4] - 1.0).abs() < 1e-6);
+        // Symmetry
+        for i in 0..w.len() {
+            assert!((w[i] - w[w.len() - 1 - i]).abs() < 1e-6);
+        }
         assert!(w.iter().all(|&x| x.is_finite()));
     }
 
