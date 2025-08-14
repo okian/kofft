@@ -466,18 +466,12 @@ impl<T: Float> ScalarFftImpl<T> {
             let mut i = 0;
             while i < n {
                 if len == 4 {
-                    let u0 = input[i];
-                    let u1 = input[i + 1];
-                    let u2 = input[i + 2];
-                    let u3 = input[i + 3];
-                    let t0 = u0.add(u2);
-                    let t1 = u0.sub(u2);
-                    let t2 = u1.add(u3);
-                    let t3 = (u1.sub(u3)).mul(Complex::new(T::zero(), -T::one()));
-                    input[i] = t0.add(t2);
-                    input[i + 1] = t1.add(t3);
-                    input[i + 2] = t0.sub(t2);
-                    input[i + 3] = t1.sub(t3);
+                    let (x0, x1, x2, x3) =
+                        butterfly4(input[i], input[i + 1], input[i + 2], input[i + 3]);
+                    input[i] = x0;
+                    input[i + 1] = x1;
+                    input[i + 2] = x2;
+                    input[i + 3] = x3;
                 } else {
                     let mut w1 = Complex::new(T::one(), T::zero());
                     let mut w2 = w1.mul(wlen2);
@@ -487,14 +481,11 @@ impl<T: Float> ScalarFftImpl<T> {
                         let b = input[i + j + len / 4].mul(w1);
                         let c = input[i + j + len / 2].mul(w2);
                         let d = input[i + j + 3 * len / 4].mul(w3);
-                        let t0 = a.add(c);
-                        let t1 = a.sub(c);
-                        let t2 = b.add(d);
-                        let t3 = (b.sub(d)).mul(Complex::new(T::zero(), -T::one()));
-                        input[i + j] = t0.add(t2);
-                        input[i + j + len / 4] = t1.add(t3);
-                        input[i + j + len / 2] = t0.sub(t2);
-                        input[i + j + 3 * len / 4] = t1.sub(t3);
+                        let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                        input[i + j] = x0;
+                        input[i + j + len / 4] = x1;
+                        input[i + j + len / 2] = x2;
+                        input[i + j + 3 * len / 4] = x3;
                         w1 = w1.mul(wlen);
                         w2 = w2.mul(wlen);
                         w3 = w3.mul(wlen);
@@ -549,6 +540,53 @@ fn factorize(mut n: usize) -> alloc::vec::Vec<usize> {
         factors.push(n);
     }
     factors
+}
+
+#[inline(always)]
+fn butterfly4<T: Float>(
+    a: Complex<T>,
+    b: Complex<T>,
+    c: Complex<T>,
+    d: Complex<T>,
+) -> (Complex<T>, Complex<T>, Complex<T>, Complex<T>) {
+    let t0 = a.add(c);
+    let t1 = a.sub(c);
+    let t2 = b.add(d);
+    let t3 = (b.sub(d)).mul(Complex::new(T::zero(), -T::one()));
+    (t0.add(t2), t1.add(t3), t0.sub(t2), t1.sub(t3))
+}
+
+#[inline(always)]
+#[allow(dead_code)]
+fn butterfly8<T: Float>(
+    x0: Complex<T>,
+    x1: Complex<T>,
+    x2: Complex<T>,
+    x3: Complex<T>,
+    x4: Complex<T>,
+    x5: Complex<T>,
+    x6: Complex<T>,
+    x7: Complex<T>,
+) -> [Complex<T>; 8] {
+    let (e0, e1, e2, e3) = butterfly4(x0, x2, x4, x6);
+    let (o0, mut o1, mut o2, mut o3) = butterfly4(x1, x3, x5, x7);
+    let sqrt1_2 = T::from_f32(core::f32::consts::FRAC_1_SQRT_2);
+    let w1 = Complex::new(sqrt1_2, -sqrt1_2);
+    let w2 = Complex::new(T::zero(), -T::one());
+    let w3 = Complex::new(-sqrt1_2, -sqrt1_2);
+    o1 = o1.mul(w1);
+    o2 = o2.mul(w2);
+    o3 = o3.mul(w3);
+    [
+        e0.add(o0),
+        e1.add(o1),
+        e2.add(o2),
+        e3.add(o3),
+        e0.sub(o0),
+        e1.sub(o1),
+        e2.sub(o2),
+        e3.sub(o3),
+    ]
 }
 
 impl ScalarFftImpl<f32> {
@@ -629,14 +667,11 @@ impl ScalarFftImpl<f32> {
                     let b = input[i + j + len / 4].mul(w1);
                     let c = input[i + j + len / 2].mul(w2);
                     let d = input[i + j + 3 * len / 4].mul(w3);
-                    let t0 = a.add(c);
-                    let t1 = a.sub(c);
-                    let t2 = b.add(d);
-                    let t3 = (b.sub(d)).mul(Complex32::new(0.0, -1.0));
-                    input[i + j] = t0.add(t2);
-                    input[i + j + len / 4] = t1.add(t3);
-                    input[i + j + len / 2] = t0.sub(t2);
-                    input[i + j + 3 * len / 4] = t1.sub(t3);
+                    let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
+                    input[i + j] = x0;
+                    input[i + j + len / 4] = x1;
+                    input[i + j + len / 2] = x2;
+                    input[i + j + 3 * len / 4] = x3;
                     w1_idx += 1;
                     w2_idx += 1;
                     w3_idx += 1;
@@ -715,18 +750,12 @@ impl ScalarFftImpl<f32> {
                     input[i + 1] = u.sub(v);
                 } else if len == 4 {
                     // Unrolled butterfly for len=4
-                    let u0 = input[i];
-                    let u1 = input[i + 1];
-                    let u2 = input[i + 2];
-                    let u3 = input[i + 3];
-                    let t0 = u0.add(u2);
-                    let t1 = u0.sub(u2);
-                    let t2 = u1.add(u3);
-                    let t3 = (u1.sub(u3)).mul(Complex32::new(0.0, -1.0));
-                    input[i] = t0.add(t2);
-                    input[i + 1] = t1.add(t3);
-                    input[i + 2] = t0.sub(t2);
-                    input[i + 3] = t1.sub(t3);
+                    let (x0, x1, x2, x3) =
+                        butterfly4(input[i], input[i + 1], input[i + 2], input[i + 3]);
+                    input[i] = x0;
+                    input[i + 1] = x1;
+                    input[i + 2] = x2;
+                    input[i + 3] = x3;
                 } else {
                     for j in 0..(len / 2) {
                         let u = input[i + j];
