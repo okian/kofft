@@ -84,6 +84,22 @@ pub fn istft(
     Ok(())
 }
 
+/// Streaming STFT helper that yields successive FFT frames.
+///
+/// # Example
+/// ```no_run
+/// use kofft::stft::StftStream;
+/// use kofft::window::hann;
+/// use kofft::fft::Complex32;
+///
+/// let signal = vec![1.0, 2.0, 3.0, 4.0];
+/// let window = hann(2);
+/// let mut stream = StftStream::new(&signal, &window, 1).unwrap();
+/// let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
+/// while stream.next_frame(&mut frame).unwrap() {
+///     // process frame
+/// }
+/// ```
 pub struct StftStream<'a> {
     signal: &'a [f32],
     window: &'a [f32],
@@ -347,10 +363,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     }
 
     /// Feed in the next STFT frame, get a slice of output samples (may be empty if not enough overlap)
-    pub fn push_frame(
-        &mut self,
-        frame: &[crate::fft::Complex32],
-    ) -> Result<&[f32], FftError> {
+    pub fn push_frame(&mut self, frame: &[crate::fft::Complex32]) -> Result<&[f32], FftError> {
         if frame.len() != self.win_len {
             return Err(FftError::MismatchedLengths);
         }
@@ -696,7 +709,10 @@ mod coverage_tests {
         let window = [1.0, 1.0, 1.0, 1.0];
         let mut stream = StftStream::new(&signal, &window, 2).unwrap();
         let mut buf = vec![Complex32::new(0.0, 0.0); 3];
-        assert_eq!(stream.next_frame(&mut buf).unwrap_err(), FftError::MismatchedLengths);
+        assert_eq!(
+            stream.next_frame(&mut buf).unwrap_err(),
+            FftError::MismatchedLengths
+        );
     }
 
     #[test]
