@@ -27,7 +27,8 @@ fn main() -> Result<(), FftError> {
     }
 
     let mut reconstructed = vec![0.0; signal.len()];
-    istft(&frames, &window, hop, &mut reconstructed)?;
+    let mut scratch = vec![0.0; reconstructed.len()];
+    istft(&mut frames, &window, hop, &mut reconstructed, &mut scratch)?;
     println!("Reconstructed signal: {:?}", reconstructed);
     Ok(())
 }
