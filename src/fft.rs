@@ -11,6 +11,7 @@ use core::f32::consts::PI;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use hashbrown::HashMap;
@@ -44,18 +45,21 @@ impl<T: Float> FftPlanner<T> {
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
-        if !self.cache.contains_key(&n) {
+        self.cache.entry(n).or_insert_with(|| {
             let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
             let (sin, cos) = angle.sin_cos();
             let w = Complex::new(cos, sin);
-            let mut vec: Vec<Complex<T>> = Vec::with_capacity(n);
+            // Allocate buffer of length `n` and fill it in-place. The buffer
+            // length equals `n`, so indexing is safe and could be optimized
+            // with `get_unchecked` if desired.
+            let mut vec = vec![Complex::zero(); n];
             let mut current = Complex::new(T::one(), T::zero());
-            for _ in 0..n {
-                vec.push(current);
+            for i in 0..n {
+                vec[i] = current;
                 current = current * w;
             }
-            self.cache.insert(n, Arc::<[Complex<T>]>::from(vec));
-        }
+            Arc::<[Complex<T>]>::from(vec)
+        });
         self.cache.get(&n).unwrap().as_ref()
     }
 
