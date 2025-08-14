@@ -16,10 +16,70 @@ use core::cell::RefCell;
 use hashbrown::HashMap;
 
 #[cfg(feature = "parallel")]
+use core::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(all(feature = "parallel", feature = "std"))]
+use num_cpus;
+
+/// Override for the parallel FFT threshold.
+///
+/// `0` means no override and the heuristic will be used.
 #[cfg(feature = "parallel")]
-const PARALLEL_FFT_THRESHOLD: usize = 4096;
+static PARALLEL_FFT_THRESHOLD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "parallel")]
+/// Set a custom minimum FFT length to use parallel processing.
+///
+/// Passing `0` reverts to the built-in heuristic.
+pub fn set_parallel_fft_threshold(threshold: usize) {
+    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(threshold, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+fn should_parallelize_fft(n: usize) -> bool {
+    let override_thr = PARALLEL_FFT_THRESHOLD_OVERRIDE.load(Ordering::Relaxed);
+    let threshold = if override_thr == 0 {
+        #[cfg(feature = "std")]
+        {
+            if let Ok(val) = std::env::var("KOFFT_PAR_FFT_THRESHOLD") {
+                if let Ok(parsed) = val.parse::<usize>() {
+                    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(parsed, Ordering::Relaxed);
+                    parsed
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            0
+        }
+    } else {
+        override_thr
+    };
+
+    if threshold != 0 {
+        return n >= threshold;
+    }
+
+    let cores = {
+        #[cfg(feature = "std")]
+        {
+            num_cpus::get().max(1)
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            1
+        }
+    };
+
+    // Require roughly 32KiB (4096 f32 complex numbers) of work per core.
+    n / cores >= 4096
+}
 
 pub use crate::num::{Complex, Complex32, Complex64, Float};
 
@@ -279,7 +339,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 };
                 #[cfg(feature = "parallel")]
                 {
-                    if n >= PARALLEL_FFT_THRESHOLD
+                    if should_parallelize_fft(n)
                         && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
                     {
                         let w_step32 =
@@ -392,7 +452,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         #[cfg(feature = "parallel")]
         {
-            if n >= PARALLEL_FFT_THRESHOLD
+            if should_parallelize_fft(n)
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {
                 let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };

@@ -65,6 +65,8 @@
 
 #![no_std]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 pub mod fft;
 /// Real-input FFT helpers built on top of complex FFT routines
