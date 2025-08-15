@@ -334,21 +334,24 @@ benefit of reusing planning data.
 
 ## Advanced Features
 
-Enable optional features in `Cargo.toml`:
+Enable architecture-specific features in `Cargo.toml`:
 
 ```toml
 [dependencies]
 kofft = { version = "0.1.4", features = [
-    # "x86_64",   # AVX2 on x86_64
-    # "aarch64",  # NEON on AArch64
-    # "wasm",     # WebAssembly SIMD
+    # "x86_64",   # x86_64 AVX/SSE backends
+    # "aarch64",  # AArch64 NEON backend
+    # "wasm",     # WebAssembly SIMD128 backend
     # "parallel", # Rayon-based parallel helpers
 ] }
 ```
 
 ### SIMD Acceleration
 
-Enable one of the CPU-specific SIMD features above for better performance.
+The `x86_64`, `aarch64`, and `wasm` features activate optimized backends for
+their respective architectures. When the corresponding CPU or Wasm SIMD
+extensions are available (e.g., AVX2, NEON, or `simd128`), `kofft` will
+automatically select the best implementation.
 SIMD backends are also enabled automatically when compiling with the
 appropriate `target-feature` flags (e.g., `RUSTFLAGS="-C target-feature=+avx2"`).
 
