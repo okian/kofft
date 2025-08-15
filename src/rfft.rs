@@ -36,8 +36,20 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
 }
 
 /// Planner that caches RFFT twiddle tables by transform length.
+///
+/// In addition to the standard post-processing twiddles used by the
+/// split-radix real FFT algorithm we also cache a second set of tables
+/// that are employed when packing and unpacking the real/imaginary parts
+/// of the input and output buffers.  These additional "pack" twiddles are
+/// conceptually identical to the ones used by the [`realfft`] crate and
+/// allow the kernels below to operate directly on the packed buffer without
+/// recomputing trigonometric values on every invocation.
 pub struct RfftPlanner<T: Float> {
+    /// Post-processing twiddle factors used after the complex FFT.
     cache: HashMap<usize, Arc<[Complex<T>]>>,
+    /// Twiddles used when packing/unpacking the real-even/odd layout.
+    pack_cache: HashMap<usize, Arc<[Complex<T>]>>,
+    /// Reusable scratch buffer.
     scratch: Vec<Complex<T>>,
 }
 
@@ -57,6 +69,7 @@ impl<T: Float> RfftPlanner<T> {
     /// Create a new [`RfftPlanner`].
     pub fn new() -> Self {
         let mut cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
+        let mut pack_cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
 
         #[cfg(feature = "compile-time-rfft")]
         {
@@ -79,10 +92,18 @@ impl<T: Float> RfftPlanner<T> {
                 let vec = build_twiddle_table::<T>(m);
                 Arc::from(vec)
             });
+            // The packing/unpacking step uses the same radix but we cache a
+            // separate table to keep the interface future proof in case a
+            // different generation scheme is required.
+            pack_cache.entry(m).or_insert_with(|| {
+                let vec = build_twiddle_table::<T>(m);
+                Arc::from(vec)
+            });
         }
 
         Self {
             cache,
+            pack_cache,
             scratch: Vec::new(),
         }
     }
@@ -96,6 +117,15 @@ impl<T: Float> RfftPlanner<T> {
         self.cache.get(&m).unwrap().as_ref()
     }
 
+    /// Retrieve or build the pack/unpack twiddle table for length `m`.
+    pub fn get_pack_twiddles(&mut self, m: usize) -> &[Complex<T>] {
+        if !self.pack_cache.contains_key(&m) {
+            let vec = build_twiddle_table::<T>(m);
+            self.pack_cache.insert(m, Arc::from(vec));
+        }
+        self.pack_cache.get(&m).unwrap().as_ref()
+    }
+
     /// Compute a real-input FFT using cached twiddle tables.
     pub fn rfft_with_scratch<F: FftImpl<T> + ?Sized>(
         &mut self,
@@ -105,7 +135,13 @@ impl<T: Float> RfftPlanner<T> {
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = input.len() / 2;
-        let twiddles = self.get_twiddles(m);
+        // Work around the borrow checker by retrieving the twiddle table
+        // pointer first, then fetching the pack table before reconstructing
+        // the reference. The tables are stored in `Arc`s so their addresses
+        // remain stable for the duration of this call.
+        let twiddles_ptr = self.get_twiddles(m) as *const [Complex<T>];
+        let pack_twiddles = self.get_pack_twiddles(m);
+        let twiddles = unsafe { &*twiddles_ptr };
         #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
@@ -114,6 +150,7 @@ impl<T: Float> RfftPlanner<T> {
                     let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
                     let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
                     let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
+                    let pack32 = &*(pack_twiddles as *const [Complex<T>] as *const [Complex32]);
                     return rfft_direct_f32_simd(
                         |d: &mut [Complex32]| {
                             fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
@@ -122,11 +159,12 @@ impl<T: Float> RfftPlanner<T> {
                         output32,
                         scratch32,
                         twiddles32,
+                        pack32,
                     );
                 }
             }
         }
-        rfft_direct(fft, input, output, scratch, twiddles)
+        rfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
     }
 
     /// Convenience wrapper that allocates a scratch buffer internally.
@@ -155,7 +193,9 @@ impl<T: Float> RfftPlanner<T> {
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = output.len() / 2;
-        let twiddles = self.get_twiddles(m);
+        let twiddles_ptr = self.get_twiddles(m) as *const [Complex<T>];
+        let pack_twiddles = self.get_pack_twiddles(m);
+        let twiddles = unsafe { &*twiddles_ptr };
         #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
@@ -164,6 +204,7 @@ impl<T: Float> RfftPlanner<T> {
                     let output32 = &mut *(output as *mut [T] as *mut [f32]);
                     let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
                     let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
+                    let pack32 = &*(pack_twiddles as *const [Complex<T>] as *const [Complex32]);
                     return irfft_direct_f32_simd(
                         |d: &mut [Complex32]| {
                             fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
@@ -172,11 +213,12 @@ impl<T: Float> RfftPlanner<T> {
                         output32,
                         scratch32,
                         twiddles32,
+                        pack32,
                     );
                 }
             }
         }
-        irfft_direct(fft, input, output, scratch, twiddles)
+        irfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
     }
 
     /// Convenience wrapper that allocates scratch internally.
@@ -288,6 +330,7 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     output: &mut [Complex<T>],
     scratch: &mut [Complex<T>],
     twiddles: &[Complex<T>],
+    _pack_twiddles: &[Complex<T>],
 ) -> Result<(), FftError> {
     let n = input.len();
     if n == 0 {
@@ -301,9 +344,11 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..m {
-        scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+        output[i] = Complex::new(input[2 * i], input[2 * i + 1]);
     }
-    fft.fft(&mut scratch[..m])?;
+    fft.fft(&mut output[..m])?;
+    // Copy FFT results so we can perform the symmetric post-processing
+    scratch[..m].copy_from_slice(&output[..m]);
     let y0 = scratch[0];
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
@@ -328,6 +373,7 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     output: &mut [T],
     scratch: &mut [Complex<T>],
     twiddles: &[Complex<T>],
+    _pack_twiddles: &[Complex<T>],
 ) -> Result<(), FftError> {
     let n = output.len();
     if n == 0 {
@@ -373,6 +419,7 @@ fn rfft_direct_f32_simd<F>(
     output: &mut [Complex32],
     scratch: &mut [Complex32],
     twiddles: &[Complex32],
+    _pack_twiddles: &[Complex32],
 ) -> Result<(), FftError>
 where
     F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
@@ -389,9 +436,10 @@ where
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..m {
-        scratch[i] = Complex32::new(input[2 * i], input[2 * i + 1]);
+        output[i] = Complex32::new(input[2 * i], input[2 * i + 1]);
     }
-    fft(&mut scratch[..m])?;
+    fft(&mut output[..m])?;
+    scratch[..m].copy_from_slice(&output[..m]);
     let y0 = scratch[0];
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
@@ -435,6 +483,7 @@ fn irfft_direct_f32_simd<F>(
     output: &mut [f32],
     scratch: &mut [Complex32],
     twiddles: &[Complex32],
+    _pack_twiddles: &[Complex32],
 ) -> Result<(), FftError>
 where
     F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
