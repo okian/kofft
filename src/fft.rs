@@ -276,6 +276,11 @@ pub fn split_to_complex32(split: &SplitComplex<'_, f32>, out: &mut [Complex32]) 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
+    /// Cache of per-stage twiddle tables. Each entry contains the twiddle
+    /// factors for a particular butterfly size (`len`), stored contiguously so
+    /// that callers can load them without striding through a length-`n`
+    /// table. The table for size `len` has `len/2` elements representing
+    /// `exp(-2πi k / len)` for `k = 0..len/2`.
     cache: HashMap<usize, Arc<[Complex<T>]>>,
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
@@ -295,30 +300,25 @@ impl<T: Float> FftPlanner<T> {
             scratch: Vec::new(),
         }
     }
+    /// Retrieve a contiguous table of twiddle factors for a given stage size
+    /// `n`. The returned slice has length `n/2` and contains
+    /// `exp(-2πi * k / n)` for `k = 0..n/2-1`.
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
         if !self.cache.contains_key(&n) {
+            let half = n / 2;
             let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
-            let (sin, cos) = angle.sin_cos();
-            let w = Complex::new(cos, sin);
-            // Allocate uninitialized buffer of length `n` and fill it in-place.
-            let mut vec: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
-            // SAFETY: `vec` is set to length `n` and every element is written
-            // before being read. The allocation is then reinterpreted as
-            // initialized `Vec<Complex<T>>`.
-            unsafe {
-                vec.set_len(n);
-                let slice = core::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut Complex<T>, n);
-                let mut current = Complex::new(T::one(), T::zero());
-                for elem in slice.iter_mut() {
-                    *elem = current;
-                    current = current * w;
-                }
-                let ptr = slice.as_mut_ptr();
-                let cap = vec.capacity();
-                core::mem::forget(vec);
-                let vec = Vec::from_raw_parts(ptr, n, cap);
-                self.cache.insert(n, Arc::<[Complex<T>]>::from(vec));
+            let (sin_step, cos_step) = angle.sin_cos();
+
+            let mut table: Vec<Complex<T>> = Vec::with_capacity(half);
+            let mut w_re = T::one();
+            let mut w_im = T::zero();
+            for _ in 0..half {
+                table.push(Complex::new(w_re, w_im));
+                let tmp = w_re;
+                w_re = w_re.mul_add(cos_step, -(w_im * sin_step));
+                w_im = w_im.mul_add(cos_step, tmp * sin_step);
             }
+            self.cache.insert(n, Arc::from(table));
         }
         self.cache.get(&n).unwrap().as_ref()
     }
@@ -540,10 +540,6 @@ impl<T: Float> ScalarFftImpl<T> {
             return Ok(());
         }
 
-        let mut planner = self.planner.borrow_mut();
-        let twiddles = planner.get_twiddles(n).to_vec();
-        drop(planner);
-        let twiddles = twiddles;
         // bit-reversal permutation
         let mut j = 0usize;
         for i in 1..n - 1 {
@@ -559,7 +555,11 @@ impl<T: Float> ScalarFftImpl<T> {
         }
         let mut len = 2;
         while len <= n {
-            let step = n / len;
+            // Retrieve the contiguous twiddle table for this stage length.
+            let twiddles = {
+                let mut planner = self.planner.borrow_mut();
+                planner.get_twiddles(len).to_vec()
+            };
             #[cfg(feature = "parallel")]
             {
                 if should_parallelize_fft(n)
@@ -576,7 +576,7 @@ impl<T: Float> ScalarFftImpl<T> {
                                 for &i in &chunk_vec {
                                     let base = input_ptr.add(i);
                                     for j in 0..(len / 2) {
-                                        let w = *twiddles_ptr.add(j * step);
+                                        let w = *twiddles_ptr.add(j);
                                         let u = *base.add(j);
                                         let v = (*base.add(j + len / 2)).mul(w);
                                         *base.add(j) = u.add(v);
@@ -589,7 +589,7 @@ impl<T: Float> ScalarFftImpl<T> {
                 } else {
                     for i in (0..n).step_by(len) {
                         for j in 0..(len / 2) {
-                            let w = twiddles[j * step];
+                            let w = twiddles[j];
                             let u = input[i + j];
                             let v = input[i + j + len / 2].mul(w);
                             input[i + j] = u.add(v);
@@ -602,7 +602,7 @@ impl<T: Float> ScalarFftImpl<T> {
             {
                 for i in (0..n).step_by(len) {
                     for j in 0..(len / 2) {
-                        let w = twiddles[j * step];
+                        let w = twiddles[j];
                         let u = input[i + j];
                         let v = input[i + j + len / 2].mul(w);
                         input[i + j] = u.add(v);
@@ -1164,41 +1164,11 @@ pub struct SimdFftX86_64Impl;
 impl SimdFftX86_64Impl {
     #[cfg(any(target_feature = "avx2", target_feature = "avx512f"))]
     fn fft_simd(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        use core::simd::Simd;
-        let mut re = Vec::with_capacity(input.len());
-        re.resize(input.len(), 0.0);
-        let mut im = Vec::with_capacity(input.len());
-        im.resize(input.len(), 0.0);
-        let mut split = SplitComplex::copy_from_complex(input, &mut re, &mut im);
-
-        #[cfg(target_feature = "avx512f")]
-        {
-            type Vf = Simd<f32, 16>;
-            for (r, i) in split.re.chunks_exact_mut(16).zip(split.im.chunks_exact_mut(16)) {
-                let vr = Vf::from_slice(r);
-                let vi = Vf::from_slice(i);
-                let out_r = vr + Vf::splat(0.0);
-                let out_i = vi + Vf::splat(0.0);
-                r.copy_from_slice(&out_r.to_array());
-                i.copy_from_slice(&out_i.to_array());
-            }
-        }
-
-        #[cfg(all(not(target_feature = "avx512f"), target_feature = "avx2"))]
-        {
-            type Vf = Simd<f32, 8>;
-            for (r, i) in split.re.chunks_exact_mut(8).zip(split.im.chunks_exact_mut(8)) {
-                let vr = Vf::from_slice(r);
-                let vi = Vf::from_slice(i);
-                let out_r = vr + Vf::splat(0.0);
-                let out_i = vi + Vf::splat(0.0);
-                r.copy_from_slice(&out_r.to_array());
-                i.copy_from_slice(&out_i.to_array());
-            }
-        }
-
-        split.copy_to_complex(input);
-        ScalarFftImpl::<f32>::default().fft(input)
+        // Placeholder SIMD implementation: delegate to the Stockham FFT which
+        // now pulls twiddle factors from contiguous, precomputed tables. This
+        // ensures any future vectorization will operate on cached data without
+        // recomputing twiddles.
+        ScalarFftImpl::<f32>::default().stockham_fft(input)
     }
 }
 
@@ -1520,16 +1490,20 @@ pub fn fft_inplace_stack<const N: usize>(buf: &mut [Complex<f32>; N]) -> Result<
     let mut len = 2;
     while len <= N {
         let ang = -2.0 * PI / (len as f32);
-        let wlen = Complex32::expi(ang);
+        let (sin_step, cos_step) = ang.sin_cos();
         let mut i = 0;
         while i < N {
-            let mut w = Complex32::new(1.0, 0.0);
+            let mut w_re = 1.0f32;
+            let mut w_im = 0.0f32;
             for j in 0..(len / 2) {
+                let w = Complex32::new(w_re, w_im);
                 let u = buf[i + j];
                 let v = buf[i + j + len / 2].mul(w);
                 buf[i + j] = u.add(v);
                 buf[i + j + len / 2] = u.sub(v);
-                w = w.mul(wlen);
+                let tmp = w_re;
+                w_re = w_re.mul_add(cos_step, -(w_im * sin_step));
+                w_im = w_im.mul_add(cos_step, tmp * sin_step);
             }
             i += len;
         }
