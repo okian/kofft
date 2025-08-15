@@ -1,4 +1,4 @@
-use kofft::fft::{Complex32, ScalarFftImpl};
+use kofft::fft::{fft16, fft8, Complex32, ScalarFftImpl};
 
 fn dft(input: &[Complex32]) -> Vec<Complex32> {
     let n = input.len();
@@ -33,16 +33,25 @@ fn stockham_small_kernels() {
 
 #[test]
 fn direct_fft8_16_kernels() {
-    let fft = ScalarFftImpl::<f32>::default();
-    for &n in &[8usize, 16] {
-        let mut data: Vec<Complex32> = (0..n)
-            .map(|i| Complex32::new((i as f32).sin(), (i as f32).cos()))
-            .collect();
-        let expected = dft(&data);
-        fft.stockham_fft(&mut data).unwrap();
-        for (a, b) in data.iter().zip(expected.iter()) {
-            assert!((a.re - b.re).abs() < 1e-2);
-            assert!((a.im - b.im).abs() < 1e-2);
-        }
+    // Test fft8
+    let mut data: Vec<Complex32> = (0..8)
+        .map(|i| Complex32::new((i as f32).sin(), (i as f32).cos()))
+        .collect();
+    let expected = dft(&data);
+    fft8(&mut data);
+    for (a, b) in data.iter().zip(expected.iter()) {
+        assert!((a.re - b.re).abs() < 1e-2);
+        assert!((a.im - b.im).abs() < 1e-2);
+    }
+
+    // Test fft16
+    let mut data: Vec<Complex32> = (0..16)
+        .map(|i| Complex32::new((i as f32).sin(), (i as f32).cos()))
+        .collect();
+    let expected = dft(&data);
+    fft16(&mut data);
+    for (a, b) in data.iter().zip(expected.iter()) {
+        assert!((a.re - b.re).abs() < 1e-2);
+        assert!((a.im - b.im).abs() < 1e-2);
     }
 }
