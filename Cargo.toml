@@ -45,6 +45,8 @@ avx512 = []
 slow = []
 internal-tests = ["proptest", "rand"]
 compile-time-rfft = []
+simd = []
+soa = []
 
 [dependencies.rayon]
 version = "1.7"

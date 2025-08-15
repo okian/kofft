@@ -2388,6 +2388,22 @@ impl<T: Float> FftPlan<T> {
         }
         self.fft.ifft_split(re, im)
     }
+
+    #[cfg(any(feature = "simd", feature = "soa"))]
+    pub fn fft_complex_vec(&self, data: &mut crate::num::ComplexVec) -> Result<(), FftError> {
+        if data.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.fft_split(&mut data.re, &mut data.im)
+    }
+
+    #[cfg(any(feature = "simd", feature = "soa"))]
+    pub fn ifft_complex_vec(&self, data: &mut crate::num::ComplexVec) -> Result<(), FftError> {
+        if data.len() != self.n {
+            return Err(FftError::MismatchedLengths);
+        }
+        self.fft.ifft_split(&mut data.re, &mut data.im)
+    }
 }
 
 /// Compute FFT using the default planner. When the `parallel` feature is
@@ -2410,6 +2426,16 @@ pub fn fft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
 
 pub fn ifft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
     ScalarFftImpl::<T>::default().ifft_split(re, im)
+}
+
+#[cfg(any(feature = "simd", feature = "soa"))]
+pub fn fft_complex_vec(data: &mut crate::num::ComplexVec) -> Result<(), FftError> {
+    ScalarFftImpl::<f32>::default().fft_split(&mut data.re, &mut data.im)
+}
+
+#[cfg(any(feature = "simd", feature = "soa"))]
+pub fn ifft_complex_vec(data: &mut crate::num::ComplexVec) -> Result<(), FftError> {
+    ScalarFftImpl::<f32>::default().ifft_split(&mut data.re, &mut data.im)
 }
 
 /// Batch FFT: process a batch of mutable slices in-place
