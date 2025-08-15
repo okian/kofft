@@ -1354,13 +1354,12 @@ unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
         scalar.fft(input)?;
         return Ok(());
     }
+    let mut planner = FftPlanner::<f32>::new();
     let mut len = 2;
     while len <= n {
-        let ang = -2.0 * PI / (len as f32);
-        let wlen = Complex32::expi(ang);
+        let twiddles = planner.get_twiddles(len);
         let mut i = 0;
         while i < n {
-            let mut w = Complex32::new(1.0, 0.0);
             let half = len / 2;
             let simd_width = 8;
             let simd_iters = half / simd_width;
@@ -1368,22 +1367,14 @@ unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
                 let j = s * simd_width;
                 let mut w_re = [0.0f32; 8];
                 let mut w_im = [0.0f32; 8];
-                let mut wj = w;
+                let tw_ptr = twiddles.as_ptr().add(j);
                 for k in 0..simd_width {
-                    w_re[k] = wj.re;
-                    w_im[k] = wj.im;
-                    wj = wj.mul(wlen);
+                    let tw = *tw_ptr.add(k);
+                    w_re[k] = tw.re;
+                    w_im[k] = tw.im;
                 }
-                let w_re_v = if aligned {
-                    _mm256_load_ps(w_re.as_ptr())
-                } else {
-                    _mm256_loadu_ps(w_re.as_ptr())
-                };
-                let w_im_v = if aligned {
-                    _mm256_load_ps(w_im.as_ptr())
-                } else {
-                    _mm256_loadu_ps(w_im.as_ptr())
-                };
+                let w_re_v = _mm256_loadu_ps(w_re.as_ptr());
+                let w_im_v = _mm256_loadu_ps(w_im.as_ptr());
                 let u_re = if aligned {
                     _mm256_load_ps(&input[i + j].re as *const f32)
                 } else {
@@ -1421,16 +1412,13 @@ unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
                     _mm256_storeu_ps(&mut input[i + j + half].re as *mut f32, out2_re);
                     _mm256_storeu_ps(&mut input[i + j + half].im as *mut f32, out2_im);
                 }
-                for _ in 0..simd_width {
-                    w = w.mul(wlen);
-                }
             }
             for j in (simd_iters * simd_width)..half {
+                let w = twiddles[j];
                 let u = input[i + j];
                 let v = input[i + j + half].mul(w);
                 input[i + j] = u.add(v);
                 input[i + j + half] = u.sub(v);
-                w = w.mul(wlen);
             }
             i += len;
         }
@@ -1457,13 +1445,12 @@ unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
         scalar.fft(input)?;
         return Ok(());
     }
+    let mut planner = FftPlanner::<f32>::new();
     let mut len = 2;
     while len <= n {
-        let ang = -2.0 * PI / (len as f32);
-        let wlen = Complex32::expi(ang);
+        let twiddles = planner.get_twiddles(len);
         let mut i = 0;
         while i < n {
-            let mut w = Complex32::new(1.0, 0.0);
             let half = len / 2;
             let simd_width = 16;
             let simd_iters = half / simd_width;
@@ -1471,22 +1458,14 @@ unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
                 let j = s * simd_width;
                 let mut w_re = [0.0f32; 16];
                 let mut w_im = [0.0f32; 16];
-                let mut wj = w;
+                let tw_ptr = twiddles.as_ptr().add(j);
                 for k in 0..simd_width {
-                    w_re[k] = wj.re;
-                    w_im[k] = wj.im;
-                    wj = wj.mul(wlen);
+                    let tw = *tw_ptr.add(k);
+                    w_re[k] = tw.re;
+                    w_im[k] = tw.im;
                 }
-                let w_re_v = if aligned {
-                    _mm512_load_ps(w_re.as_ptr())
-                } else {
-                    _mm512_loadu_ps(w_re.as_ptr())
-                };
-                let w_im_v = if aligned {
-                    _mm512_load_ps(w_im.as_ptr())
-                } else {
-                    _mm512_loadu_ps(w_im.as_ptr())
-                };
+                let w_re_v = _mm512_loadu_ps(w_re.as_ptr());
+                let w_im_v = _mm512_loadu_ps(w_im.as_ptr());
                 let u_re = if aligned {
                     _mm512_load_ps(&input[i + j].re as *const f32)
                 } else {
@@ -1524,16 +1503,13 @@ unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
                     _mm512_storeu_ps(&mut input[i + j + half].re as *mut f32, out2_re);
                     _mm512_storeu_ps(&mut input[i + j + half].im as *mut f32, out2_im);
                 }
-                for _ in 0..simd_width {
-                    w = w.mul(wlen);
-                }
             }
             for j in (simd_iters * simd_width)..half {
+                let w = twiddles[j];
                 let u = input[i + j];
                 let v = input[i + j + half].mul(w);
                 input[i + j] = u.add(v);
                 input[i + j + half] = u.sub(v);
-                w = w.mul(wlen);
             }
             i += len;
         }
@@ -1622,13 +1598,12 @@ impl FftImpl<f32> for SimdFftSseImpl {
             return Ok(());
         }
         unsafe {
+            let mut planner = FftPlanner::<f32>::new();
             let mut len = 2;
             while len <= n {
-                let ang = -2.0 * PI / (len as f32);
-                let wlen = Complex32::expi(ang);
+                let twiddles = planner.get_twiddles(len);
                 let mut i = 0;
                 while i < n {
-                    let mut w = Complex32::new(1.0, 0.0);
                     let half = len / 2;
                     let simd_width = 4;
                     let simd_iters = half / simd_width;
@@ -1636,11 +1611,11 @@ impl FftImpl<f32> for SimdFftSseImpl {
                         let j = s * simd_width;
                         let mut w_re = [0.0f32; 4];
                         let mut w_im = [0.0f32; 4];
-                        let mut wj = w;
+                        let tw_ptr = twiddles.as_ptr().add(j);
                         for k in 0..simd_width {
-                            w_re[k] = wj.re;
-                            w_im[k] = wj.im;
-                            wj = wj.mul(wlen);
+                            let tw = *tw_ptr.add(k);
+                            w_re[k] = tw.re;
+                            w_im[k] = tw.im;
                         }
                         let w_re_v = _mm_loadu_ps(w_re.as_ptr());
                         let w_im_v = _mm_loadu_ps(w_im.as_ptr());
@@ -1685,16 +1660,13 @@ impl FftImpl<f32> for SimdFftSseImpl {
                             _mm_storeu_ps(&mut input[i + j + half].re as *mut f32, out2_re);
                             _mm_storeu_ps(&mut input[i + j + half].im as *mut f32, out2_im);
                         }
-                        for _ in 0..simd_width {
-                            w = w.mul(wlen);
-                        }
                     }
                     for j in (simd_iters * simd_width)..half {
+                        let w = twiddles[j];
                         let u = input[i + j];
                         let v = input[i + j + half].mul(w);
                         input[i + j] = u.add(v);
                         input[i + j + half] = u.sub(v);
-                        w = w.mul(wlen);
                     }
                     i += len;
                 }
