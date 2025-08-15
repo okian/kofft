@@ -137,7 +137,7 @@ impl<T: Float> RfftPlanner<T> {
         let m = input.len() / 2;
         let twiddles = self.get_twiddles(m);
         let pack_twiddles = self.get_pack_twiddles(m);
-        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+        #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
                 unsafe {
@@ -148,7 +148,31 @@ impl<T: Float> RfftPlanner<T> {
                         &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
                     let pack32 =
                         &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    return rfft_direct_f32_simd(
+                    return rfft_direct_f32_avx(
+                        |d: &mut [Complex32]| {
+                            fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
+                        },
+                        input32,
+                        output32,
+                        scratch32,
+                        twiddles32,
+                        pack32,
+                    );
+                }
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                unsafe {
+                    let input32 = &mut *(input as *mut [T] as *mut [f32]);
+                    let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
+                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
+                    let twiddles32 =
+                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
+                    let pack32 =
+                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
+                    return rfft_direct_f32_neon(
                         |d: &mut [Complex32]| {
                             fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
                         },
@@ -199,7 +223,7 @@ impl<T: Float> RfftPlanner<T> {
         let m = output.len() / 2;
         let twiddles = self.get_twiddles(m);
         let pack_twiddles = self.get_pack_twiddles(m);
-        #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+        #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
                 unsafe {
@@ -210,7 +234,31 @@ impl<T: Float> RfftPlanner<T> {
                         &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
                     let pack32 =
                         &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    return irfft_direct_f32_simd(
+                    return irfft_direct_f32_avx(
+                        |d: &mut [Complex32]| {
+                            fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
+                        },
+                        input32,
+                        output32,
+                        scratch32,
+                        twiddles32,
+                        pack32,
+                    );
+                }
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                unsafe {
+                    let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
+                    let output32 = &mut *(output as *mut [T] as *mut [f32]);
+                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
+                    let twiddles32 =
+                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
+                    let pack32 =
+                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
+                    return irfft_direct_f32_neon(
                         |d: &mut [Complex32]| {
                             fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
                         },
@@ -421,11 +469,12 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     Ok(())
 }
 
-#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
+#[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
 use core::arch::x86_64::*;
 
-#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
-fn rfft_direct_f32_simd<F>(
+#[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
+#[target_feature(enable = "avx")]
+unsafe fn rfft_direct_f32_avx<F>(
     mut fft: F,
     input: &mut [f32],
     output: &mut [Complex32],
@@ -455,7 +504,7 @@ where
     let y0 = scratch[0];
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
-    let half = unsafe { _mm_set1_ps(0.5) };
+    let half = _mm_set1_ps(0.5);
     for k in 1..m {
         let a = scratch[k];
         let b = Complex32::new(scratch[m - k].re, -scratch[m - k].im);
@@ -464,32 +513,31 @@ where
         let diff_re = a.re - b.re;
         let diff_im = a.im - b.im;
         let w = twiddles[k];
-        unsafe {
-            let v_re = _mm_set1_ps(diff_re);
-            let v_im = _mm_set1_ps(diff_im);
-            let w_re = _mm_set1_ps(w.re);
-            let w_im = _mm_set1_ps(w.im);
-            let t1 = _mm_mul_ps(v_re, w_re);
-            let t2 = _mm_mul_ps(v_im, w_im);
-            let t3 = _mm_mul_ps(v_re, w_im);
-            let t4 = _mm_mul_ps(v_im, w_re);
-            let vw_re = _mm_sub_ps(t1, t2);
-            let vw_im = _mm_add_ps(t3, t4);
-            let t_re = _mm_cvtss_f32(vw_re);
-            let t_im = _mm_cvtss_f32(vw_im);
-            let temp_re = sum_re + t_im;
-            let temp_im = sum_im - t_re;
-            let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
-            let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
-            output[k].re = _mm_cvtss_f32(res_re);
-            output[k].im = _mm_cvtss_f32(res_im);
-        }
+        let v_re = _mm_set1_ps(diff_re);
+        let v_im = _mm_set1_ps(diff_im);
+        let w_re = _mm_set1_ps(w.re);
+        let w_im = _mm_set1_ps(w.im);
+        let t1 = _mm_mul_ps(v_re, w_re);
+        let t2 = _mm_mul_ps(v_im, w_im);
+        let t3 = _mm_mul_ps(v_re, w_im);
+        let t4 = _mm_mul_ps(v_im, w_re);
+        let vw_re = _mm_sub_ps(t1, t2);
+        let vw_im = _mm_add_ps(t3, t4);
+        let t_re = _mm_cvtss_f32(vw_re);
+        let t_im = _mm_cvtss_f32(vw_im);
+        let temp_re = sum_re + t_im;
+        let temp_im = sum_im - t_re;
+        let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
+        let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
+        output[k].re = _mm_cvtss_f32(res_re);
+        output[k].im = _mm_cvtss_f32(res_im);
     }
     Ok(())
 }
 
-#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
-fn irfft_direct_f32_simd<F>(
+#[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
+#[target_feature(enable = "avx")]
+unsafe fn irfft_direct_f32_avx<F>(
     mut ifft: F,
     input: &mut [Complex32],
     output: &mut [f32],
@@ -511,15 +559,13 @@ where
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let half = unsafe { _mm_set1_ps(0.5) };
-    unsafe {
-        let a0 = _mm_set_ss(input[0].re + input[m].re);
-        let b0 = _mm_set_ss(input[0].re - input[m].re);
-        scratch[0] = Complex32::new(
-            _mm_cvtss_f32(_mm_mul_ss(a0, half)),
-            _mm_cvtss_f32(_mm_mul_ss(b0, half)),
-        );
-    }
+    let half = _mm_set1_ps(0.5);
+    let a0 = _mm_set_ss(input[0].re + input[m].re);
+    let b0 = _mm_set_ss(input[0].re - input[m].re);
+    scratch[0] = Complex32::new(
+        _mm_cvtss_f32(_mm_mul_ss(a0, half)),
+        _mm_cvtss_f32(_mm_mul_ss(b0, half)),
+    );
     for k in 1..m {
         let a = input[k];
         let b = Complex32::new(input[m - k].re, -input[m - k].im);
@@ -528,26 +574,156 @@ where
         let diff_re = a.re - b.re;
         let diff_im = a.im - b.im;
         let w = Complex32::new(twiddles[k].re, -twiddles[k].im);
-        unsafe {
-            let v_re = _mm_set1_ps(diff_re);
-            let v_im = _mm_set1_ps(diff_im);
-            let w_re = _mm_set1_ps(w.re);
-            let w_im = _mm_set1_ps(w.im);
-            let t1 = _mm_mul_ps(v_re, w_re);
-            let t2 = _mm_mul_ps(v_im, w_im);
-            let t3 = _mm_mul_ps(v_re, w_im);
-            let t4 = _mm_mul_ps(v_im, w_re);
-            let vw_re = _mm_sub_ps(t1, t2);
-            let vw_im = _mm_add_ps(t3, t4);
-            let t_re = _mm_cvtss_f32(vw_re);
-            let t_im = _mm_cvtss_f32(vw_im);
-            let temp_re = sum_re - t_im;
-            let temp_im = sum_im + t_re;
-            let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
-            let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
-            scratch[k].re = _mm_cvtss_f32(res_re);
-            scratch[k].im = _mm_cvtss_f32(res_im);
-        }
+        let v_re = _mm_set1_ps(diff_re);
+        let v_im = _mm_set1_ps(diff_im);
+        let w_re = _mm_set1_ps(w.re);
+        let w_im = _mm_set1_ps(w.im);
+        let t1 = _mm_mul_ps(v_re, w_re);
+        let t2 = _mm_mul_ps(v_im, w_im);
+        let t3 = _mm_mul_ps(v_re, w_im);
+        let t4 = _mm_mul_ps(v_im, w_re);
+        let vw_re = _mm_sub_ps(t1, t2);
+        let vw_im = _mm_add_ps(t3, t4);
+        let t_re = _mm_cvtss_f32(vw_re);
+        let t_im = _mm_cvtss_f32(vw_im);
+        let temp_re = sum_re - t_im;
+        let temp_im = sum_im + t_re;
+        let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
+        let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
+        scratch[k].re = _mm_cvtss_f32(res_re);
+        scratch[k].im = _mm_cvtss_f32(res_im);
+    }
+    ifft(&mut scratch[..m])?;
+    for i in 0..m {
+        output[2 * i] = scratch[i].re;
+        output[2 * i + 1] = scratch[i].im;
+    }
+    Ok(())
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+use core::arch::aarch64::*;
+
+#[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+#[target_feature(enable = "neon")]
+unsafe fn rfft_direct_f32_neon<F>(
+    mut fft: F,
+    input: &mut [f32],
+    output: &mut [Complex32],
+    scratch: &mut [Complex32],
+    twiddles: &[Complex32],
+    _pack_twiddles: &[Complex32],
+) -> Result<(), FftError>
+where
+    F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
+{
+    let n = input.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if !n.is_multiple_of(2) {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if output.len() != m + 1 || scratch.len() < m {
+        return Err(FftError::MismatchedLengths);
+    }
+    for i in 0..m {
+        output[i] = Complex32::new(input[2 * i], input[2 * i + 1]);
+    }
+    fft(&mut output[..m])?;
+    scratch[..m].copy_from_slice(&output[..m]);
+    let y0 = scratch[0];
+    output[0] = Complex32::new(y0.re + y0.im, 0.0);
+    output[m] = Complex32::new(y0.re - y0.im, 0.0);
+    let half = vdupq_n_f32(0.5);
+    for k in 1..m {
+        let a = scratch[k];
+        let b = Complex32::new(scratch[m - k].re, -scratch[m - k].im);
+        let sum_re = a.re + b.re;
+        let sum_im = a.im + b.im;
+        let diff_re = a.re - b.re;
+        let diff_im = a.im - b.im;
+        let w = twiddles[k];
+        let v_re = vdupq_n_f32(diff_re);
+        let v_im = vdupq_n_f32(diff_im);
+        let w_re = vdupq_n_f32(w.re);
+        let w_im = vdupq_n_f32(w.im);
+        let t1 = vmulq_f32(v_re, w_re);
+        let t2 = vmulq_f32(v_im, w_im);
+        let t3 = vmulq_f32(v_re, w_im);
+        let t4 = vmulq_f32(v_im, w_re);
+        let vw_re = vsubq_f32(t1, t2);
+        let vw_im = vaddq_f32(t3, t4);
+        let t_re = vgetq_lane_f32(vw_re, 0);
+        let t_im = vgetq_lane_f32(vw_im, 0);
+        let temp_re = sum_re + t_im;
+        let temp_im = sum_im - t_re;
+        let res_re = vmulq_f32(vdupq_n_f32(temp_re), half);
+        let res_im = vmulq_f32(vdupq_n_f32(temp_im), half);
+        output[k].re = vgetq_lane_f32(res_re, 0);
+        output[k].im = vgetq_lane_f32(res_im, 0);
+    }
+    Ok(())
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+#[target_feature(enable = "neon")]
+unsafe fn irfft_direct_f32_neon<F>(
+    mut ifft: F,
+    input: &mut [Complex32],
+    output: &mut [f32],
+    scratch: &mut [Complex32],
+    twiddles: &[Complex32],
+    _pack_twiddles: &[Complex32],
+) -> Result<(), FftError>
+where
+    F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
+{
+    let n = output.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if !n.is_multiple_of(2) {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / 2;
+    if input.len() != m + 1 || scratch.len() < m {
+        return Err(FftError::MismatchedLengths);
+    }
+    let half = vdupq_n_f32(0.5);
+    let a0 = vdupq_n_f32(input[0].re + input[m].re);
+    let b0 = vdupq_n_f32(input[0].re - input[m].re);
+    scratch[0] = Complex32::new(
+        vgetq_lane_f32(vmulq_f32(a0, half), 0),
+        vgetq_lane_f32(vmulq_f32(b0, half), 0),
+    );
+    for k in 1..m {
+        let a = input[k];
+        let b = Complex32::new(input[m - k].re, -input[m - k].im);
+        let sum_re = a.re + b.re;
+        let sum_im = a.im + b.im;
+        let diff_re = a.re - b.re;
+        let diff_im = a.im - b.im;
+        let w = Complex32::new(twiddles[k].re, -twiddles[k].im);
+        let v_re = vdupq_n_f32(diff_re);
+        let v_im = vdupq_n_f32(diff_im);
+        let w_re = vdupq_n_f32(w.re);
+        let w_im = vdupq_n_f32(w.im);
+        let t1 = vmulq_f32(v_re, w_re);
+        let t2 = vmulq_f32(v_im, w_im);
+        let t3 = vmulq_f32(v_re, w_im);
+        let t4 = vmulq_f32(v_im, w_re);
+        let vw_re = vsubq_f32(t1, t2);
+        let vw_im = vaddq_f32(t3, t4);
+        let t_re = vgetq_lane_f32(vw_re, 0);
+        let t_im = vgetq_lane_f32(vw_im, 0);
+        let temp_re = sum_re - t_im;
+        let temp_im = sum_im + t_re;
+        let res_re = vmulq_f32(vdupq_n_f32(temp_re), half);
+        let res_im = vmulq_f32(vdupq_n_f32(temp_im), half);
+        scratch[k].re = vgetq_lane_f32(res_re, 0);
+        scratch[k].im = vgetq_lane_f32(res_im, 0);
     }
     ifft(&mut scratch[..m])?;
     for i in 0..m {
