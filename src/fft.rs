@@ -8,11 +8,13 @@
 
 use core::f32::consts::PI;
 
+use crate::fft_kernels::{fft16, fft2, fft4, fft8};
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use core::convert::TryInto;
 use core::mem::MaybeUninit;
 use once_cell::unsync::OnceCell;
 
@@ -453,12 +455,30 @@ impl<T: Float> ScalarFftImpl<T> {
             if n <= 1 {
                 return;
             }
-            if n == 2 {
-                let a = data[0];
-                let b = data[1];
-                data[0] = a.add(b);
-                data[1] = a.sub(b);
-                return;
+            if n <= 16 {
+                match n {
+                    2 => {
+                        let arr: &mut [Complex<T>; 2] = data.try_into().unwrap();
+                        fft2(arr);
+                        return;
+                    }
+                    4 => {
+                        let arr: &mut [Complex<T>; 4] = data.try_into().unwrap();
+                        fft4(arr);
+                        return;
+                    }
+                    8 => {
+                        let arr: &mut [Complex<T>; 8] = data.try_into().unwrap();
+                        fft8(arr);
+                        return;
+                    }
+                    16 => {
+                        let arr: &mut [Complex<T>; 16] = data.try_into().unwrap();
+                        fft16(arr);
+                        return;
+                    }
+                    _ => return,
+                }
             }
             let mut even: Vec<Complex<T>> = data.iter().step_by(2).cloned().collect();
             let mut odd1: Vec<Complex<T>> = data.iter().skip(1).step_by(4).cloned().collect();
@@ -503,6 +523,31 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if n == 1 {
             return Ok(());
+        }
+        if n <= 16 {
+            match n {
+                2 => {
+                    let arr: &mut [Complex<T>; 2] = input.try_into().unwrap();
+                    fft2(arr);
+                    return Ok(());
+                }
+                4 => {
+                    let arr: &mut [Complex<T>; 4] = input.try_into().unwrap();
+                    fft4(arr);
+                    return Ok(());
+                }
+                8 => {
+                    let arr: &mut [Complex<T>; 8] = input.try_into().unwrap();
+                    fft8(arr);
+                    return Ok(());
+                }
+                16 => {
+                    let arr: &mut [Complex<T>; 16] = input.try_into().unwrap();
+                    fft16(arr);
+                    return Ok(());
+                }
+                _ => {}
+            }
         }
         if (n & (n - 1)) == 0 {
             // Power of two: use split-radix FFT
@@ -1086,12 +1131,16 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         {
             #[cfg(any(feature = "avx512", target_feature = "avx512f"))]
             if std::arch::is_x86_feature_detected!("avx512f") {
-                unsafe { return fft_avx512(input); }
+                unsafe {
+                    return fft_avx512(input);
+                }
             }
             if std::arch::is_x86_feature_detected!("avx2")
                 && std::arch::is_x86_feature_detected!("fma")
             {
-                unsafe { return fft_avx2(input); }
+                unsafe {
+                    return fft_avx2(input);
+                }
             }
         }
 
@@ -1463,7 +1512,10 @@ unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
     Ok(())
 }
 
-#[cfg(all(target_arch = "x86_64", any(feature = "avx512", target_feature = "avx512f")))]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(feature = "avx512", target_feature = "avx512f")
+))]
 #[target_feature(enable = "avx512f")]
 unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
     let n = input.len();
@@ -2261,8 +2313,7 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
         if std::arch::is_x86_feature_detected!("avx512f") {
             return Box::new(SimdFftX86_64Impl);
         }
-        if std::arch::is_x86_feature_detected!("avx2")
-            && std::arch::is_x86_feature_detected!("fma")
+        if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
         {
             return Box::new(SimdFftX86_64Impl);
         }
