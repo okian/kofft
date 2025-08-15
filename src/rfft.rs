@@ -98,7 +98,7 @@ impl<T: Float> RfftPlanner<T> {
         fft: &F,
         input: &mut [T],
         output: &mut [Complex<T>],
-        _scratch: &mut [Complex<T>],
+        scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = input.len() / 2;
         let twiddles = self.get_twiddles(m);
@@ -108,6 +108,7 @@ impl<T: Float> RfftPlanner<T> {
                 unsafe {
                     let input32 = &mut *(input as *mut [T] as *mut [f32]);
                     let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
+                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
                     let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
                     return rfft_direct_f32_simd(
                         |d: &mut [Complex32]| {
@@ -115,12 +116,13 @@ impl<T: Float> RfftPlanner<T> {
                         },
                         input32,
                         output32,
+                        scratch32,
                         twiddles32,
                     );
                 }
             }
         }
-        rfft_direct(fft, input, output, twiddles)
+        rfft_direct(fft, input, output, scratch, twiddles)
     }
 
     /// Convenience wrapper that allocates a scratch buffer internally.
@@ -150,7 +152,7 @@ impl<T: Float> RfftPlanner<T> {
         fft: &F,
         input: &mut [Complex<T>],
         output: &mut [T],
-        _scratch: &mut [Complex<T>],
+        scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = output.len() / 2;
         let twiddles = self.get_twiddles(m);
@@ -160,6 +162,7 @@ impl<T: Float> RfftPlanner<T> {
                 unsafe {
                     let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
                     let output32 = &mut *(output as *mut [T] as *mut [f32]);
+                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
                     let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
                     return irfft_direct_f32_simd(
                         |d: &mut [Complex32]| {
@@ -167,12 +170,13 @@ impl<T: Float> RfftPlanner<T> {
                         },
                         input32,
                         output32,
+                        scratch32,
                         twiddles32,
                     );
                 }
             }
         }
-        irfft_direct(fft, input, output, twiddles)
+        irfft_direct(fft, input, output, scratch, twiddles)
     }
 
     /// Convenience wrapper that allocates scratch internally.
@@ -281,11 +285,12 @@ pub fn irfft_packed<T: Float, F: FftImpl<T>>(
     Ok(())
 }
 
-/// Direct real FFT kernel operating in-place on the real buffer.
+/// Real FFT kernel using a half-size complex FFT with post-processing.
 fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     fft: &F,
     input: &mut [T],
     output: &mut [Complex<T>],
+    scratch: &mut [Complex<T>],
     twiddles: &[Complex<T>],
 ) -> Result<(), FftError> {
     let n = input.len();
@@ -296,19 +301,20 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
-    if output.len() != m + 1 {
+    if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex<T>] =
-        unsafe { core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex<T>, m) };
-    fft.fft(data)?;
-    let y0 = data[0];
+    for i in 0..m {
+        scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+    }
+    fft.fft(&mut scratch[..m])?;
+    let y0 = scratch[0];
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
     for k in 1..m {
-        let a = data[k];
-        let b = Complex::new(data[m - k].re, -data[m - k].im);
+        let a = scratch[k];
+        let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
         let sum = a.add(b);
         let diff = a.sub(b);
         let w = twiddles[k];
@@ -319,11 +325,12 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     Ok(())
 }
 
-/// Direct inverse real FFT kernel operating on the real buffer.
+/// Inverse real FFT kernel using a half-size complex FFT with post-processing.
 fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     fft: &F,
     input: &mut [Complex<T>],
     output: &mut [T],
+    scratch: &mut [Complex<T>],
     twiddles: &[Complex<T>],
 ) -> Result<(), FftError> {
     let n = output.len();
@@ -334,13 +341,11 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
-    if input.len() != m + 1 {
+    if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex<T>] =
-        unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex<T>, m) };
     let half = T::from_f32(0.5);
-    data[0] = Complex::new(
+    scratch[0] = Complex::new(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
     );
@@ -352,12 +357,12 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
         let w = Complex::new(twiddles[k].re, -twiddles[k].im);
         let t = w.mul(diff);
         let temp = sum.sub(Complex::new(t.im, -t.re));
-        data[k] = Complex::new(temp.re * half, temp.im * half);
+        scratch[k] = Complex::new(temp.re * half, temp.im * half);
     }
-    fft.ifft(data)?;
+    fft.ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = data[i].re;
-        output[2 * i + 1] = data[i].im;
+        output[2 * i] = scratch[i].re;
+        output[2 * i + 1] = scratch[i].im;
     }
     Ok(())
 }
@@ -370,6 +375,7 @@ fn rfft_direct_f32_simd<F>(
     mut fft: F,
     input: &mut [f32],
     output: &mut [Complex32],
+    scratch: &mut [Complex32],
     twiddles: &[Complex32],
 ) -> Result<(), FftError>
 where
@@ -383,19 +389,20 @@ where
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
-    if output.len() != m + 1 {
+    if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex32] =
-        unsafe { core::slice::from_raw_parts_mut(input.as_mut_ptr() as *mut Complex32, m) };
-    fft(data)?;
-    let y0 = data[0];
+    for i in 0..m {
+        scratch[i] = Complex32::new(input[2 * i], input[2 * i + 1]);
+    }
+    fft(&mut scratch[..m])?;
+    let y0 = scratch[0];
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
     let half = unsafe { _mm_set1_ps(0.5) };
     for k in 1..m {
-        let a = data[k];
-        let b = Complex32::new(data[m - k].re, -data[m - k].im);
+        let a = scratch[k];
+        let b = Complex32::new(scratch[m - k].re, -scratch[m - k].im);
         let sum_re = a.re + b.re;
         let sum_im = a.im + b.im;
         let diff_re = a.re - b.re;
@@ -430,6 +437,7 @@ fn irfft_direct_f32_simd<F>(
     mut ifft: F,
     input: &mut [Complex32],
     output: &mut [f32],
+    scratch: &mut [Complex32],
     twiddles: &[Complex32],
 ) -> Result<(), FftError>
 where
@@ -443,16 +451,14 @@ where
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
-    if input.len() != m + 1 {
+    if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let data: &mut [Complex32] =
-        unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut Complex32, m) };
     let half = unsafe { _mm_set1_ps(0.5) };
     unsafe {
         let a0 = _mm_set_ss(input[0].re + input[m].re);
         let b0 = _mm_set_ss(input[0].re - input[m].re);
-        data[0] = Complex32::new(
+        scratch[0] = Complex32::new(
             _mm_cvtss_f32(_mm_mul_ss(a0, half)),
             _mm_cvtss_f32(_mm_mul_ss(b0, half)),
         );
@@ -482,14 +488,14 @@ where
             let temp_im = sum_im + t_re;
             let res_re = _mm_mul_ss(_mm_set_ss(temp_re), half);
             let res_im = _mm_mul_ss(_mm_set_ss(temp_im), half);
-            data[k].re = _mm_cvtss_f32(res_re);
-            data[k].im = _mm_cvtss_f32(res_im);
+            scratch[k].re = _mm_cvtss_f32(res_re);
+            scratch[k].im = _mm_cvtss_f32(res_im);
         }
     }
-    ifft(data)?;
+    ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = data[i].re;
-        output[2 * i + 1] = data[i].im;
+        output[2 * i] = scratch[i].re;
+        output[2 * i + 1] = scratch[i].im;
     }
     Ok(())
 }
@@ -497,17 +503,17 @@ where
 /// Trait providing real-valued FFT transforms built on top of [`FftImpl`].
 pub trait RealFftImpl<T: Float>: FftImpl<T> {
     /// Compute the real-input FFT, producing `N/2 + 1` complex samples.
-    /// Scratch storage is ignored for the specialized kernels but kept for
-    /// API compatibility. When SIMD features are enabled this routine
-    /// dispatches to SIMD-accelerated variants.
+    /// The provided scratch buffer must have length `N/2` and is used as
+    /// workspace for the intermediate complex FFT. When SIMD features are
+    /// enabled this routine dispatches to SIMD-accelerated variants.
     fn rfft_with_scratch(
         &self,
         input: &mut [T],
         output: &mut [Complex<T>],
-        _scratch: &mut [Complex<T>],
+        scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let mut planner = RfftPlanner::new();
-        planner.rfft_with_scratch(self, input, output, _scratch)
+        planner.rfft_with_scratch(self, input, output, scratch)
     }
 
     /// Convenience wrapper that allocates a scratch buffer internally.
@@ -528,15 +534,15 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
 
     /// Compute the inverse real FFT, consuming `N/2 + 1` complex samples and
     /// producing `N` real time-domain values. A scratch buffer of length `N/2`
-    /// is used to avoid allocations.
+    /// is used to hold the intermediate complex data.
     fn irfft_with_scratch(
         &self,
         input: &mut [Complex<T>],
         output: &mut [T],
-        _scratch: &mut [Complex<T>],
+        scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let mut planner = RfftPlanner::new();
-        planner.irfft_with_scratch(self, input, output, _scratch)
+        planner.irfft_with_scratch(self, input, output, scratch)
     }
 
     /// Convenience wrapper that allocates scratch internally.
