@@ -6,6 +6,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
 use libm::{cosf, fabsf, floorf, sinf};
+#[cfg(not(feature = "std"))]
+use crate::num::Float;
 
 /// Tukey window (tapered cosine)
 pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
