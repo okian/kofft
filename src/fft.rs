@@ -513,7 +513,7 @@ impl<T: Float> ScalarFftImpl<T> {
         }
     }
 
-    pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+   pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
@@ -531,9 +531,8 @@ impl<T: Float> ScalarFftImpl<T> {
             }
             return Ok(());
         }
-        // Stockham auto-sort FFT using a double-buffered approach. This
-        // eliminates the bit-reversal permutation and keeps the output in
-        // natural order while ensuring sequential memory access.
+
+        // Stockham auto-sort FFT using a double-buffered approach.
         let (twiddles, mut scratch) = {
             let mut planner = self.planner.borrow_mut();
             let twiddles = planner.get_twiddles(n);
@@ -545,37 +544,41 @@ impl<T: Float> ScalarFftImpl<T> {
             scratch.resize(n, Complex::zero());
         }
 
-        // Keep the raw pointer to the original input so we can detect if the
-        // final result resides in the scratch buffer without re-borrowing
-        // `input` later.
+        // Keep raw ptr so we can copy back if the final output ends up in scratch.
         let input_ptr = input.as_mut_ptr();
         let mut src: &mut [Complex<T>] = input;
         let mut dst: &mut [Complex<T>] = &mut scratch[..n];
+
+        // n1 = number of groups, n2 = size of each group in this pass.
         let mut n1 = 1usize;
         let mut n2 = n;
         while n1 < n {
             n2 >>= 1;
+
             for k in 0..n1 {
+                // Twiddle for this group: exp(-2πi * k / (2*n1)) = table[k * n2]
                 let w = twiddles[k * n2];
+                let base0 = 2 * k * n2;
+                let base1 = base0 + n2;
+
                 for j in 0..n2 {
-                    let u = src[j + n2 * (2 * k)];
-                    let v = src[j + n2 * (2 * k + 1)].mul(w);
-                    dst[j + n2 * k] = u.add(v);
-                    dst[j + n2 * (k + n1)] = u.sub(v);
+                    let u = src[base0 + j];
+                    let v = src[base1 + j].mul(w);
+                    dst[k * n2 + j] = u.add(v);
+                    dst[(k + n1) * n2 + j] = u.sub(v);
                 }
             }
+
             core::mem::swap(&mut src, &mut dst);
             n1 <<= 1;
         }
 
+        // If result is in scratch, copy back to input.
         if src.as_ptr() != input_ptr {
-            // SAFETY: `src` points to `scratch` and `input_ptr` to the original
-            // buffer; both are valid for `n` elements and non-overlapping.
-            unsafe {
-                core::ptr::copy_nonoverlapping(src.as_ptr(), input_ptr, n);
-            }
+            unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), input_ptr, n) };
         }
 
+        // Return scratch to planner for reuse.
         {
             let mut planner = self.planner.borrow_mut();
             planner.scratch = scratch;
