@@ -3,6 +3,11 @@ use kofft::fft::{Complex32, FftPlanner, ScalarFftImpl};
 use kofft::rfft::RealFftImpl;
 use realfft::RealFftPlanner as RustRealFftPlanner;
 
+#[cfg(feature = "aarch64")]
+use kofft::fft::SimdFftAarch64Impl;
+#[cfg(feature = "x86_64")]
+use kofft::fft::SimdFftX86_64Impl;
+
 fn bench_rfft(c: &mut Criterion) {
     let mut group = c.benchmark_group("rfft_parity");
     for &size in &[1024usize, 2048, 4096] {
@@ -17,6 +22,22 @@ fn bench_rfft(c: &mut Criterion) {
                     .unwrap();
             })
         });
+
+        #[cfg(any(feature = "x86_64", feature = "aarch64"))]
+        {
+            let mut simd_out = vec![Complex32::new(0.0, 0.0); size / 2 + 1];
+            #[cfg(feature = "x86_64")]
+            let fft_simd = SimdFftX86_64Impl::default();
+            #[cfg(feature = "aarch64")]
+            let fft_simd = SimdFftAarch64Impl::default();
+            group.bench_function(BenchmarkId::new("kofft_simd", size), |b| {
+                b.iter(|| {
+                    fft_simd
+                        .rfft_with_scratch(&mut input, &mut simd_out, &mut scratch)
+                        .unwrap();
+                })
+            });
+        }
 
         let mut planner = RustRealFftPlanner::<f32>::new();
         let rfft = planner.plan_fft_forward(size);
