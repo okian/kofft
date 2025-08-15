@@ -10,10 +10,11 @@ use core::f32::consts::PI;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-#[cfg(all(feature = "parallel", feature = "std"))]
 use alloc::vec;
 use alloc::vec::Vec;
 use core::any::Any;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::*;
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
 use hashbrown::HashMap;
@@ -248,6 +249,7 @@ fn should_parallelize_fft(n: usize) -> bool {
 
 pub use crate::num::{
     copy_from_complex, copy_to_complex, Complex, Complex32, Complex64, Float, SplitComplex,
+    SplitComplex32, SplitComplex64,
 };
 
 /// Convert a slice of [`Complex32`] into separate real and imaginary buffers.
@@ -601,6 +603,98 @@ impl<T: Float> ScalarFftImpl<T> {
     }
 }
 
+impl ScalarFftImpl<f32> {
+    fn fft_split_simd(&self, re: &mut [f32], im: &mut [f32]) -> Result<(), FftError> {
+        let n = re.len();
+        let out_re_ptr = re.as_mut_ptr();
+        let out_im_ptr = im.as_mut_ptr();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if !n.is_power_of_two() || n <= 16 {
+            let mut buf: Vec<Complex32> = re
+                .iter()
+                .zip(im.iter())
+                .map(|(&r, &i)| Complex32::new(r, i))
+                .collect();
+            self.fft(&mut buf)?;
+            for i in 0..n {
+                re[i] = buf[i].re;
+                im[i] = buf[i].im;
+            }
+            return Ok(());
+        }
+
+        let twiddles = {
+            let mut planner = self.planner.borrow_mut();
+            planner.get_twiddles(n)
+        };
+        let twiddles = twiddles.as_ref();
+
+        let mut scratch_re = vec![0.0f32; n];
+        let mut scratch_im = vec![0.0f32; n];
+        let mut src_re: &mut [f32] = re;
+        let mut src_im: &mut [f32] = im;
+        let mut dst_re: &mut [f32] = &mut scratch_re[..];
+        let mut dst_im: &mut [f32] = &mut scratch_im[..];
+
+        let mut n1 = 1usize;
+        let mut n2 = n;
+        while n1 < n {
+            n2 >>= 1;
+            for k in 0..n1 {
+                let tw = twiddles[k * n2];
+                let even_base = 2 * k * n2;
+                let odd_base = even_base + n2;
+                let dst0 = k * n2;
+                let dst1 = (k + n1) * n2;
+                let mut j = 0usize;
+                #[cfg(target_arch = "x86_64")]
+                unsafe {
+                    let w_re = _mm_set1_ps(tw.re);
+                    let w_im = _mm_set1_ps(tw.im);
+                    while j + 4 <= n2 {
+                        let even_re = _mm_loadu_ps(src_re.as_ptr().add(even_base + j));
+                        let even_im = _mm_loadu_ps(src_im.as_ptr().add(even_base + j));
+                        let odd_re = _mm_loadu_ps(src_re.as_ptr().add(odd_base + j));
+                        let odd_im = _mm_loadu_ps(src_im.as_ptr().add(odd_base + j));
+                        let t_re = _mm_sub_ps(_mm_mul_ps(odd_re, w_re), _mm_mul_ps(odd_im, w_im));
+                        let t_im = _mm_add_ps(_mm_mul_ps(odd_re, w_im), _mm_mul_ps(odd_im, w_re));
+                        _mm_storeu_ps(dst_re.as_mut_ptr().add(dst0 + j), _mm_add_ps(even_re, t_re));
+                        _mm_storeu_ps(dst_im.as_mut_ptr().add(dst0 + j), _mm_add_ps(even_im, t_im));
+                        _mm_storeu_ps(dst_re.as_mut_ptr().add(dst1 + j), _mm_sub_ps(even_re, t_re));
+                        _mm_storeu_ps(dst_im.as_mut_ptr().add(dst1 + j), _mm_sub_ps(even_im, t_im));
+                        j += 4;
+                    }
+                }
+                while j < n2 {
+                    let even_re = src_re[even_base + j];
+                    let even_im = src_im[even_base + j];
+                    let odd_re = src_re[odd_base + j];
+                    let odd_im = src_im[odd_base + j];
+                    let t_re = odd_re * tw.re - odd_im * tw.im;
+                    let t_im = odd_re * tw.im + odd_im * tw.re;
+                    dst_re[dst0 + j] = even_re + t_re;
+                    dst_im[dst0 + j] = even_im + t_im;
+                    dst_re[dst1 + j] = even_re - t_re;
+                    dst_im[dst1 + j] = even_im - t_im;
+                    j += 1;
+                }
+            }
+            core::mem::swap(&mut src_re, &mut dst_re);
+            core::mem::swap(&mut src_im, &mut dst_im);
+            n1 <<= 1;
+        }
+        if src_re.as_ptr() != out_re_ptr {
+            unsafe {
+                core::ptr::copy_nonoverlapping(src_re.as_ptr(), out_re_ptr, n);
+                core::ptr::copy_nonoverlapping(src_im.as_ptr(), out_im_ptr, n);
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
     fn fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
@@ -876,6 +970,60 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             FftStrategy::SplitRadix => self.stockham_fft(input),
             FftStrategy::Auto => self.fft(input),
         }
+    }
+
+    fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
+            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f32>) };
+            let re32 = unsafe { &mut *(re as *mut [T] as *mut [f32]) };
+            let im32 = unsafe { &mut *(im as *mut [T] as *mut [f32]) };
+            return this.fft_split_simd(re32, im32);
+        }
+        let mut buf: Vec<Complex<T>> = Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.fft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
+    }
+
+    fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
+        if re.len() != im.len() {
+            return Err(FftError::MismatchedLengths);
+        }
+        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
+            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f32>) };
+            let re32 = unsafe { &mut *(re as *mut [T] as *mut [f32]) };
+            let im32 = unsafe { &mut *(im as *mut [T] as *mut [f32]) };
+            for x in im32.iter_mut() {
+                *x = -*x;
+            }
+            this.fft_split_simd(re32, im32)?;
+            let scale = 1.0 / re32.len() as f32;
+            for (r, i) in re32.iter_mut().zip(im32.iter_mut()) {
+                *i = -*i;
+                *r *= scale;
+                *i *= scale;
+            }
+            return Ok(());
+        }
+        let mut buf: Vec<Complex<T>> = Vec::with_capacity(re.len());
+        for i in 0..re.len() {
+            buf.push(Complex::new(re[i], im[i]));
+        }
+        self.ifft(&mut buf)?;
+        for i in 0..re.len() {
+            re[i] = buf[i].re;
+            im[i] = buf[i].im;
+        }
+        Ok(())
     }
 }
 
@@ -1563,6 +1711,14 @@ pub fn fft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
 
 pub fn ifft_split<T: Float>(re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
     ScalarFftImpl::<T>::default().ifft_split(re, im)
+}
+
+pub fn fft_split_complex<T: Float>(data: SplitComplex<'_, T>) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().fft_split(data.re, data.im)
+}
+
+pub fn ifft_split_complex<T: Float>(data: SplitComplex<'_, T>) -> Result<(), FftError> {
+    ScalarFftImpl::<T>::default().ifft_split(data.re, data.im)
 }
 
 #[cfg(any(feature = "simd", feature = "soa"))]
