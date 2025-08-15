@@ -29,6 +29,10 @@ harness = false
 name = "bench_rfft"
 harness = false
 
+[[bench]]
+name = "small_fft"
+harness = false
+
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"
