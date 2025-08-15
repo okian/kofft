@@ -1,4 +1,7 @@
-#![cfg(any(feature = "x86_64", feature = "aarch64"))]
+#![cfg(any(
+    all(feature = "x86_64", target_arch = "x86_64"),
+    all(feature = "aarch64", target_arch = "aarch64")
+))]
 use kofft::fft::{Complex32, ScalarFftImpl};
 #[allow(unused_imports)]
 use kofft::rfft::RealFftImpl;
@@ -21,7 +24,7 @@ fn rfft_matches_scalar() {
             &mut scratch,
         )
         .unwrap();
-    #[cfg(feature = "x86_64")]
+    #[cfg(all(feature = "x86_64", target_arch = "x86_64"))]
     {
         use kofft::fft::SimdFftX86_64Impl;
         let fft_simd = SimdFftX86_64Impl;
@@ -29,7 +32,7 @@ fn rfft_matches_scalar() {
             .rfft_with_scratch(&fft_simd, &mut input.clone(), &mut simd_out, &mut scratch)
             .unwrap();
     }
-    #[cfg(feature = "aarch64")]
+    #[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
     {
         use kofft::fft::SimdFftAarch64Impl;
         let fft_simd = SimdFftAarch64Impl;
