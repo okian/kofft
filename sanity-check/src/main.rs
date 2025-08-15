@@ -1,12 +1,12 @@
 use clap::Parser;
 use claxon::FlacReader;
 use image::{GrayImage, Luma};
+use indicatif::ProgressBar;
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
 use kofft::window::hann;
 use num_complex::Complex32;
 use rustfft::FftPlanner;
-use indicatif::ProgressBar;
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         rust_mag.push(buffer.iter().map(|c| c.norm()).collect());
         bar.inc(1);
     }
-    bar.finish();
+    bar.finish_and_clear();
 
     // compute max difference
     let mut max_diff = 0.0f32;
@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         heatmap_bar.inc(1);
     }
-    heatmap_bar.finish();
+    heatmap_bar.finish_and_clear();
     img_kofft.save("kofft_spectrogram.png")?;
     img_ref.save("reference_spectrogram.png")?;
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");
