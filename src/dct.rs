@@ -10,6 +10,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
 use hashbrown::HashMap;
+#[cfg(not(feature = "std"))]
+use crate::num::Float;
 
 /// Planner that caches cosine tables for FFT-based DCT routines.
 ///

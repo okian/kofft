@@ -8,9 +8,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use libm::{floorf, log10f, logf, powf, sqrtf};
 
-#[cfg(not(feature = "std"))]
-use libm::{floorf, log10f, logf, powf, sqrtf};
-
 /// Compute the real cepstrum of a real input signal
 pub fn real_cepstrum(input: &[f32]) -> Result<Vec<f32>, FftError> {
     if input.is_empty() {
