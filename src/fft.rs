@@ -44,70 +44,110 @@ static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 static PARALLEL_FFT_BLOCK_SIZE_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "parallel")]
 static PARALLEL_FFT_THREAD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+
 #[cfg(all(feature = "parallel", feature = "std"))]
-static PARALLEL_ENV: OnceLock<ParallelEnv> = OnceLock::new();
+static ENV_THRESHOLD: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_CACHE_BYTES: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PER_CORE_WORK: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_BLOCK_SIZE: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_THREADS: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static CALIBRATED_PER_CORE_WORK: OnceLock<usize> = OnceLock::new();
 #[cfg(all(feature = "parallel", feature = "std"))]
 static PARALLEL_FFT_THRESHOLD: OnceLock<usize> = OnceLock::new();
 
 #[cfg(all(feature = "parallel", feature = "std"))]
-struct ParallelEnv {
-    threshold: usize,
-    cache_bytes: usize,
-    per_core_work: usize,
-    block_size: usize,
-    threads: usize,
-    calibrated_per_core_work: usize,
+fn env_parallel_fft_threshold() -> usize {
+    *ENV_THRESHOLD.get_or_init(|| {
+        std::env::var("KOFFT_PAR_FFT_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0)
+    })
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
-fn parallel_env() -> &'static ParallelEnv {
-    PARALLEL_ENV.get_or_init(|| {
-        let threshold = std::env::var("KOFFT_PAR_FFT_THRESHOLD")
+fn env_parallel_fft_cache_bytes() -> usize {
+    *ENV_CACHE_BYTES.get_or_init(|| {
+        std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(0);
-        let cache_bytes = std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
+            .unwrap_or(32 * 1024)
+    })
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+fn env_parallel_fft_per_core_work() -> usize {
+    *ENV_PER_CORE_WORK.get_or_init(|| {
+        std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(32 * 1024);
-        let per_core_work = std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
+            .unwrap_or(4096)
+    })
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+fn env_parallel_fft_block_size() -> usize {
+    *ENV_BLOCK_SIZE.get_or_init(|| {
+        std::env::var("KOFFT_PAR_FFT_BLOCK_SIZE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(4096);
-        let block_size = std::env::var("KOFFT_PAR_FFT_BLOCK_SIZE")
+            .unwrap_or(1024)
+    })
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+fn env_parallel_fft_threads() -> usize {
+    *ENV_THREADS.get_or_init(|| {
+        std::env::var("KOFFT_PAR_FFT_THREADS")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1024);
-        let threads = std::env::var("KOFFT_PAR_FFT_THREADS")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or_else(|| num_cpus::get().max(1));
-        ParallelEnv {
-            threshold,
-            cache_bytes,
-            per_core_work,
-            block_size,
-            threads,
-            calibrated_per_core_work: calibrated_per_core_work(),
-        }
+            .unwrap_or_else(|| num_cpus::get().max(1))
+    })
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+fn calibrated_per_core_work() -> usize {
+    use std::time::Instant;
+    *CALIBRATED_PER_CORE_WORK.get_or_init(|| {
+        let n = 1 << 20; // 1MB
+        let a = vec![0u8; n];
+        let mut b = vec![0u8; n];
+        let start = Instant::now();
+        b.copy_from_slice(&a);
+        let elapsed = start.elapsed().as_nanos().max(1) as usize;
+        let elems = n / core::mem::size_of::<crate::num::Complex32>();
+        ((elems * 1_000_000_000) / elapsed).max(4096)
     })
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 fn parallel_fft_threshold() -> usize {
     *PARALLEL_FFT_THRESHOLD.get_or_init(|| {
-        let env = parallel_env();
-        if env.threshold != 0 {
-            env.threshold
+        let thr = env_parallel_fft_threshold();
+        if thr != 0 {
+            thr
         } else {
             let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
-            let cache_elems = env.cache_bytes / bytes_per_elem;
-            let per_core_work = core::cmp::max(env.per_core_work, env.calibrated_per_core_work);
-            let per_core_min =
-                core::cmp::max(cache_elems, core::cmp::max(per_core_work, env.block_size));
-            per_core_min * env.threads
+            let cache_elems = env_parallel_fft_cache_bytes() / bytes_per_elem;
+            let per_core_work =
+                core::cmp::max(env_parallel_fft_per_core_work(), calibrated_per_core_work());
+            let per_core_min = core::cmp::max(
+                cache_elems,
+                core::cmp::max(per_core_work, env_parallel_fft_block_size()),
+            );
+            per_core_min * env_parallel_fft_threads()
         }
     })
+}
+
+#[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
+pub fn __test_parallel_fft_threshold() -> usize {
+    parallel_fft_threshold()
 }
 
 #[cfg(feature = "parallel")]
@@ -162,7 +202,7 @@ fn parallel_fft_threads() -> usize {
     }
     #[cfg(feature = "std")]
     {
-        parallel_env().threads
+        env_parallel_fft_threads()
     }
     #[cfg(not(feature = "std"))]
     {
@@ -178,28 +218,12 @@ fn parallel_fft_block_size() -> usize {
     }
     #[cfg(feature = "std")]
     {
-        parallel_env().block_size
+        env_parallel_fft_block_size()
     }
     #[cfg(not(feature = "std"))]
     {
         1024
     }
-}
-
-#[cfg(all(feature = "parallel", feature = "std"))]
-fn calibrated_per_core_work() -> usize {
-    use std::time::Instant;
-    static CALIBRATION: OnceLock<usize> = OnceLock::new();
-    *CALIBRATION.get_or_init(|| {
-        let n = 1 << 20; // 1MB
-        let a = vec![0u8; n];
-        let mut b = vec![0u8; n];
-        let start = Instant::now();
-        b.copy_from_slice(&a);
-        let elapsed = start.elapsed().as_nanos().max(1) as usize;
-        let elems = n / core::mem::size_of::<crate::num::Complex32>();
-        ((elems * 1_000_000_000) / elapsed).max(4096)
-    })
 }
 
 #[cfg(feature = "parallel")]
@@ -215,13 +239,12 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     }
     #[cfg(feature = "std")]
     {
-        let env = parallel_env();
         let cache_bytes = {
             let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
             if override_bytes != 0 {
                 override_bytes
             } else {
-                env.cache_bytes
+                env_parallel_fft_cache_bytes()
             }
         };
         let per_core_work = {
@@ -229,10 +252,10 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
             if override_work != 0 {
                 override_work
             } else {
-                env.per_core_work
+                env_parallel_fft_per_core_work()
             }
         };
-        let per_core_work = core::cmp::max(per_core_work, env.calibrated_per_core_work);
+        let per_core_work = core::cmp::max(per_core_work, calibrated_per_core_work());
         let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
         let cache_elems = cache_bytes / bytes_per_elem;
         let per_core_min = core::cmp::max(
