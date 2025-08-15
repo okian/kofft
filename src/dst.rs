@@ -7,6 +7,107 @@ use crate::fft::FftError;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
+use hashbrown::HashMap;
+
+/// Precomputed sine tables for DST-II/III/IV of a given length.
+struct DstTables {
+    table2: Vec<f32>,
+    table3: Vec<f32>,
+    table4: Vec<f32>,
+}
+
+impl DstTables {
+    fn new(n: usize) -> Self {
+        let factor = PI / n as f32;
+        let mut table2 = vec![0.0; n * n];
+        let mut table3 = vec![0.0; n * n];
+        let mut table4 = vec![0.0; n * n];
+        for k in 0..n {
+            for i in 0..n {
+                table2[k * n + i] = (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+                table3[k * n + i] = (factor * (k as f32 + 0.5) * i as f32).sin();
+                table4[k * n + i] = (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
+            }
+        }
+        Self {
+            table2,
+            table3,
+            table4,
+        }
+    }
+}
+
+/// Planner that caches DST sine tables by transform length.
+pub struct DstPlanner {
+    cache: HashMap<usize, DstTables>,
+}
+
+impl Default for DstPlanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DstPlanner {
+    /// Create a new [`DstPlanner`].
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+        }
+    }
+
+    fn tables(&mut self, n: usize) -> &DstTables {
+        self.cache.entry(n).or_insert_with(|| DstTables::new(n))
+    }
+
+    /// DST-II (used in signal processing)
+    pub fn dst2(&mut self, input: &[f32]) -> Vec<f32> {
+        let n = input.len();
+        let tables = self.tables(n);
+        let table = &tables.table2;
+        let mut output = vec![0.0; n];
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (i, &x) in input.iter().enumerate() {
+                sum += x * table[k * n + i];
+            }
+            *out = sum;
+        }
+        output
+    }
+
+    /// DST-III (inverse of DST-II, up to scaling)
+    pub fn dst3(&mut self, input: &[f32]) -> Vec<f32> {
+        let n = input.len();
+        let tables = self.tables(n);
+        let table = &tables.table3;
+        let mut output = vec![0.0; n];
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = input[0] / 2.0;
+            for (i, &x) in input.iter().enumerate().skip(1) {
+                sum += x * table[k * n + i];
+            }
+            *out = sum;
+        }
+        output
+    }
+
+    /// DST-IV (self-inverse, used in spectral methods)
+    pub fn dst4(&mut self, input: &[f32]) -> Vec<f32> {
+        let n = input.len();
+        let tables = self.tables(n);
+        let table = &tables.table4;
+        let mut output = vec![0.0; n];
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (i, &x) in input.iter().enumerate() {
+                sum += x * table[k * n + i];
+            }
+            *out = sum;
+        }
+        output
+    }
+}
 
 /// DST-I (sine transform, odd symmetry)
 pub fn dst1(input: &[f32]) -> Vec<f32> {
@@ -23,51 +124,6 @@ pub fn dst1(input: &[f32]) -> Vec<f32> {
     output
 }
 
-/// DST-II (used in signal processing)
-pub fn dst2(input: &[f32]) -> Vec<f32> {
-    let n = input.len();
-    let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
-        }
-        *out = sum;
-    }
-    output
-}
-
-/// DST-III (inverse of DST-II, up to scaling)
-pub fn dst3(input: &[f32]) -> Vec<f32> {
-    let n = input.len();
-    let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = input[0] / 2.0;
-        for (i, &x) in input.iter().enumerate().skip(1) {
-            sum += x * (factor * (k as f32 + 0.5) * i as f32).sin();
-        }
-        *out = sum;
-    }
-    output
-}
-
-/// DST-IV (self-inverse, used in spectral methods)
-pub fn dst4(input: &[f32]) -> Vec<f32> {
-    let n = input.len();
-    let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
-        }
-        *out = sum;
-    }
-    output
-}
-
 /// Batch DST-I
 pub fn batch_i(batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
@@ -76,23 +132,23 @@ pub fn batch_i(batches: &mut [Vec<f32>]) {
     }
 }
 /// Batch DST-II
-pub fn batch_ii(batches: &mut [Vec<f32>]) {
+pub fn batch_ii(planner: &mut DstPlanner, batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
-        let out = dst2(batch);
+        let out = planner.dst2(batch);
         batch.copy_from_slice(&out);
     }
 }
 /// Batch DST-III
-pub fn batch_iii(batches: &mut [Vec<f32>]) {
+pub fn batch_iii(planner: &mut DstPlanner, batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
-        let out = dst3(batch);
+        let out = planner.dst3(batch);
         batch.copy_from_slice(&out);
     }
 }
 /// Batch DST-IV
-pub fn batch_iv(batches: &mut [Vec<f32>]) {
+pub fn batch_iv(planner: &mut DstPlanner, batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
-        let out = dst4(batch);
+        let out = planner.dst4(batch);
         batch.copy_from_slice(&out);
     }
 }
@@ -101,16 +157,16 @@ pub fn multi_channel_i(channels: &mut [Vec<f32>]) {
     batch_i(channels)
 }
 /// Multi-channel DST-II
-pub fn multi_channel_ii(channels: &mut [Vec<f32>]) {
-    batch_ii(channels)
+pub fn multi_channel_ii(planner: &mut DstPlanner, channels: &mut [Vec<f32>]) {
+    batch_ii(planner, channels)
 }
 /// Multi-channel DST-III
-pub fn multi_channel_iii(channels: &mut [Vec<f32>]) {
-    batch_iii(channels)
+pub fn multi_channel_iii(planner: &mut DstPlanner, channels: &mut [Vec<f32>]) {
+    batch_iii(planner, channels)
 }
 /// Multi-channel DST-IV
-pub fn multi_channel_iv(channels: &mut [Vec<f32>]) {
-    batch_iv(channels)
+pub fn multi_channel_iv(planner: &mut DstPlanner, channels: &mut [Vec<f32>]) {
+    batch_iv(planner, channels)
 }
 
 /// MCU/stack-only, const-generic, in-place DST-II for power-of-two sizes (no heap, no alloc)
@@ -162,7 +218,8 @@ mod tests {
     fn test_dst1_dst2() {
         let x: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
         let y1 = dst1(&x);
-        let y2 = dst2(&x);
+        let mut planner = DstPlanner::new();
+        let y2 = planner.dst2(&x);
         assert_eq!(y1.len(), x.len());
         assert_eq!(y2.len(), x.len());
     }
@@ -185,7 +242,8 @@ mod dst3_tests {
     #[test]
     fn test_dst3_batch() {
         let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        batch_iii(&mut batches);
+        let mut planner = DstPlanner::new();
+        batch_iii(&mut planner, &mut batches);
         assert_eq!(batches.len(), 2);
     }
 }
@@ -196,8 +254,9 @@ mod dst4_tests {
     #[test]
     fn test_dst4_roundtrip() {
         let x: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
-        let y = dst4(&x);
-        let z = dst4(&y);
+        let mut planner = DstPlanner::new();
+        let y = planner.dst4(&x);
+        let z = planner.dst4(&y);
         for (a, b) in x.iter().zip(z.iter()) {
             assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
         }
@@ -205,7 +264,8 @@ mod dst4_tests {
     #[test]
     fn test_dst4_batch() {
         let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        batch_iv(&mut batches);
+        let mut planner = DstPlanner::new();
+        batch_iv(&mut planner, &mut batches);
         assert_eq!(batches.len(), 2);
     }
     #[test]
@@ -213,13 +273,14 @@ mod dst4_tests {
         let input = [1.0f32, 2.0, 3.0, 4.0];
         let mut out = [0.0f32; 4];
         dst4_inplace_stack(&input, &mut out).unwrap();
-        let out_ref = dst4(&input);
+        let mut planner = DstPlanner::new();
+        let out_ref = planner.dst4(&input);
         for (a, b) in out.iter().zip(out_ref.iter()) {
             assert!((a - b).abs() < 1e-4);
         }
 
         let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        multi_channel_iv(&mut channels);
+        multi_channel_iv(&mut planner, &mut channels);
         assert_eq!(channels.len(), 2);
     }
 }
@@ -270,8 +331,9 @@ mod coverage_tests {
         if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
             return;
         } // skip pathological
-        let y = dst2(&x);
-        let z = dst3(&y);
+        let mut planner = DstPlanner::new();
+        let y = planner.dst2(&x);
+        let z = planner.dst3(&y);
         for (a, b) in x.iter().zip(z.iter()) {
             if (a - b / 2.0).abs() > 1e2 {
                 return;
@@ -288,16 +350,17 @@ mod coverage_tests {
         let input = [1.0f32, 2.0, 3.0, 4.0];
         let mut out = [0.0f32; 4];
         dst2_inplace_stack(&input, &mut out).unwrap();
-        let out_ref = dst2(&input);
+        let mut planner = DstPlanner::new();
+        let out_ref = planner.dst2(&input);
         for (a, b) in out.iter().zip(out_ref.iter()) {
             assert!((a - b).abs() < 1e-4);
         }
 
         let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
         multi_channel_i(&mut channels);
-        multi_channel_ii(&mut channels);
-        multi_channel_iii(&mut channels);
-        multi_channel_iv(&mut channels);
+        multi_channel_ii(&mut planner, &mut channels);
+        multi_channel_iii(&mut planner, &mut channels);
+        multi_channel_iv(&mut planner, &mut channels);
         assert_eq!(channels.len(), 2);
     }
     #[test]
@@ -319,8 +382,9 @@ mod coverage_tests {
             let max = x.iter().map(|&v| v.abs()).fold(0.0, f32::max);
             if max > 500.0 { return Ok(()); } // skip pathological large values
             if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return Ok(()); } // skip pathological
-            let y = dst2(&x);
-            let z = dst3(&y);
+            let mut planner = DstPlanner::new();
+            let y = planner.dst2(&x);
+            let z = planner.dst3(&y);
             for (a, b) in x.iter().zip(z.iter()) {
                 if (a - b / 2.0).abs() > 1e3 { return Ok(()); }
                 prop_assert!((a - b / 2.0).abs() < 1e3);

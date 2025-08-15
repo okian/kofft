@@ -362,6 +362,7 @@ parallel(&signal, &window, hop_size, &mut frames)?;
 
 ```rust
 use kofft::{dct, dst, hartley, wavelet, goertzel, czt, hilbert, cepstrum};
+use dst::DstPlanner;
 
 // DCT variants
 let dct2_result = dct::dct2(&input);
@@ -370,8 +371,9 @@ let dct4_result = dct::dct4(&input);
 
 // DST variants
 let dst1_result = dst::dst1(&input);
-let dst2_result = dst::dst2(&input);
-let dst3_result = dst::dst3(&input);
+let mut planner = DstPlanner::new();
+let dst2_result = planner.dst2(&input);
+let dst3_result = planner.dst3(&input);
 
 // Hartley Transform
 let hartley_result = hartley::dht(&input);

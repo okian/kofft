@@ -6,7 +6,7 @@
 use kofft::cepstrum::real_cepstrum;
 use kofft::czt::czt_f32;
 use kofft::dct::dct2;
-use kofft::dst::dst2;
+use kofft::dst::DstPlanner;
 use kofft::fft::{FftImpl, ScalarFftImpl};
 use kofft::goertzel::goertzel_f32;
 use kofft::hartley::dht;
@@ -177,7 +177,8 @@ fn main() {
     // 8. Discrete Sine Transform (DST-II)
     println!("8. Discrete Sine Transform (DST-II)");
     let dst_input = vec![1.0, 2.0, 3.0, 4.0];
-    let dst_result = dst2(&dst_input);
+    let mut dst_planner = DstPlanner::new();
+    let dst_result = dst_planner.dst2(&dst_input);
     println!("   Input: {:?}", dst_input);
     println!(
         "   DST-II: {:?}",
