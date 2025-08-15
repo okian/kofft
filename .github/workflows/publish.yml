@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
       - name: Ensure tag matches version
         run: |
           version=$(grep '^version = ' Cargo.toml | head -n 1 | cut -d '"' -f2)
