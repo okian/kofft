@@ -2,6 +2,10 @@ use kofft::fft::{
     complex32_to_split, fft_split_complex, ifft_split_complex, Complex32, FftImpl, ScalarFftImpl,
     SplitComplex32,
 };
+#[cfg(any(feature = "simd", feature = "soa"))]
+use kofft::fft::{fft_complex_vec, ifft_complex_vec};
+#[cfg(any(feature = "simd", feature = "soa"))]
+use kofft::num::ComplexVec;
 
 #[test]
 fn fft_split_matches_aos() {
@@ -68,4 +72,23 @@ fn fft_split_errors() {
         im: &mut im,
     };
     assert!(fft_split_complex(split).is_err());
+}
+
+#[cfg(any(feature = "simd", feature = "soa"))]
+#[test]
+fn complex_vec_roundtrip() {
+    let n = 32;
+    let data: Vec<Complex32> = (0..n)
+        .map(|i| Complex32::new(i as f32, -(i as f32)))
+        .collect();
+    let mut vec = ComplexVec {
+        re: data.iter().map(|c| c.re).collect(),
+        im: data.iter().map(|c| c.im).collect(),
+    };
+    fft_complex_vec(&mut vec).unwrap();
+    ifft_complex_vec(&mut vec).unwrap();
+    for (orig, (r, i)) in data.iter().zip(vec.re.iter().zip(vec.im.iter())) {
+        assert!((orig.re - r).abs() < 1e-4);
+        assert!((orig.im - i).abs() < 1e-4);
+    }
 }

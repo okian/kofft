@@ -13,6 +13,8 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::any::Any;
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 use core::cell::RefCell;
@@ -699,6 +701,24 @@ impl ScalarFftImpl<f32> {
                         _mm_storeu_ps(dst_im.as_mut_ptr().add(dst0 + j), _mm_add_ps(even_im, t_im));
                         _mm_storeu_ps(dst_re.as_mut_ptr().add(dst1 + j), _mm_sub_ps(even_re, t_re));
                         _mm_storeu_ps(dst_im.as_mut_ptr().add(dst1 + j), _mm_sub_ps(even_im, t_im));
+                        j += 4;
+                    }
+                }
+                #[cfg(target_arch = "aarch64")]
+                unsafe {
+                    let w_re = vdupq_n_f32(tw.re);
+                    let w_im = vdupq_n_f32(tw.im);
+                    while j + 4 <= n2 {
+                        let even_re = vld1q_f32(src_re.as_ptr().add(even_base + j));
+                        let even_im = vld1q_f32(src_im.as_ptr().add(even_base + j));
+                        let odd_re = vld1q_f32(src_re.as_ptr().add(odd_base + j));
+                        let odd_im = vld1q_f32(src_im.as_ptr().add(odd_base + j));
+                        let t_re = vsubq_f32(vmulq_f32(odd_re, w_re), vmulq_f32(odd_im, w_im));
+                        let t_im = vaddq_f32(vmulq_f32(odd_re, w_im), vmulq_f32(odd_im, w_re));
+                        vst1q_f32(dst_re.as_mut_ptr().add(dst0 + j), vaddq_f32(even_re, t_re));
+                        vst1q_f32(dst_im.as_mut_ptr().add(dst0 + j), vaddq_f32(even_im, t_im));
+                        vst1q_f32(dst_re.as_mut_ptr().add(dst1 + j), vsubq_f32(even_re, t_re));
+                        vst1q_f32(dst_im.as_mut_ptr().add(dst1 + j), vsubq_f32(even_im, t_im));
                         j += 4;
                     }
                 }
