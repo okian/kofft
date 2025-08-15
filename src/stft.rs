@@ -626,18 +626,20 @@ mod edge_case_tests {
     fn test_all_zero_window() {
         let signal = [1.0, 2.0, 3.0, 4.0];
         let window = [0.0, 0.0, 0.0, 0.0];
-        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let hop = 2;
+        let num_frames = signal.len().div_ceil(hop);
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; num_frames];
         let fft = ScalarFftImpl::<f32>::default();
-        stft(&signal, &window, 2, &mut frames, &fft).unwrap();
+        stft(&signal, &window, hop, &mut frames, &fft).unwrap();
         for frame in &frames {
             for c in frame {
                 assert_eq!(c.re, 0.0);
                 assert_eq!(c.im, 0.0);
             }
         }
-        let mut output = vec![0.0f32; 4];
+        let mut output = vec![0.0f32; signal.len()];
         let mut scratch = vec![0.0f32; output.len()];
-        istft(&mut frames, &window, 2, &mut output, &mut scratch, &fft).unwrap();
+        istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
         for &x in &output {
             assert_eq!(x, 0.0);
         }
@@ -807,18 +809,20 @@ mod coverage_tests {
     fn test_stft_all_zero_window() {
         let signal = [1.0, 2.0, 3.0, 4.0];
         let window = [0.0, 0.0, 0.0, 0.0];
-        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let hop = 2;
+        let num_frames = signal.len().div_ceil(hop);
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; num_frames];
         let fft = ScalarFftImpl::<f32>::default();
-        stft(&signal, &window, 2, &mut frames, &fft).unwrap();
+        stft(&signal, &window, hop, &mut frames, &fft).unwrap();
         for frame in &frames {
             for c in frame {
                 assert_eq!(c.re, 0.0);
                 assert_eq!(c.im, 0.0);
             }
         }
-        let mut output = vec![0.0f32; 4];
+        let mut output = vec![0.0f32; signal.len()];
         let mut scratch = vec![0.0f32; output.len()];
-        istft(&mut frames, &window, 2, &mut output, &mut scratch, &fft).unwrap();
+        istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
         for &x in &output {
             assert_eq!(x, 0.0);
         }
