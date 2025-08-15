@@ -63,6 +63,10 @@ pub fn stft<Fft: FftImpl<f32>>(
     if hop_size == 0 {
         return Err(FftError::InvalidHopSize);
     }
+    let required = signal.len().div_ceil(hop_size);
+    if output.len() < required {
+        return Err(FftError::MismatchedLengths);
+    }
     let win_len = window.len();
     for (frame_idx, frame) in output.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
