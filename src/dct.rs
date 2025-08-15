@@ -7,6 +7,7 @@ use crate::fft::FftError;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
+use rustdct::DctPlanner;
 
 /// DCT-I (even symmetry, endpoints not repeated)
 pub fn dct1(input: &[f32]) -> Vec<f32> {
@@ -141,6 +142,60 @@ pub fn dct2_inplace_stack<const N: usize>(
         }
         *out = sum;
     }
+    Ok(())
+}
+
+/// MCU/stack-only DCT-II using FFT-based kernel and `DctPlanner`.
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dct2_inplace_stack_fft<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    output.copy_from_slice(input);
+    let mut planner = DctPlanner::<f32>::new();
+    let dct = planner.plan_dct2(N);
+    let mut scratch = [0f32; N];
+    dct.process_dct2_with_scratch(output, &mut scratch);
+    Ok(())
+}
+
+/// MCU/stack-only DCT-III using FFT-based kernel and `DctPlanner`.
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dct3_inplace_stack_fft<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    output.copy_from_slice(input);
+    let mut planner = DctPlanner::<f32>::new();
+    let dct = planner.plan_dct3(N);
+    let mut scratch = [0f32; N];
+    dct.process_dct3_with_scratch(output, &mut scratch);
+    Ok(())
+}
+
+/// MCU/stack-only DCT-IV using FFT-based kernel and `DctPlanner`.
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dct4_inplace_stack_fft<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    output.copy_from_slice(input);
+    let mut planner = DctPlanner::<f32>::new();
+    let dct = planner.plan_dct4(N);
+    let mut scratch = [0f32; N];
+    dct.process_dct4_with_scratch(output, &mut scratch);
     Ok(())
 }
 
@@ -374,6 +429,31 @@ mod coverage_tests {
         let z = dct4(&y);
         for (a, b) in x.iter().zip(z.iter()) {
             assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
+        }
+    }
+
+    #[test]
+    fn test_dct_fft_stack_small() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out2 = [0.0f32; 4];
+        dct2_inplace_stack_fft(&input, &mut out2).unwrap();
+        let expected2 = dct2(&input);
+        for (a, b) in out2.iter().zip(expected2.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+
+        let mut out3 = [0.0f32; 4];
+        dct3_inplace_stack_fft(&input, &mut out3).unwrap();
+        let expected3 = dct3(&input);
+        for (a, b) in out3.iter().zip(expected3.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+
+        let mut out4 = [0.0f32; 4];
+        dct4_inplace_stack_fft(&input, &mut out4).unwrap();
+        let expected4 = dct4(&input);
+        for (a, b) in out4.iter().zip(expected4.iter()) {
+            assert!((a - b).abs() < 1e-4);
         }
     }
     proptest! {
