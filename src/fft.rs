@@ -21,7 +21,7 @@ use core::cell::RefCell;
 use core::mem::MaybeUninit;
 use hashbrown::HashMap;
 
-use crate::fft_kernels::{fft16, fft2, fft4, fft8};
+use crate::fft_kernels::{fft2, fft4};
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
@@ -271,6 +271,7 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     }
 }
 
+pub use crate::fft_kernels::{fft16, fft8};
 pub use crate::num::{
     copy_from_complex, copy_to_complex, Complex, Complex32, Complex64, Float, SplitComplex,
     SplitComplex32, SplitComplex64,
