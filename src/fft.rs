@@ -21,6 +21,8 @@ use crate::fft_kernels::{fft16, fft2, fft4, fft8};
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "parallel")]
+use rayon::scope_fifo;
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
@@ -37,6 +39,10 @@ static PARALLEL_FFT_THRESHOLD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 static PARALLEL_FFT_CACHE_BYTES_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "parallel")]
 static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "parallel")]
+static PARALLEL_FFT_BLOCK_SIZE_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "parallel")]
+static PARALLEL_FFT_THREAD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 static CPU_COUNT: OnceLock<usize> = OnceLock::new();
@@ -46,6 +52,10 @@ static ENV_PAR_FFT_THRESHOLD: OnceLock<Option<usize>> = OnceLock::new();
 static ENV_PAR_FFT_CACHE_BYTES: OnceLock<Option<usize>> = OnceLock::new();
 #[cfg(all(feature = "parallel", feature = "std"))]
 static ENV_PAR_FFT_PER_CORE_WORK: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_BLOCK_SIZE: OnceLock<Option<usize>> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static ENV_PAR_FFT_THREADS: OnceLock<Option<usize>> = OnceLock::new();
 
 #[cfg(feature = "parallel")]
 /// Set a custom minimum FFT length to use parallel processing.
@@ -78,6 +88,82 @@ pub fn set_parallel_fft_per_core_work(points: usize) {
 }
 
 #[cfg(feature = "parallel")]
+/// Override the number of threads used for parallel FFTs. `0` uses the default
+/// heuristic or environment variable.
+pub fn set_parallel_fft_threads(threads: usize) {
+    PARALLEL_FFT_THREAD_OVERRIDE.store(threads, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+/// Override the block size used when splitting work among threads. `0`
+/// reverts to the built-in heuristic or environment variable.
+pub fn set_parallel_fft_block_size(size: usize) {
+    PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.store(size, Ordering::Relaxed);
+}
+
+#[cfg(feature = "parallel")]
+fn parallel_fft_threads() -> usize {
+    let override_thr = PARALLEL_FFT_THREAD_OVERRIDE.load(Ordering::Relaxed);
+    if override_thr != 0 {
+        return override_thr;
+    }
+    #[cfg(feature = "std")]
+    {
+        ENV_PAR_FFT_THREADS
+            .get_or_init(|| {
+                std::env::var("KOFFT_PAR_FFT_THREADS")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+            })
+            .copied()
+            .unwrap_or_else(|| *CPU_COUNT.get_or_init(|| num_cpus::get().max(1)))
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        1
+    }
+}
+
+#[cfg(feature = "parallel")]
+fn parallel_fft_block_size() -> usize {
+    let override_size = PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.load(Ordering::Relaxed);
+    if override_size != 0 {
+        return override_size;
+    }
+    #[cfg(feature = "std")]
+    {
+        ENV_PAR_FFT_BLOCK_SIZE
+            .get_or_init(|| {
+                std::env::var("KOFFT_PAR_FFT_BLOCK_SIZE")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+            })
+            .copied()
+            .unwrap_or(1024)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        1024
+    }
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+fn calibrated_per_core_work() -> usize {
+    use std::time::Instant;
+    static CALIBRATION: OnceLock<usize> = OnceLock::new();
+    *CALIBRATION.get_or_init(|| {
+        let n = 1 << 20; // 1MB
+        let mut a = vec![0u8; n];
+        let mut b = vec![0u8; n];
+        let start = Instant::now();
+        b.copy_from_slice(&a);
+        let elapsed = start.elapsed().as_nanos().max(1) as usize;
+        let elems = n / core::mem::size_of::<crate::num::Complex32>();
+        ((elems * 1_000_000_000) / elapsed).max(4096)
+    })
+}
+
+#[cfg(feature = "parallel")]
 fn should_parallelize_fft(n: usize) -> bool {
     let override_thr = PARALLEL_FFT_THRESHOLD_OVERRIDE.load(Ordering::Relaxed);
     let threshold = if override_thr == 0 {
@@ -105,16 +191,7 @@ fn should_parallelize_fft(n: usize) -> bool {
         return n >= threshold;
     }
 
-    let cores = {
-        #[cfg(feature = "std")]
-        {
-            *CPU_COUNT.get_or_init(|| num_cpus::get().max(1))
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            1
-        }
-    };
+    let cores = parallel_fft_threads();
 
     let cache_bytes = {
         let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
@@ -164,9 +241,15 @@ fn should_parallelize_fft(n: usize) -> bool {
         }
     };
 
+    #[cfg(all(feature = "parallel", feature = "std"))]
+    let per_core_work = core::cmp::max(per_core_work, calibrated_per_core_work());
+
     let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
     let cache_elems = cache_bytes / bytes_per_elem;
-    let per_core_min = core::cmp::max(cache_elems, per_core_work);
+    let per_core_min = core::cmp::max(
+        cache_elems,
+        core::cmp::max(per_core_work, parallel_fft_block_size()),
+    );
 
     n >= per_core_min * cores
 }
@@ -224,8 +307,7 @@ impl<T: Float> FftPlanner<T> {
             // initialized `Vec<Complex<T>>`.
             unsafe {
                 vec.set_len(n);
-                let slice =
-                    core::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut Complex<T>, n);
+                let slice = core::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut Complex<T>, n);
                 let mut current = Complex::new(T::one(), T::zero());
                 for elem in slice.iter_mut() {
                     *elem = current;
@@ -461,7 +543,7 @@ impl<T: Float> ScalarFftImpl<T> {
         let mut planner = self.planner.borrow_mut();
         let twiddles = planner.get_twiddles(n).to_vec();
         drop(planner);
-        let mut twiddles = twiddles;
+        let twiddles = twiddles;
         // bit-reversal permutation
         let mut j = 0usize;
         for i in 1..n - 1 {
@@ -478,13 +560,54 @@ impl<T: Float> ScalarFftImpl<T> {
         let mut len = 2;
         while len <= n {
             let step = n / len;
-            for i in (0..n).step_by(len) {
-                for j in 0..(len / 2) {
-                    let w = twiddles[j * step];
-                    let u = input[i + j];
-                    let v = input[i + j + len / 2].mul(w);
-                    input[i + j] = u.add(v);
-                    input[i + j + len / 2] = u.sub(v);
+            #[cfg(feature = "parallel")]
+            {
+                if should_parallelize_fft(n)
+                    && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
+                {
+                    let indices: Vec<usize> = (0..n).step_by(len).collect();
+                    let block = parallel_fft_block_size().max(1);
+                    let input_ptr = input.as_mut_ptr();
+                    let twiddles_ptr = twiddles.as_ptr();
+                    scope_fifo(|scope| {
+                        for chunk in indices.chunks(block) {
+                            let chunk_vec = chunk.to_vec();
+                            scope.spawn_fifo(move |_| unsafe {
+                                for &i in &chunk_vec {
+                                    let base = input_ptr.add(i);
+                                    for j in 0..(len / 2) {
+                                        let w = *twiddles_ptr.add(j * step);
+                                        let u = *base.add(j);
+                                        let v = (*base.add(j + len / 2)).mul(w);
+                                        *base.add(j) = u.add(v);
+                                        *base.add(j + len / 2) = u.sub(v);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    for i in (0..n).step_by(len) {
+                        for j in 0..(len / 2) {
+                            let w = twiddles[j * step];
+                            let u = input[i + j];
+                            let v = input[i + j + len / 2].mul(w);
+                            input[i + j] = u.add(v);
+                            input[i + j + len / 2] = u.sub(v);
+                        }
+                    }
+                }
+            }
+            #[cfg(not(feature = "parallel"))]
+            {
+                for i in (0..n).step_by(len) {
+                    for j in 0..(len / 2) {
+                        let w = twiddles[j * step];
+                        let u = input[i + j];
+                        let v = input[i + j + len / 2].mul(w);
+                        input[i + j] = u.add(v);
+                        input[i + j + len / 2] = u.sub(v);
+                    }
                 }
             }
             len <<= 1;
@@ -1119,7 +1242,8 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         output: &mut [Complex32],
         out_stride: usize,
     ) -> Result<(), FftError> {
-        ScalarFftImpl::<f32>::default().fft_out_of_place_strided(input, in_stride, output, out_stride)
+        ScalarFftImpl::<f32>::default()
+            .fft_out_of_place_strided(input, in_stride, output, out_stride)
     }
     fn ifft_out_of_place_strided(
         &self,
@@ -1128,7 +1252,8 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         output: &mut [Complex32],
         out_stride: usize,
     ) -> Result<(), FftError> {
-        ScalarFftImpl::<f32>::default().ifft_out_of_place_strided(input, in_stride, output, out_stride)
+        ScalarFftImpl::<f32>::default()
+            .ifft_out_of_place_strided(input, in_stride, output, out_stride)
     }
     fn fft_with_strategy(
         &self,
@@ -1273,7 +1398,6 @@ impl<T: Float> FftPlan<T> {
         }
         self.fft.ifft_split(re, im)
     }
-
 }
 
 #[cfg(any(feature = "simd", feature = "soa"))]
