@@ -22,7 +22,7 @@ exclude = [
 
 
 [workspace]
-members = ["kofft-bench"]
+members = ["kofft-bench", "sanity-check"]
 
 [dependencies]
 libm = "0.2"
