@@ -25,6 +25,10 @@ harness = false
 name = "aos_vs_soa"
 harness = false
 
+[[bench]]
+name = "bench_rfft"
+harness = false
+
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"
