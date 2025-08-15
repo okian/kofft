@@ -3,7 +3,9 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use crate::fft::FftError;
+use crate::fft::{FftError, ScalarFftImpl};
+use crate::rfft::RfftPlanner;
+use crate::Complex32;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
@@ -37,14 +39,33 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
 /// DCT-II (the "standard" DCT, used in JPEG, etc.)
 pub fn dct2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
-    let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
-        }
-        *out = sum;
+    if n == 0 {
+        return vec![];
+    }
+
+    // Mirror the input into an even-symmetric sequence of length `2n`.
+    let mut even = vec![0.0f32; 2 * n];
+    for i in 0..n {
+        even[i] = input[i];
+        even[2 * n - 1 - i] = input[i];
+    }
+
+    // Compute the RFFT of the extended sequence.
+    let fft = ScalarFftImpl::<f32>::default();
+    let mut planner = RfftPlanner::new();
+    let mut spectrum = vec![Complex32::new(0.0, 0.0); n + 1];
+    planner
+        .rfft(&fft, &mut even, &mut spectrum)
+        .expect("RFFT failed");
+
+    // Extract cosine terms with proper phase correction and scaling.
+    let mut output = vec![0.0f32; n];
+    for k in 0..n {
+        let theta = PI * k as f32 / (2.0 * n as f32);
+        let c = theta.cos();
+        let s = theta.sin();
+        let coeff = spectrum[k];
+        output[k] = 0.5 * (coeff.re * c + coeff.im * s);
     }
     output
 }
@@ -85,15 +106,45 @@ pub mod slow {
     use super::*;
 
     pub fn dct2(input: &[f32]) -> Vec<f32> {
-        super::dct2(input)
+        let n = input.len();
+        let mut output = vec![0.0; n];
+        let factor = PI / n as f32;
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (i, &x) in input.iter().enumerate() {
+                sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
+            }
+            *out = sum;
+        }
+        output
     }
 
     pub fn dct3(input: &[f32]) -> Vec<f32> {
-        super::dct3(input)
+        let n = input.len();
+        let mut output = vec![0.0; n];
+        let factor = PI / n as f32;
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = input[0] / 2.0;
+            for (i, &x) in input.iter().enumerate().skip(1) {
+                sum += x * (factor * i as f32 * (k as f32 + 0.5)).cos();
+            }
+            *out = sum;
+        }
+        output
     }
 
     pub fn dct4(input: &[f32]) -> Vec<f32> {
-        super::dct4(input)
+        let n = input.len();
+        let mut output = vec![0.0; n];
+        let factor = PI / n as f32;
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (i, &x) in input.iter().enumerate() {
+                sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).cos();
+            }
+            *out = sum;
+        }
+        output
     }
 }
 
