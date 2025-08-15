@@ -11,6 +11,8 @@ use core::f32::consts::PI;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
@@ -115,7 +117,7 @@ fn parallel_fft_threads() -> usize {
                     .ok()
                     .and_then(|v| v.parse::<usize>().ok())
             })
-            .copied()
+            .clone()
             .unwrap_or_else(|| *CPU_COUNT.get_or_init(|| num_cpus::get().max(1)))
     }
     #[cfg(not(feature = "std"))]
@@ -138,7 +140,7 @@ fn parallel_fft_block_size() -> usize {
                     .ok()
                     .and_then(|v| v.parse::<usize>().ok())
             })
-            .copied()
+            .clone()
             .unwrap_or(1024)
     }
     #[cfg(not(feature = "std"))]
@@ -153,7 +155,7 @@ fn calibrated_per_core_work() -> usize {
     static CALIBRATION: OnceLock<usize> = OnceLock::new();
     *CALIBRATION.get_or_init(|| {
         let n = 1 << 20; // 1MB
-        let mut a = vec![0u8; n];
+        let a = vec![0u8; n];
         let mut b = vec![0u8; n];
         let start = Instant::now();
         b.copy_from_slice(&a);
@@ -175,8 +177,7 @@ fn should_parallelize_fft(n: usize) -> bool {
                         .ok()
                         .and_then(|v| v.parse::<usize>().ok())
                 })
-                .as_ref()
-                .copied()
+                .clone()
                 .unwrap_or(0)
         }
         #[cfg(not(feature = "std"))]
@@ -206,8 +207,7 @@ fn should_parallelize_fft(n: usize) -> bool {
                             .ok()
                             .and_then(|v| v.parse::<usize>().ok())
                     })
-                    .as_ref()
-                    .copied()
+                    .clone()
                     .unwrap_or(32 * 1024)
             }
             #[cfg(not(feature = "std"))]
@@ -230,8 +230,7 @@ fn should_parallelize_fft(n: usize) -> bool {
                             .ok()
                             .and_then(|v| v.parse::<usize>().ok())
                     })
-                    .as_ref()
-                    .copied()
+                    .clone()
                     .unwrap_or(4096)
             }
             #[cfg(not(feature = "std"))]
@@ -567,12 +566,14 @@ impl<T: Float> ScalarFftImpl<T> {
                 {
                     let indices: Vec<usize> = (0..n).step_by(len).collect();
                     let block = parallel_fft_block_size().max(1);
-                    let input_ptr = input.as_mut_ptr();
-                    let twiddles_ptr = twiddles.as_ptr();
+                    let input_ptr = input.as_mut_ptr() as usize;
+                    let twiddles_ptr = twiddles.as_ptr() as usize;
                     scope_fifo(|scope| {
                         for chunk in indices.chunks(block) {
                             let chunk_vec = chunk.to_vec();
                             scope.spawn_fifo(move |_| unsafe {
+                                let input_ptr = input_ptr as *mut Complex32;
+                                let twiddles_ptr = twiddles_ptr as *const Complex32;
                                 for &i in &chunk_vec {
                                     let base = input_ptr.add(i);
                                     for j in 0..(len / 2) {

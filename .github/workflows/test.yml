@@ -11,6 +11,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        features:
+          - ''
+          - '--no-default-features'
+          - '--features "sse std internal-tests"'
+          - '--features "parallel internal-tests"'
+          - '--features "simd soa internal-tests"'
+          - '--all-features'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -23,12 +30,16 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Test
         shell: bash
-        run: cargo test --all --features internal-tests --verbose
-  test-sse:
-    runs-on: ${{ matrix.os }}
+        run: cargo test --all --verbose ${{ matrix.features }}
+  check:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        features:
+          - '--features "avx2"'
+          - '--features "avx512"'
+          - '--features "wasm"'
+          - '--features "aarch64"'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -39,6 +50,6 @@ jobs:
             ${{ env.CARGO_HOME }}/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Test SSE
+      - name: Check
         shell: bash
-        run: cargo test --no-default-features --features "sse std internal-tests" --verbose
+        run: cargo check --all --verbose ${{ matrix.features }}
