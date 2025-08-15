@@ -3,14 +3,14 @@ use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 fn dft(input: &[Complex32]) -> Vec<Complex32> {
     let n = input.len();
     let mut output = vec![Complex32::zero(); n];
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = Complex32::zero();
         for (n_idx, x) in input.iter().enumerate() {
             let angle = -2.0 * core::f32::consts::PI * (k * n_idx) as f32 / n as f32;
             let tw = Complex32::new(angle.cos(), angle.sin());
             sum = sum.add(x.mul(tw));
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }

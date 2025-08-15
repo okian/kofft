@@ -16,8 +16,11 @@ use crate::num::Float;
 #[cfg(feature = "compile-time-rfft")]
 mod precomputed {
     use crate::fft::{Complex32, Complex64};
-    pub const F32: &[(usize, &'static [Complex32])] = &[];
-    pub const F64: &[(usize, &'static [Complex64])] = &[];
+    // Constants have an implicit `'static` lifetime, so specifying it is redundant.
+    // Remove the explicit `'static` to satisfy clippy's
+    // `redundant_static_lifetimes` lint.
+    pub const F32: &[(usize, &[Complex32])] = &[];
+    pub const F64: &[(usize, &[Complex64])] = &[];
 }
 
 fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
