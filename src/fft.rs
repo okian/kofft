@@ -2380,20 +2380,24 @@ impl<T: Float> FftPlan<T> {
         self.fft.ifft_split(re, im)
     }
 
-    #[cfg(any(feature = "simd", feature = "soa"))]
+}
+
+#[cfg(any(feature = "simd", feature = "soa"))]
+impl FftPlan<f32> {
     pub fn fft_complex_vec(&self, data: &mut crate::num::ComplexVec) -> Result<(), FftError> {
         if data.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
-        self.fft.fft_split(&mut data.re, &mut data.im)
+        self.fft
+            .fft_split(data.re.as_mut_slice(), data.im.as_mut_slice())
     }
 
-    #[cfg(any(feature = "simd", feature = "soa"))]
     pub fn ifft_complex_vec(&self, data: &mut crate::num::ComplexVec) -> Result<(), FftError> {
         if data.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
-        self.fft.ifft_split(&mut data.re, &mut data.im)
+        self.fft
+            .ifft_split(data.re.as_mut_slice(), data.im.as_mut_slice())
     }
 }
 

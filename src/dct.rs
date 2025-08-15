@@ -4,8 +4,6 @@
 
 extern crate alloc;
 use crate::fft::FftError;
-#[allow(unused_imports)]
-use crate::num::Float;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;

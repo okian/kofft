@@ -4,12 +4,6 @@ use core::f32::consts::PI;
 
 use libm::sqrtf;
 
-#[cfg(not(feature = "std"))]
-use libm::{cosf, fabsf, floorf, log10f, logf, powf, sinf};
-
-#[allow(unused_imports)]
-use crate::fft::Float;
-
 fn bessel0(x: f32) -> f32 {
     // Approximate I0(x) using a series expansion
     let mut sum = 1.0;

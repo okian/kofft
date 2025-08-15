@@ -1,9 +1,11 @@
 //! Goertzel algorithm: efficient single-bin DFT detector
 //! no_std + alloc compatible
 
-#[allow(unused_imports)]
-use crate::fft::{FftError, Float};
+use crate::fft::FftError;
+#[cfg(feature = "std")]
 use libm::{floorf, sqrtf};
+#[cfg(not(feature = "std"))]
+use libm::{cosf, floorf, sqrtf};
 
 /// Compute the magnitude at a single DFT bin using the Goertzel algorithm.
 /// - `input`: real-valued signal
@@ -34,8 +36,11 @@ pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> Result
 }
 
 #[cfg(not(feature = "std"))]
-pub fn goertzel_f32(input: &[f32], sample_rate: f32, target_freq: f32) -> Result<f32, FftError> {
-    use libm::{cosf, floorf, sqrtf};
+pub fn goertzel_f32(
+    input: &[f32],
+    sample_rate: f32,
+    target_freq: f32,
+) -> Result<f32, FftError> {
     if input.is_empty() {
         return Err(FftError::EmptyInput);
     }
