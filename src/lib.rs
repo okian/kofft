@@ -1,4 +1,3 @@
-#![allow(clippy::manual_is_multiple_of)]
 //! # kofft - High-performance DSP library for Rust
 //!
 //! A comprehensive Digital Signal Processing (DSP) library featuring FFT, DCT, DST,
