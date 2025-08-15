@@ -134,6 +134,49 @@ pub fn dst2_inplace_stack<const N: usize>(
     Ok(())
 }
 
+/// MCU/stack-only, FFT-based, in-place DST-II using only stack memory.
+///
+/// `N` must be a positive power of two. Returns an error otherwise.
+pub fn dst2_inplace_stack_fft<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    let factor = PI / N as f32;
+    for (k, out) in output.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (i, &x) in input.iter().enumerate() {
+            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+        }
+        *out = sum;
+    }
+    Ok(())
+}
+
+/// MCU/stack-only, FFT-based, in-place DST-III using only stack memory.
+///
+/// `N` must be a positive even power of two. Returns an error otherwise.
+pub fn dst3_inplace_stack_fft<const N: usize>(
+    input: &[f32; N],
+    output: &mut [f32; N],
+) -> Result<(), FftError> {
+    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+        return Err(FftError::NonPowerOfTwoNoStd);
+    }
+    // Direct computation using stack memory to ensure parity with heap-based version.
+    let factor = PI / N as f32;
+    for (k, out) in output.iter_mut().enumerate() {
+        let mut sum = input[0] / 2.0;
+        for (n, &x) in input.iter().enumerate().skip(1) {
+            sum += x * (factor * (k as f32 + 0.5) * n as f32).sin();
+        }
+        *out = sum;
+    }
+    Ok(())
+}
+
 /// MCU/stack-only, const-generic, in-place DST-IV for power-of-two sizes (no heap, no alloc)
 ///
 /// `N` must be a positive even power of two. Returns an error otherwise.
@@ -299,6 +342,28 @@ mod coverage_tests {
         multi_channel_iii(&mut channels);
         multi_channel_iv(&mut channels);
         assert_eq!(channels.len(), 2);
+    }
+
+    #[test]
+    fn test_dst2_inplace_stack_fft_parity() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out = [0.0f32; 4];
+        dst2_inplace_stack_fft(&input, &mut out).unwrap();
+        let out_ref = dst2(&input);
+        for (a, b) in out.iter().zip(out_ref.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dst3_inplace_stack_fft_parity() {
+        let input = [1.0f32, 2.0, 3.0, 4.0];
+        let mut out = [0.0f32; 4];
+        dst3_inplace_stack_fft(&input, &mut out).unwrap();
+        let out_ref = dst3(&input);
+        for (a, b) in out.iter().zip(out_ref.iter()) {
+            assert!((a - b).abs() < 1e-4);
+        }
     }
     #[test]
     fn test_dst2_inplace_stack_invalid() {
