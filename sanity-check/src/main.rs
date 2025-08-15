@@ -1,8 +1,7 @@
 use clap::{Parser, ValueEnum};
 use claxon::FlacReader;
+use image::{Rgb, RgbImage};
 use indicatif::ProgressBar;
-use colorous;
-use image::{Rgb, RgbImage, GrayImage, Luma};
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
 use kofft::window::hann;
@@ -40,7 +39,10 @@ fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
 }
 
 fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u8; 3] {
-    let t = (value / max).clamp(0.0, 1.0) as f64;
+    // Scale magnitude to decibels for better visual contrast
+    let min_db = -80.0_f32;
+    let db = 20.0 * (value / max).max(1e-10).log10();
+    let t = ((db - min_db) / -min_db).clamp(0.0, 1.0) as f64;
     match cmap {
         ColorMap::Gray => {
             let g = (t * 255.0).round() as u8;
