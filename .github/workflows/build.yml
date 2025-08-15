@@ -10,10 +10,30 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        features:
+          - ""
+          - "--no-default-features"
+          - "--features sse,std"
+          - "--features parallel"
+          - "--all-features"
+        include:
+          - os: ubuntu-latest
+            target: ""
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: wasm32-unknown-unknown
+          - os: macos-latest
+            target: ""
+          - os: windows-latest
+            target: ""
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: actions/cache@v3
         with:
           path: |
@@ -24,25 +44,9 @@ jobs:
       - name: Build all targets
         shell: bash
         run: |
-          cargo build --all-targets
-          cargo bench --no-run
-  build-sse:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ${{ env.CARGO_HOME }}/registry
-            ${{ env.CARGO_HOME }}/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Build all targets (SSE)
-        shell: bash
-        run: |
-          cargo build --no-default-features --features "sse std" --all-targets
-          cargo bench --no-run --no-default-features --features "sse std"
+          TARGET_ARG=""
+          if [ -n "${{ matrix.target }}" ]; then
+            TARGET_ARG="--target ${{ matrix.target }}"
+          fi
+          cargo build --all-targets ${{ matrix.features }} $TARGET_ARG
+          cargo bench --no-run ${{ matrix.features }} $TARGET_ARG
