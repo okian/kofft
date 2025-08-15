@@ -3,10 +3,104 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use crate::fft::FftError;
+use crate::fft::{Complex32, FftError, ScalarFftImpl};
+use crate::rfft::RfftPlanner;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
+use hashbrown::HashMap;
+
+/// Planner that caches cosine tables for FFT-based DCT routines.
+///
+/// This mirrors the [`RfftPlanner`] used for real FFTs but stores
+/// cosine factors keyed by transform length.  The planned closures reuse
+/// both the trigonometric tables and the internal [`RfftPlanner`]
+/// to avoid redundant allocations on repeated transforms.
+pub struct DctPlanner {
+    /// Cosine tables indexed by transform length.
+    cache: HashMap<usize, Arc<[f32]>>,
+    /// Underlying real-FFT planner used by the kernels.
+    rfft: RfftPlanner<f32>,
+    /// Reusable work buffers.
+    buf: Vec<f32>,
+    spectrum: Vec<Complex32>,
+}
+
+impl Default for DctPlanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DctPlanner {
+    /// Create a new [`DctPlanner`].
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+            rfft: RfftPlanner::new(),
+            buf: Vec::new(),
+            spectrum: Vec::new(),
+        }
+    }
+
+    /// Retrieve or build the cosine table for length `n`.
+    fn get_cos_table(&mut self, n: usize) -> Arc<[f32]> {
+        if !self.cache.contains_key(&n) {
+            let mut table = Vec::with_capacity(n);
+            for k in 0..n {
+                table.push((PI * k as f32 / (2.0 * n as f32)).cos());
+            }
+            self.cache.insert(n, Arc::from(table));
+        }
+        Arc::clone(self.cache.get(&n).unwrap())
+    }
+
+    /// DCT-II kernel using a precomputed cosine table and the internal
+    /// [`RfftPlanner`].
+    fn dct2_with_table(
+        &mut self,
+        input: &mut [f32],
+        output: &mut [f32],
+        cos: &[f32],
+    ) -> Result<(), FftError> {
+        let n = input.len();
+        if output.len() != n {
+            return Err(FftError::MismatchedLengths);
+        }
+        let m = 2 * n;
+        if self.buf.len() < m {
+            self.buf.resize(m, 0.0);
+        }
+        let buf = &mut self.buf[..m];
+        for i in 0..n {
+            buf[i] = input[i];
+            buf[m - 1 - i] = input[i];
+        }
+        if self.spectrum.len() < n + 1 {
+            self.spectrum.resize(n + 1, Complex32::zero());
+        }
+        let spec = &mut self.spectrum[..n + 1];
+        let fft = ScalarFftImpl::<f32>::default();
+        self.rfft.rfft(&fft, buf, spec)?;
+        for k in 0..n {
+            let angle = PI * k as f32 / (2.0 * n as f32);
+            let sin = angle.sin();
+            output[k] = 0.5 * (spec[k].re * cos[k] + spec[k].im * sin);
+        }
+        Ok(())
+    }
+
+    /// Plan a DCT-II of length `len`, returning a closure that
+    /// reuses cached factors for subsequent executions.
+    pub fn plan_dct2(
+        &mut self,
+        len: usize,
+    ) -> impl FnMut(&mut [f32], &mut [f32]) -> Result<(), FftError> + '_ {
+        let cos = self.get_cos_table(len);
+        move |input, output| self.dct2_with_table(input, output, &cos)
+    }
+}
 
 /// DCT-I (even symmetry, endpoints not repeated)
 pub fn dct1(input: &[f32]) -> Vec<f32> {
@@ -77,6 +171,25 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
         *out = sum;
     }
     output
+}
+
+#[cfg(test)]
+mod planner_tests {
+    use super::*;
+
+    #[test]
+    fn test_dct2_planner_matches_naive() {
+        let mut planner = DctPlanner::new();
+        let input = vec![1.0f32, 2.0, 3.0, 4.0];
+        let mut buf = input.clone();
+        let mut output = vec![0.0f32; input.len()];
+        let mut plan = planner.plan_dct2(input.len());
+        plan(&mut buf, &mut output).unwrap();
+        let expected = dct2(&input);
+        for (a, b) in output.iter().zip(expected.iter()) {
+            assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
+        }
+    }
 }
 
 #[cfg(feature = "slow")]
