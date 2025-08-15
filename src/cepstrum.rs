@@ -83,7 +83,8 @@ pub fn mfcc(
         return Err(FftError::InvalidValue);
     }
     let log_mel: Vec<f32> = mel_energies.iter().map(|&x| logf(x + 1e-12)).collect();
-    let dct = crate::dct::dct2(&log_mel);
+    let mut planner = crate::dct::DctPlanner::new();
+    let dct = crate::dct::dct2(&mut planner, &log_mel);
     Ok(dct[..num_coeffs].to_vec())
 }
 

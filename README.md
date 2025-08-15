@@ -361,12 +361,13 @@ parallel(&signal, &window, hop_size, &mut frames)?;
 - **Cepstrum** – ([Wikipedia](https://en.wikipedia.org/wiki/Cepstrum))
 
 ```rust
-use kofft::{dct, dst, hartley, wavelet, goertzel, czt, hilbert, cepstrum};
+use kofft::{dct::{self, DctPlanner}, dst, hartley, wavelet, goertzel, czt, hilbert, cepstrum};
 
 // DCT variants
-let dct2_result = dct::dct2(&input);
-let dct3_result = dct::dct3(&input);
-let dct4_result = dct::dct4(&input);
+let mut planner = DctPlanner::new();
+let dct2_result = dct::dct2(&mut planner, &input);
+let dct3_result = dct::dct3(&mut planner, &input);
+let dct4_result = dct::dct4(&mut planner, &input);
 
 // DST variants
 let dst1_result = dst::dst1(&input);

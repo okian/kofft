@@ -7,6 +7,74 @@ use crate::fft::FftError;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
+use hashbrown::HashMap;
+
+/// Planner for caching cosine tables used by DCT-II, DCT-III and DCT-IV
+#[derive(Default)]
+pub struct DctPlanner {
+    cache2: HashMap<usize, Vec<f32>>,
+    cache3: HashMap<usize, Vec<f32>>,
+    cache4: HashMap<usize, Vec<f32>>,
+}
+
+impl DctPlanner {
+    /// Create a new empty planner
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn get_table(
+        cache: &mut HashMap<usize, Vec<f32>>,
+        n: usize,
+        f: impl Fn(usize, usize) -> f32,
+    ) -> &[f32] {
+        cache
+            .entry(n)
+            .or_insert_with(|| {
+                let mut table = vec![0.0; n * n];
+                for k in 0..n {
+                    for i in 0..n {
+                        table[k * n + i] = f(k, i);
+                    }
+                }
+                table
+            })
+            .as_slice()
+    }
+
+    /// Retrieve cached cosine table for DCT-II of size `n`
+    pub fn get_dct2(&mut self, n: usize) -> &[f32] {
+        if n == 0 {
+            return &[];
+        }
+        let factor = PI / n as f32;
+        Self::get_table(&mut self.cache2, n, |k, i| {
+            (factor * (i as f32 + 0.5) * k as f32).cos()
+        })
+    }
+
+    /// Retrieve cached cosine table for DCT-III of size `n`
+    pub fn get_dct3(&mut self, n: usize) -> &[f32] {
+        if n == 0 {
+            return &[];
+        }
+        let factor = PI / n as f32;
+        Self::get_table(&mut self.cache3, n, |k, i| {
+            (factor * i as f32 * (k as f32 + 0.5)).cos()
+        })
+    }
+
+    /// Retrieve cached cosine table for DCT-IV of size `n`
+    pub fn get_dct4(&mut self, n: usize) -> &[f32] {
+        if n == 0 {
+            return &[];
+        }
+        let factor = PI / n as f32;
+        Self::get_table(&mut self.cache4, n, |k, i| {
+            (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).cos()
+        })
+    }
+}
 
 /// DCT-I (even symmetry, endpoints not repeated)
 pub fn dct1(input: &[f32]) -> Vec<f32> {
@@ -35,14 +103,17 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
 }
 
 /// DCT-II (the "standard" DCT, used in JPEG, etc.)
-pub fn dct2(input: &[f32]) -> Vec<f32> {
+pub fn dct2(planner: &mut DctPlanner, input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    let table = planner.get_dct2(n);
     let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * k as f32).cos();
+            sum += x * table[k * n + i];
         }
         *out = sum;
     }
@@ -50,14 +121,17 @@ pub fn dct2(input: &[f32]) -> Vec<f32> {
 }
 
 /// DCT-III (the inverse of DCT-II, up to scaling)
-pub fn dct3(input: &[f32]) -> Vec<f32> {
+pub fn dct3(planner: &mut DctPlanner, input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    let table = planner.get_dct3(n);
     let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = input[0] / 2.0;
         for (i, &x) in input.iter().enumerate().skip(1) {
-            sum += x * (factor * i as f32 * (k as f32 + 0.5)).cos();
+            sum += x * table[k * n + i];
         }
         *out = sum;
     }
@@ -65,14 +139,17 @@ pub fn dct3(input: &[f32]) -> Vec<f32> {
 }
 
 /// DCT-IV (self-inverse, used in audio and spectral analysis)
-pub fn dct4(input: &[f32]) -> Vec<f32> {
+pub fn dct4(planner: &mut DctPlanner, input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    if n == 0 {
+        return vec![];
+    }
+    let table = planner.get_dct4(n);
     let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).cos();
+            sum += x * table[k * n + i];
         }
         *out = sum;
     }
@@ -84,16 +161,16 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
 pub mod slow {
     use super::*;
 
-    pub fn dct2(input: &[f32]) -> Vec<f32> {
-        super::dct2(input)
+    pub fn dct2(planner: &mut DctPlanner, input: &[f32]) -> Vec<f32> {
+        super::dct2(planner, input)
     }
 
-    pub fn dct3(input: &[f32]) -> Vec<f32> {
-        super::dct3(input)
+    pub fn dct3(planner: &mut DctPlanner, input: &[f32]) -> Vec<f32> {
+        super::dct3(planner, input)
     }
 
-    pub fn dct4(input: &[f32]) -> Vec<f32> {
-        super::dct4(input)
+    pub fn dct4(planner: &mut DctPlanner, input: &[f32]) -> Vec<f32> {
+        super::dct4(planner, input)
     }
 }
 
@@ -152,23 +229,23 @@ pub fn batch_i(batches: &mut [Vec<f32>]) {
     }
 }
 /// Batch DCT-II
-pub fn batch_ii(batches: &mut [Vec<f32>]) {
+pub fn batch_ii(planner: &mut DctPlanner, batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
-        let out = dct2(batch);
+        let out = dct2(planner, batch);
         batch.copy_from_slice(&out);
     }
 }
 /// Batch DCT-III
-pub fn batch_iii(batches: &mut [Vec<f32>]) {
+pub fn batch_iii(planner: &mut DctPlanner, batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
-        let out = dct3(batch);
+        let out = dct3(planner, batch);
         batch.copy_from_slice(&out);
     }
 }
 /// Batch DCT-IV
-pub fn batch_iv(batches: &mut [Vec<f32>]) {
+pub fn batch_iv(planner: &mut DctPlanner, batches: &mut [Vec<f32>]) {
     for batch in batches.iter_mut() {
-        let out = dct4(batch);
+        let out = dct4(planner, batch);
         batch.copy_from_slice(&out);
     }
 }
@@ -177,16 +254,16 @@ pub fn multi_channel_i(channels: &mut [Vec<f32>]) {
     batch_i(channels)
 }
 /// Multi-channel DCT-II
-pub fn multi_channel_ii(channels: &mut [Vec<f32>]) {
-    batch_ii(channels)
+pub fn multi_channel_ii(planner: &mut DctPlanner, channels: &mut [Vec<f32>]) {
+    batch_ii(planner, channels)
 }
 /// Multi-channel DCT-III
-pub fn multi_channel_iii(channels: &mut [Vec<f32>]) {
-    batch_iii(channels)
+pub fn multi_channel_iii(planner: &mut DctPlanner, channels: &mut [Vec<f32>]) {
+    batch_iii(planner, channels)
 }
 /// Multi-channel DCT-IV
-pub fn multi_channel_iv(channels: &mut [Vec<f32>]) {
-    batch_iv(channels)
+pub fn multi_channel_iv(planner: &mut DctPlanner, channels: &mut [Vec<f32>]) {
+    batch_iv(planner, channels)
 }
 
 #[cfg(all(feature = "internal-tests", test))]
@@ -201,8 +278,9 @@ mod tests {
         if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
             return;
         } // skip pathological
-        let y = dct2(&x);
-        let z = dct3(&y);
+        let mut planner = DctPlanner::new();
+        let y = dct2(&mut planner, &x);
+        let z = dct3(&mut planner, &y);
         for (a, b) in x.iter().zip(z.iter()) {
             assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
         }
@@ -216,8 +294,9 @@ mod batch_tests {
     fn test_dct2_batch_roundtrip() {
         let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
         let orig = batches.clone();
-        batch_ii(&mut batches);
-        batch_iii(&mut batches);
+        let mut planner = DctPlanner::new();
+        batch_ii(&mut planner, &mut batches);
+        batch_iii(&mut planner, &mut batches);
         for (a, b) in orig.iter().zip(batches.iter()) {
             for (x, y) in a.iter().zip(b.iter()) {
                 assert!((x - y / 2.0).abs() < 1e-4);
@@ -273,8 +352,9 @@ mod dct4_tests {
         if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
             return;
         } // skip pathological
-        let y = dct4(&x);
-        let z = dct4(&y);
+        let mut planner = DctPlanner::new();
+        let y = dct4(&mut planner, &x);
+        let z = dct4(&mut planner, &y);
         for (a, b) in x.iter().zip(z.iter()) {
             assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
         }
@@ -282,7 +362,8 @@ mod dct4_tests {
     #[test]
     fn test_dct4_batch() {
         let mut batches = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        batch_iv(&mut batches);
+        let mut planner = DctPlanner::new();
+        batch_iv(&mut planner, &mut batches);
         assert_eq!(batches.len(), 2);
     }
 }
@@ -297,19 +378,22 @@ mod coverage_tests {
     #[test]
     fn test_dct_empty() {
         let x: [f32; 0] = [];
-        let y = dct2(&x);
+        let mut planner = DctPlanner::new();
+        let y = dct2(&mut planner, &x);
         assert_eq!(y.len(), 0);
     }
     #[test]
     fn test_dct_single_element() {
         let x = [1.0];
-        let y = dct2(&x);
+        let mut planner = DctPlanner::new();
+        let y = dct2(&mut planner, &x);
         assert_eq!(y.len(), 1);
     }
     #[test]
     fn test_dct_all_zeros() {
         let x = [0.0; 8];
-        let y = dct2(&x);
+        let mut planner = DctPlanner::new();
+        let y = dct2(&mut planner, &x);
         for v in y {
             assert_eq!(v, 0.0);
         }
@@ -317,7 +401,8 @@ mod coverage_tests {
     #[test]
     fn test_dct_all_ones() {
         let x = [1.0; 8];
-        let y = dct2(&x);
+        let mut planner = DctPlanner::new();
+        let y = dct2(&mut planner, &x);
         assert!(y.iter().all(|&v| v.abs() > 0.0));
     }
     #[test]
@@ -329,8 +414,9 @@ mod coverage_tests {
         if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
             return;
         } // skip pathological
-        let y = dct2(&x);
-        let z = dct3(&y);
+        let mut planner = DctPlanner::new();
+        let y = dct2(&mut planner, &x);
+        let z = dct3(&mut planner, &y);
         for (a, b) in x.iter().zip(z.iter()) {
             assert!((a - b / 2.0).abs() < 1e-4);
         }
@@ -341,15 +427,17 @@ mod coverage_tests {
         let input = [1.0f32, 2.0, 3.0, 4.0];
         let mut out = [0.0f32; 4];
         dct2_inplace_stack(&input, &mut out).unwrap();
-        let out_ref = dct2(&input);
+        let mut planner = DctPlanner::new();
+        let out_ref = dct2(&mut planner, &input);
         for (a, b) in out.iter().zip(out_ref.iter()) {
             assert!((a - b).abs() < 1e-4);
         }
 
         let mut channels = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        multi_channel_ii(&mut channels);
-        multi_channel_iii(&mut channels);
-        multi_channel_iv(&mut channels);
+        let mut planner = DctPlanner::new();
+        multi_channel_ii(&mut planner, &mut channels);
+        multi_channel_iii(&mut planner, &mut channels);
+        multi_channel_iv(&mut planner, &mut channels);
         assert_eq!(channels.len(), 2);
     }
     #[test]
@@ -370,8 +458,9 @@ mod coverage_tests {
         if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) {
             return;
         } // skip pathological
-        let y = dct4(&x);
-        let z = dct4(&y);
+        let mut planner = DctPlanner::new();
+        let y = dct4(&mut planner, &x);
+        let z = dct4(&mut planner, &y);
         for (a, b) in x.iter().zip(z.iter()) {
             assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
         }
@@ -386,8 +475,9 @@ mod coverage_tests {
             let max = x.iter().map(|&v| v.abs()).fold(0.0, f32::max);
             if max > 500.0 { return Ok(()); } // skip pathological large values
             if nonzero < 3 || (mean > 0.0 && max > 10.0 * mean) { return Ok(()); } // skip pathological
-            let y = dct2(&x);
-            let z = dct3(&y);
+            let mut planner = DctPlanner::new();
+            let y = dct2(&mut planner, &x);
+            let z = dct3(&mut planner, &y);
             for (a, b) in x.iter().zip(z.iter()) {
                 if (a - b / 2.0).abs() > 1e3 { return Ok(()); }
                 prop_assert!((a - b / 2.0).abs() < 1e3);

@@ -5,7 +5,7 @@
 
 use kofft::cepstrum::real_cepstrum;
 use kofft::czt::czt_f32;
-use kofft::dct::dct2;
+use kofft::dct::{dct2, DctPlanner};
 use kofft::dst::dst2;
 use kofft::fft::{FftImpl, ScalarFftImpl};
 use kofft::goertzel::goertzel_f32;
@@ -96,7 +96,8 @@ fn main() {
     // 3. Discrete Cosine Transform (DCT)
     println!("3. Discrete Cosine Transform (DCT-II)");
     let dct_input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let dct_result = dct2(&dct_input);
+    let mut planner = DctPlanner::new();
+    let dct_result = dct2(&mut planner, &dct_input);
     println!("   Input: {:?}", dct_input);
     println!(
         "   DCT-II: {:?}",
