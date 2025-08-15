@@ -1,0 +1,24 @@
+name: Setup Rust
+description: Install Rust toolchain and configure caching
+inputs:
+  toolchain:
+    description: Rust toolchain to install (e.g., stable, nightly)
+    required: false
+    default: stable
+  components:
+    description: Additional components to install (space separated)
+    required: false
+    default: ''
+  targets:
+    description: Additional targets to install (space separated)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+    - uses: swatinem/rust-cache@v2
