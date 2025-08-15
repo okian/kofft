@@ -1693,23 +1693,31 @@ impl FftImpl<f32> for SimdFftSseImpl {
             let mut len = 2;
             while len <= n {
                 let twiddles = planner.get_twiddles(len);
+                let half = len / 2;
+                let simd_width = 4;
+                let simd_iters = half / simd_width;
+                // Precompute SIMD twiddle vectors to avoid rebuilding arrays each pass
+                let mut tw_re: Vec<__m128> = Vec::with_capacity(simd_iters);
+                let mut tw_im: Vec<__m128> = Vec::with_capacity(simd_iters);
+                for s in 0..simd_iters {
+                    let j = s * simd_width;
+                    let tw_ptr = twiddles.as_ptr().add(j);
+                    let mut w_re = [0.0f32; 4];
+                    let mut w_im = [0.0f32; 4];
+                    for k in 0..simd_width {
+                        let tw = *tw_ptr.add(k);
+                        w_re[k] = tw.re;
+                        w_im[k] = tw.im;
+                    }
+                    tw_re.push(_mm_loadu_ps(w_re.as_ptr()));
+                    tw_im.push(_mm_loadu_ps(w_im.as_ptr()));
+                }
                 let mut i = 0;
                 while i < n {
-                    let half = len / 2;
-                    let simd_width = 4;
-                    let simd_iters = half / simd_width;
                     for s in 0..simd_iters {
                         let j = s * simd_width;
-                        let mut w_re = [0.0f32; 4];
-                        let mut w_im = [0.0f32; 4];
-                        let tw_ptr = twiddles.as_ptr().add(j);
-                        for k in 0..simd_width {
-                            let tw = *tw_ptr.add(k);
-                            w_re[k] = tw.re;
-                            w_im[k] = tw.im;
-                        }
-                        let w_re_v = _mm_loadu_ps(w_re.as_ptr());
-                        let w_im_v = _mm_loadu_ps(w_im.as_ptr());
+                        let w_re_v = tw_re[s];
+                        let w_im_v = tw_im[s];
                         let u_re = if aligned {
                             _mm_load_ps(&input[i + j].re as *const f32)
                         } else {
