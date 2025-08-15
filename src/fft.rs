@@ -300,6 +300,7 @@ pub struct FftPlanner<T: Float> {
     cache: HashMap<usize, Arc<[Complex<T>]>>,
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
+    bluestein_scratch: Vec<Complex<T>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -314,6 +315,7 @@ impl<T: Float> FftPlanner<T> {
             cache: HashMap::new(),
             bluestein_cache: HashMap::new(),
             scratch: Vec::new(),
+            bluestein_scratch: Vec::new(),
         }
     }
     /// Retrieve a contiguous table of twiddle factors for a given stage size
@@ -767,28 +769,32 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         #[cfg(feature = "std")]
         {
-            use alloc::vec::Vec;
-            let (chirp_arc, fft_b_arc) = {
+            let (chirp_arc, fft_b_arc, mut a) = {
                 let mut planner = self.planner.borrow_mut();
-                planner.get_bluestein(n)
+                let (chirp, fft_b) = planner.get_bluestein(n);
+                let scratch = core::mem::take(&mut planner.bluestein_scratch);
+                (chirp, fft_b, scratch)
             };
             let chirp = chirp_arc.as_ref();
             let fft_b = fft_b_arc.as_ref();
             let m = fft_b.len();
-            let mut a = Vec::with_capacity(m);
-            for (i, &val) in input.iter().take(n).enumerate() {
-                a.push(val.mul(chirp[i]));
+            if a.len() < m {
+                a.resize(m, Complex::zero());
             }
-            a.resize(m, Complex::zero());
-            let fft = ScalarFftImpl::<T>::default();
-            fft.fft(&mut a)?;
+            for (i, &val) in input.iter().take(n).enumerate() {
+                a[i] = val.mul(chirp[i]);
+            }
+            for v in &mut a[n..m] {
+                *v = Complex::zero();
+            }
+            self.fft(&mut a)?;
             for (ai, &bi) in a.iter_mut().zip(fft_b.iter()) {
                 *ai = ai.mul(bi);
             }
             for c in a.iter_mut() {
                 c.im = -c.im;
             }
-            fft.fft(&mut a)?;
+            self.fft(&mut a)?;
             for c in a.iter_mut() {
                 c.im = -c.im;
             }
@@ -799,6 +805,10 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             }
             for (i, out) in input.iter_mut().take(n).enumerate() {
                 *out = a[i].mul(chirp[i]);
+            }
+            {
+                let mut planner = self.planner.borrow_mut();
+                planner.bluestein_scratch = a;
             }
             Ok(())
         }
