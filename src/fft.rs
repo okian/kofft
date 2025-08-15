@@ -275,7 +275,7 @@ pub struct FftPlanner<T: Float> {
     /// that callers can load them without striding through a length-`n`
     /// table. The table for size `len` has `len/2` elements representing
     /// `exp(-2πi k / len)` for `k = 0..len/2`.
-    cache: HashMap<usize, Arc<[Complex<T>]>>,
+    twiddles: Vec<Box<[Complex<T>]>>,
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
 }
@@ -288,8 +288,13 @@ impl<T: Float> Default for FftPlanner<T> {
 
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
+        let size = usize::BITS as usize + 1;
+        let mut twiddles = Vec::with_capacity(size);
+        for _ in 0..size {
+            twiddles.push(Vec::new().into_boxed_slice());
+        }
         Self {
-            cache: HashMap::new(),
+            twiddles,
             bluestein_cache: HashMap::new(),
             scratch: Vec::new(),
         }
@@ -297,8 +302,10 @@ impl<T: Float> FftPlanner<T> {
     /// Retrieve a contiguous table of twiddle factors for a given stage size
     /// `n`. The returned slice has length `n/2` and contains
     /// `exp(-2πi * k / n)` for `k = 0..n/2-1`.
-    pub fn get_twiddles(&mut self, n: usize) -> Arc<[Complex<T>]> {
-        if !self.cache.contains_key(&n) {
+    pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
+        debug_assert!(n.is_power_of_two());
+        let idx = n.trailing_zeros() as usize;
+        if self.twiddles[idx].is_empty() {
             let half = n / 2;
             let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
             let (sin_step, cos_step) = angle.sin_cos();
@@ -312,9 +319,9 @@ impl<T: Float> FftPlanner<T> {
                 w_re = w_re.mul_add(cos_step, -(w_im * sin_step));
                 w_im = w_im.mul_add(cos_step, tmp * sin_step);
             }
-            self.cache.insert(n, Arc::from(table));
+            self.twiddles[idx] = table.into_boxed_slice();
         }
-        Arc::clone(self.cache.get(&n).unwrap())
+        &self.twiddles[idx]
     }
 
     #[cfg(feature = "std")]
@@ -351,6 +358,24 @@ impl<T: Float> FftPlanner<T> {
         } else {
             FftStrategy::Auto
         }
+    }
+}
+
+#[cfg(test)]
+mod planner_tests {
+    use super::*;
+
+    #[test]
+    fn twiddle_reuse_and_memory() {
+        let mut planner = FftPlanner::<f32>::new();
+        assert_eq!(planner.twiddles.len(), usize::BITS as usize + 1);
+        assert_eq!(planner.twiddles.iter().filter(|t| !t.is_empty()).count(), 0);
+        let ptr1 = planner.get_twiddles(8).as_ptr();
+        assert_eq!(planner.twiddles.iter().filter(|t| !t.is_empty()).count(), 1);
+        let ptr2 = planner.get_twiddles(8).as_ptr();
+        assert_eq!(ptr1, ptr2);
+        planner.get_twiddles(16);
+        assert_eq!(planner.twiddles.iter().filter(|t| !t.is_empty()).count(), 2);
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -547,13 +572,21 @@ impl<T: Float> ScalarFftImpl<T> {
                 input.swap(i, j);
             }
         }
+        let mut planner = self.planner.borrow_mut();
         let mut len = 2;
         while len <= n {
-            // Retrieve the contiguous twiddle table for this stage length.
-            let twiddles = {
-                let mut planner = self.planner.borrow_mut();
-                planner.get_twiddles(len)
-            };
+            planner.get_twiddles(len);
+            len <<= 1;
+        }
+        let mut stage_twiddles: Vec<&[Complex<T>]> = Vec::new();
+        let mut len = 2;
+        while len <= n {
+            let idx = len.trailing_zeros() as usize;
+            stage_twiddles.push(&planner.twiddles[idx]);
+            len <<= 1;
+        }
+        let mut len = 2;
+        for twiddles in stage_twiddles {
             #[cfg(feature = "parallel")]
             {
                 if should_parallelize_fft(n)
