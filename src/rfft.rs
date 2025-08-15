@@ -109,21 +109,21 @@ impl<T: Float> RfftPlanner<T> {
     }
 
     /// Retrieve or build the twiddle table for length `m`.
-    pub fn get_twiddles(&mut self, m: usize) -> &[Complex<T>] {
+    pub fn get_twiddles(&mut self, m: usize) -> Arc<[Complex<T>]> {
         if !self.cache.contains_key(&m) {
             let vec = build_twiddle_table::<T>(m);
             self.cache.insert(m, Arc::from(vec));
         }
-        self.cache.get(&m).unwrap().as_ref()
+        Arc::clone(self.cache.get(&m).unwrap())
     }
 
     /// Retrieve or build the pack/unpack twiddle table for length `m`.
-    pub fn get_pack_twiddles(&mut self, m: usize) -> &[Complex<T>] {
+    pub fn get_pack_twiddles(&mut self, m: usize) -> Arc<[Complex<T>]> {
         if !self.pack_cache.contains_key(&m) {
             let vec = build_twiddle_table::<T>(m);
             self.pack_cache.insert(m, Arc::from(vec));
         }
-        self.pack_cache.get(&m).unwrap().as_ref()
+        Arc::clone(self.pack_cache.get(&m).unwrap())
     }
 
     /// Compute a real-input FFT using cached twiddle tables.
@@ -135,13 +135,8 @@ impl<T: Float> RfftPlanner<T> {
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = input.len() / 2;
-        // Work around the borrow checker by retrieving the twiddle table
-        // pointer first, then fetching the pack table before reconstructing
-        // the reference. The tables are stored in `Arc`s so their addresses
-        // remain stable for the duration of this call.
-        let twiddles_ptr = self.get_twiddles(m) as *const [Complex<T>];
+        let twiddles = self.get_twiddles(m);
         let pack_twiddles = self.get_pack_twiddles(m);
-        let twiddles = unsafe { &*twiddles_ptr };
         #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
@@ -149,8 +144,10 @@ impl<T: Float> RfftPlanner<T> {
                     let input32 = &mut *(input as *mut [T] as *mut [f32]);
                     let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
                     let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
-                    let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
-                    let pack32 = &*(pack_twiddles as *const [Complex<T>] as *const [Complex32]);
+                    let twiddles32 =
+                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
+                    let pack32 =
+                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
                     return rfft_direct_f32_simd(
                         |d: &mut [Complex32]| {
                             fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
@@ -164,7 +161,14 @@ impl<T: Float> RfftPlanner<T> {
                 }
             }
         }
-        rfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
+        rfft_direct(
+            fft,
+            input,
+            output,
+            scratch,
+            twiddles.as_ref(),
+            pack_twiddles.as_ref(),
+        )
     }
 
     /// Convenience wrapper that allocates a scratch buffer internally.
@@ -193,9 +197,8 @@ impl<T: Float> RfftPlanner<T> {
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = output.len() / 2;
-        let twiddles_ptr = self.get_twiddles(m) as *const [Complex<T>];
+        let twiddles = self.get_twiddles(m);
         let pack_twiddles = self.get_pack_twiddles(m);
-        let twiddles = unsafe { &*twiddles_ptr };
         #[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
@@ -203,8 +206,10 @@ impl<T: Float> RfftPlanner<T> {
                     let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
                     let output32 = &mut *(output as *mut [T] as *mut [f32]);
                     let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
-                    let twiddles32 = &*(twiddles as *const [Complex<T>] as *const [Complex32]);
-                    let pack32 = &*(pack_twiddles as *const [Complex<T>] as *const [Complex32]);
+                    let twiddles32 =
+                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
+                    let pack32 =
+                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
                     return irfft_direct_f32_simd(
                         |d: &mut [Complex32]| {
                             fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
@@ -218,7 +223,14 @@ impl<T: Float> RfftPlanner<T> {
                 }
             }
         }
-        irfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
+        irfft_direct(
+            fft,
+            input,
+            output,
+            scratch,
+            twiddles.as_ref(),
+            pack_twiddles.as_ref(),
+        )
     }
 
     /// Convenience wrapper that allocates scratch internally.

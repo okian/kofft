@@ -11,6 +11,10 @@ fn planner_twiddles_f32_f64() {
     let expected32 = Complex32::expi(-2.0 * std::f32::consts::PI / 8.0);
     assert!((t32[1].re - expected32.re).abs() < 1e-6);
     assert!((t32[1].im - expected32.im).abs() < 1e-6);
+    // Ensure cached reference is reused.
+    let ptr1 = t32.as_ptr();
+    let ptr2 = p32.get_twiddles(8).as_ptr();
+    assert_eq!(ptr1, ptr2);
 
     // Ensure Bluestein cache lengths are correct for non-power-of-two
     #[cfg(feature = "std")]
