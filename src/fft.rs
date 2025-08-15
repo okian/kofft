@@ -1280,14 +1280,8 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
             return Box::new(SimdFftX86_64Impl);
         }
     }
-    #[cfg(target_arch = "aarch64")]
-    {
-        return Box::new(SimdFftAArch64Impl);
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        return Box::new(SimdFftWasmImpl);
-    }
+    // TODO: Add optimized implementations for other architectures (e.g., AArch64, WASM).
+    // For now, fall back to the portable scalar version on non-x86_64 targets.
     Box::new(ScalarFftImpl::<f32>::default())
 }
 
