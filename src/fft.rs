@@ -16,6 +16,7 @@ use core::cell::RefCell;
 use core::mem::MaybeUninit;
 use once_cell::unsync::OnceCell;
 
+use crate::fft_kernels::{fft16, fft2, fft4, fft8};
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
@@ -472,11 +473,21 @@ impl<T: Float> ScalarFftImpl<T> {
         if scratch.len() < n {
             return Err(FftError::MismatchedLengths);
         }
+        if n <= 16 {
+            match n {
+                2 => fft2(input),
+                4 => fft4(input),
+                8 => fft8(input),
+                16 => fft16(input),
+                _ => unreachable!(),
+            }
+            return Ok(());
+        }
 
         let mut planner = self.planner.borrow_mut();
-        let bitrev = planner.get_bitrev(n);
-        // Permute into scratch using precomputed bit-reversal table
-        for (i, &rev) in bitrev.iter().enumerate().take(n) {
+        let bits = n.trailing_zeros();
+        for i in 0..n {
+            let rev = i.reverse_bits() >> (usize::BITS - bits);
             scratch[i] = input[rev];
         }
 
@@ -524,6 +535,16 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Err(FftError::EmptyInput);
         }
         if n == 1 {
+            return Ok(());
+        }
+        if n <= 16 && n.is_power_of_two() {
+            match n {
+                2 => fft2(input),
+                4 => fft4(input),
+                8 => fft8(input),
+                16 => fft16(input),
+                _ => unreachable!(),
+            }
             return Ok(());
         }
         if (n & (n - 1)) == 0 {
@@ -1146,7 +1167,6 @@ unsafe fn swap_pairs_avx(input: &mut [Complex32], table: &[usize]) {
         k += 2;
     }
 }
-
 
 #[cfg(target_arch = "x86_64")]
 #[derive(Default)]
