@@ -1,6 +1,9 @@
 use clap::{Parser, ValueEnum};
 use claxon::FlacReader;
-use image::{Rgb, RgbImage};
+use image::{
+    codecs::png::{CompressionType, FilterType, PngEncoder},
+    ColorType, EncodableLayout, ImageBuffer, Rgb,
+};
 use indicatif::ProgressBar;
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
@@ -8,6 +11,7 @@ use kofft::window::hann;
 use num_complex::Complex32;
 use rustfft::FftPlanner;
 use std::error::Error;
+use std::fs::File;
 use std::path::PathBuf;
 
 /// Compare kofft STFT with rustfft on a FLAC file and save heatmaps.
@@ -17,6 +21,12 @@ enum ColorMap {
     Viridis,
     Plasma,
     Inferno,
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+enum PngDepth {
+    Eight,
+    Sixteen,
 }
 
 #[derive(Parser)]
@@ -31,6 +41,10 @@ struct Args {
     /// Window length for STFT
     #[arg(long, default_value_t = 4096)]
     win_len: usize,
+
+    /// Bit depth for the output PNG
+    #[arg(long, value_enum, default_value_t = PngDepth::Eight)]
+    png_depth: PngDepth,
 }
 
 fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
@@ -43,29 +57,68 @@ fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
     Ok(samples)
 }
 
-fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u8; 3] {
+fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u16; 3] {
     // Scale magnitude to decibels for better visual contrast
     let min_db = -80.0_f32;
     let db = 20.0 * (value / max).max(1e-10).log10();
     let t = ((db - min_db) / -min_db).clamp(0.0, 1.0) as f64;
     match cmap {
         ColorMap::Gray => {
-            let g = (t * 255.0).round() as u8;
+            let g = (t * 65535.0).round() as u16;
             [g, g, g]
         }
         ColorMap::Viridis => {
             let c = colorous::VIRIDIS.eval_continuous(t);
-            [c.r, c.g, c.b]
+            [
+                u16::from(c.r) * 257,
+                u16::from(c.g) * 257,
+                u16::from(c.b) * 257,
+            ]
         }
         ColorMap::Plasma => {
             let c = colorous::PLASMA.eval_continuous(t);
-            [c.r, c.g, c.b]
+            [
+                u16::from(c.r) * 257,
+                u16::from(c.g) * 257,
+                u16::from(c.b) * 257,
+            ]
         }
         ColorMap::Inferno => {
             let c = colorous::INFERNO.eval_continuous(t);
-            [c.r, c.g, c.b]
+            [
+                u16::from(c.r) * 257,
+                u16::from(c.g) * 257,
+                u16::from(c.b) * 257,
+            ]
         }
     }
+}
+
+fn save_png(
+    img: &ImageBuffer<Rgb<u16>, Vec<u16>>,
+    path: &str,
+    depth: PngDepth,
+) -> Result<(), Box<dyn Error>> {
+    let file = File::create(path)?;
+    let encoder = PngEncoder::new_with_quality(file, CompressionType::Best, FilterType::Adaptive);
+    let (w, h) = (img.width(), img.height());
+    match depth {
+        PngDepth::Eight => {
+            let img8: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_fn(w, h, |x, y| {
+                let p = img.get_pixel(x, y);
+                Rgb([
+                    (p.0[0] >> 8) as u8,
+                    (p.0[1] >> 8) as u8,
+                    (p.0[2] >> 8) as u8,
+                ])
+            });
+            encoder.write_image(img8.as_raw(), w, h, ColorType::Rgb8)?;
+        }
+        PngDepth::Sixteen => {
+            encoder.write_image(img.as_raw().as_bytes(), w, h, ColorType::Rgb16)?;
+        }
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -128,8 +181,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // save heatmaps for visual inspection (use first half of spectrum)
     let height = win_len / 2;
     let width = frames;
-    let mut img_kofft = RgbImage::new(width as u32, height as u32);
-    let mut img_ref = RgbImage::new(width as u32, height as u32);
+    let mut img_kofft: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
+    let mut img_ref: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
     let max_val = kofft_mag
         .iter()
         .flat_map(|v| v.iter())
@@ -149,8 +202,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         heatmap_bar.inc(1);
     }
     heatmap_bar.finish_and_clear();
-    img_kofft.save("kofft_spectrogram.png")?;
-    img_ref.save("reference_spectrogram.png")?;
+    save_png(&img_kofft, "kofft_spectrogram.png", args.png_depth)?;
+    save_png(&img_ref, "reference_spectrogram.png", args.png_depth)?;
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");
     Ok(())
 }
