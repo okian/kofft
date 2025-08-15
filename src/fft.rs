@@ -181,6 +181,7 @@ pub struct FftPlanner<T: Float> {
     cache: Vec<OnceCell<Arc<[Complex<T>]>>>,
     bitrev_cache: Vec<OnceCell<Arc<[usize]>>>,
     bluestein_cache: Vec<OnceCell<BluesteinPair<T>>>,
+    scratch: Vec<Complex<T>>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -195,6 +196,7 @@ impl<T: Float> FftPlanner<T> {
             cache: Vec::new(),
             bitrev_cache: Vec::new(),
             bluestein_cache: Vec::new(),
+            scratch: Vec::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
@@ -636,6 +638,34 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         Ok(())
     }
+
+    fn fft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+        let n = if stride == 0 { 0 } else { input.len() / stride };
+        let mut planner = self.planner.borrow_mut();
+        let mut scratch = core::mem::take(&mut planner.scratch);
+        if scratch.len() < n {
+            scratch.resize(n, Complex::zero());
+        }
+        drop(planner);
+        let result = self.fft_strided(input, stride, &mut scratch[..n]);
+        let mut planner = self.planner.borrow_mut();
+        planner.scratch = scratch;
+        result
+    }
+
+    fn ifft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
+        let n = if stride == 0 { 0 } else { input.len() / stride };
+        let mut planner = self.planner.borrow_mut();
+        let mut scratch = core::mem::take(&mut planner.scratch);
+        if scratch.len() < n {
+            scratch.resize(n, Complex::zero());
+        }
+        drop(planner);
+        let result = self.ifft_strided(input, stride, &mut scratch[..n]);
+        let mut planner = self.planner.borrow_mut();
+        planner.scratch = scratch;
+        result
+    }
     fn ifft_strided(
         &self,
         input: &mut [Complex<T>],
@@ -678,14 +708,21 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
         }
-        let mut buf = alloc::vec::Vec::with_capacity(n);
-        for i in 0..n {
-            buf.push(input[i * in_stride]);
+        let mut planner = self.planner.borrow_mut();
+        let mut scratch = core::mem::take(&mut planner.scratch);
+        if scratch.len() < n {
+            scratch.resize(n, Complex::zero());
         }
-        self.fft(&mut buf)?;
         for i in 0..n {
-            output[i * out_stride] = buf[i];
+            scratch[i] = input[i * in_stride];
         }
+        drop(planner);
+        self.fft(&mut scratch[..n])?;
+        for i in 0..n {
+            output[i * out_stride] = scratch[i];
+        }
+        let mut planner = self.planner.borrow_mut();
+        planner.scratch = scratch;
         Ok(())
     }
     fn ifft_out_of_place_strided(
@@ -705,14 +742,21 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
         }
-        let mut buf = alloc::vec::Vec::with_capacity(n);
-        for i in 0..n {
-            buf.push(input[i * in_stride]);
+        let mut planner = self.planner.borrow_mut();
+        let mut scratch = core::mem::take(&mut planner.scratch);
+        if scratch.len() < n {
+            scratch.resize(n, Complex::zero());
         }
-        self.ifft(&mut buf)?;
         for i in 0..n {
-            output[i * out_stride] = buf[i];
+            scratch[i] = input[i * in_stride];
         }
+        drop(planner);
+        self.ifft(&mut scratch[..n])?;
+        for i in 0..n {
+            output[i * out_stride] = scratch[i];
+        }
+        let mut planner = self.planner.borrow_mut();
+        planner.scratch = scratch;
         Ok(())
     }
     fn fft_with_strategy(

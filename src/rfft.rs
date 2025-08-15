@@ -36,6 +36,7 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
 /// Planner that caches RFFT twiddle tables by transform length.
 pub struct RfftPlanner<T: Float> {
     cache: Vec<(usize, Arc<[Complex<T>]>)>,
+    scratch: Vec<Complex<T>>,
 }
 
 impl<T: Float> Default for RfftPlanner<T> {
@@ -78,7 +79,7 @@ impl<T: Float> RfftPlanner<T> {
             }
         }
 
-        Self { cache }
+        Self { cache, scratch: Vec::new() }
     }
 
     /// Retrieve or build the twiddle table for length `m`.
@@ -133,17 +134,13 @@ impl<T: Float> RfftPlanner<T> {
         output: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let scratch_len = input.len() / 2;
-        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
-        // SAFETY: `rfft_with_scratch` treats the buffer purely as workspace and
-        // writes to every element before any read.
-        unsafe {
-            scratch.set_len(scratch_len);
-            let scratch_slice = core::slice::from_raw_parts_mut(
-                scratch.as_mut_ptr() as *mut Complex<T>,
-                scratch_len,
-            );
-            self.rfft_with_scratch(fft, input, output, scratch_slice)
+        let mut scratch = core::mem::take(&mut self.scratch);
+        if scratch.len() < scratch_len {
+            scratch.resize(scratch_len, Complex::zero());
         }
+        let res = self.rfft_with_scratch(fft, input, output, &mut scratch[..scratch_len]);
+        self.scratch = scratch;
+        res
     }
 
     /// Compute the inverse real FFT using cached twiddle tables.
@@ -187,17 +184,13 @@ impl<T: Float> RfftPlanner<T> {
         output: &mut [T],
     ) -> Result<(), FftError> {
         let scratch_len = output.len() / 2;
-        let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
-        // SAFETY: `irfft_with_scratch` treats the buffer purely as workspace and
-        // writes to every element before any read.
-        unsafe {
-            scratch.set_len(scratch_len);
-            let scratch_slice = core::slice::from_raw_parts_mut(
-                scratch.as_mut_ptr() as *mut Complex<T>,
-                scratch_len,
-            );
-            self.irfft_with_scratch(fft, input, output, scratch_slice)
+        let mut scratch = core::mem::take(&mut self.scratch);
+        if scratch.len() < scratch_len {
+            scratch.resize(scratch_len, Complex::zero());
         }
+        let res = self.irfft_with_scratch(fft, input, output, &mut scratch[..scratch_len]);
+        self.scratch = scratch;
+        res
     }
 }
 
