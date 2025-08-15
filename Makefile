@@ -1,7 +1,13 @@
 # Simple Makefile for kofft development
 ARCH := $(shell uname -m)
-CPUFLAGS := $(shell lscpu | grep -i flags)
-NPROC := $(shell nproc)
+# Detect CPU feature flags across platforms
+CPUFLAGS := $(shell lscpu 2>/dev/null | grep -i flags \
+        || sysctl -n machdep.cpu.features 2>/dev/null \
+        || echo)
+# Detect number of processors on both Linux and macOS
+NPROC := $(shell nproc 2>/dev/null \
+        || sysctl -n hw.ncpu 2>/dev/null \
+        || echo 1)
 
 SIMD_FEATURES :=
 RUSTFLAGS_ADD :=
@@ -53,4 +59,4 @@ update-bench-readme:
 	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --manifest-path kofft-bench/Cargo.toml --example update_bench_readme --release $(if $(FEATURES),--features "$(FEATURES)")
 
 sanity:
-	cargo run -p sanity-check -- $(FLAC)
+        cargo run -p sanity-check -- "$(FLAC)"
