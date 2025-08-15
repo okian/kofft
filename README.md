@@ -313,7 +313,10 @@ cargo run --example embedded_example
 cargo run --example benchmark
 cargo run --example rfft_usage
 cargo run --example dct_usage --release
+cargo run --example spectrogram -- <input.wav> <output.png>
 ```
+
+The `spectrogram` example reads a WAV file and writes a yellow→purple spectrogram image.
 
 `dct_usage` compares a naive DCT-II against a planner that caches cosine
 values and reports the average runtime of each approach, demonstrating the
