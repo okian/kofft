@@ -51,6 +51,10 @@ soa = []
 version = "1.7"
 optional = true
 
+[dev-dependencies]
+hound = "3.5"
+image = "0.24"
+
 [[example]]
 name = "basic_usage"
 path = "examples/basic_usage.rs"
@@ -71,6 +75,10 @@ path = "examples/stft_usage.rs"
 [[example]]
 name = "ndfft_usage"
 path = "examples/ndfft_usage.rs"
+
+[[example]]
+name = "spectrogram"
+path = "examples/spectrogram.rs"
 
 [[example]]
 name = "parallel_benchmark"
