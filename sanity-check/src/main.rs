@@ -16,6 +16,7 @@ enum ColorMap {
     Gray,
     Viridis,
     Plasma,
+    Inferno,
 }
 
 #[derive(Parser)]
@@ -24,7 +25,7 @@ struct Args {
     input: PathBuf,
 
     /// Color map for the output PNG
-    #[arg(long, value_enum, default_value_t = ColorMap::Gray)]
+    #[arg(long, value_enum, default_value_t = ColorMap::Inferno)]
     colormap: ColorMap,
 }
 
@@ -54,6 +55,10 @@ fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u8; 3] {
         }
         ColorMap::Plasma => {
             let c = colorous::PLASMA.eval_continuous(t);
+            [c.r, c.g, c.b]
+        }
+        ColorMap::Inferno => {
+            let c = colorous::INFERNO.eval_continuous(t);
             [c.r, c.g, c.b]
         }
     }

@@ -59,4 +59,4 @@ update-bench-readme:
 	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --manifest-path kofft-bench/Cargo.toml --example update_bench_readme --release $(if $(FEATURES),--features "$(FEATURES)")
 
 sanity:
-	cargo run -p sanity-check -- "$(FLAC)"
+	cargo run -r -p sanity-check -- "$(FLAC)"
