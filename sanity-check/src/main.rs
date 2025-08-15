@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use claxon::FlacReader;
+use image::ImageEncoder;
 use image::{
     codecs::png::{CompressionType, FilterType, PngEncoder},
     ColorType, EncodableLayout, ImageBuffer, Rgb,
@@ -206,4 +207,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     save_png(&img_ref, "reference_spectrogram.png", args.png_depth)?;
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::codecs::png::PngDecoder;
+    use image::ImageDecoder;
+    use std::fs;
+    use std::fs::File;
+
+    #[test]
+    fn saves_png_with_specified_depth() {
+        let img: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(2, 2, Rgb([0, 65535, 32768]));
+        let tmp = std::env::temp_dir();
+        let path8 = tmp.join("test_depth8.png");
+        let path16 = tmp.join("test_depth16.png");
+
+        save_png(&img, path8.to_str().unwrap(), PngDepth::Eight).unwrap();
+        save_png(&img, path16.to_str().unwrap(), PngDepth::Sixteen).unwrap();
+
+        let dec8 = PngDecoder::new(File::open(&path8).unwrap()).unwrap();
+        assert_eq!(dec8.color_type(), ColorType::Rgb8);
+
+        let dec16 = PngDecoder::new(File::open(&path16).unwrap()).unwrap();
+        assert_eq!(dec16.color_type(), ColorType::Rgb16);
+
+        fs::remove_file(path8).unwrap();
+        fs::remove_file(path16).unwrap();
+    }
 }
