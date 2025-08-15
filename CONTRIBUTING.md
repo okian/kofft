@@ -52,6 +52,14 @@ cargo clippy
 cargo fmt
 ```
 
+### Updating Benchmarks
+
+Refresh the benchmark data in the repository:
+
+```bash
+make update-bench-readme
+```
+
 ## Development Guidelines
 
 ### Code Style
