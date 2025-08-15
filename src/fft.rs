@@ -116,7 +116,6 @@ fn parallel_fft_threads() -> usize {
                     .ok()
                     .and_then(|v| v.parse::<usize>().ok())
             })
-            .clone()
             .unwrap_or_else(|| *CPU_COUNT.get_or_init(|| num_cpus::get().max(1)))
     }
     #[cfg(not(feature = "std"))]
@@ -139,7 +138,6 @@ fn parallel_fft_block_size() -> usize {
                     .ok()
                     .and_then(|v| v.parse::<usize>().ok())
             })
-            .clone()
             .unwrap_or(1024)
     }
     #[cfg(not(feature = "std"))]
@@ -176,7 +174,6 @@ fn should_parallelize_fft(n: usize) -> bool {
                         .ok()
                         .and_then(|v| v.parse::<usize>().ok())
                 })
-                .clone()
                 .unwrap_or(0)
         }
         #[cfg(not(feature = "std"))]
@@ -206,7 +203,6 @@ fn should_parallelize_fft(n: usize) -> bool {
                             .ok()
                             .and_then(|v| v.parse::<usize>().ok())
                     })
-                    .clone()
                     .unwrap_or(32 * 1024)
             }
             #[cfg(not(feature = "std"))]
@@ -229,7 +225,6 @@ fn should_parallelize_fft(n: usize) -> bool {
                             .ok()
                             .and_then(|v| v.parse::<usize>().ok())
                     })
-                    .clone()
                     .unwrap_or(4096)
             }
             #[cfg(not(feature = "std"))]

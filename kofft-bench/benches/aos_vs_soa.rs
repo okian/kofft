@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use kofft::fft::{ScalarFftImpl, FftImpl, Complex32};
+use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 
 fn bench_aos_vs_soa(c: &mut Criterion) {
     let size = 1024;

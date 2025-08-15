@@ -11,3 +11,4 @@ rustfft = "6"
 num-complex = "0.4"
 kofft = { path = ".." }
 indicatif = "0.17"
+colorous = "1"

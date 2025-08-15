@@ -1,5 +1,5 @@
-use kofft::rfft::RfftPlanner;
 use kofft::num::Complex32;
+use kofft::rfft::RfftPlanner;
 
 #[test]
 fn planner_twiddles_rfft_f32() {

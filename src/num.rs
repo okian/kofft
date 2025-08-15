@@ -1,5 +1,5 @@
-use core::f32::consts::PI as PI32;
 use alloc::vec::Vec;
+use core::f32::consts::PI as PI32;
 
 // Minimal float trait for generic FFT (no_std, no external deps)
 pub trait Float:

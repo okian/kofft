@@ -2,9 +2,9 @@
 
 use core::f32::consts::PI;
 
-use libm::sqrtf;
 #[cfg(not(feature = "std"))]
 use crate::num::Float;
+use libm::sqrtf;
 
 fn bessel0(x: f32) -> f32 {
     // Approximate I0(x) using a series expansion
