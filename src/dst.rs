@@ -6,8 +6,8 @@ extern crate alloc;
 use crate::fft::FftError;
 use crate::num::Float;
 use alloc::{sync::Arc, vec, vec::Vec};
-use hashbrown::HashMap;
 use core::f32::consts::PI;
+use hashbrown::HashMap;
 
 /// Planner that caches sine tables for various DST types.
 ///

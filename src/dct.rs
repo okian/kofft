@@ -4,14 +4,14 @@
 
 extern crate alloc;
 use crate::fft::{Complex32, FftError, ScalarFftImpl};
+#[cfg(not(feature = "std"))]
+use crate::num::Float;
 use crate::rfft::RfftPlanner;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
 use hashbrown::HashMap;
-#[cfg(not(feature = "std"))]
-use crate::num::Float;
 
 /// Planner that caches cosine tables for FFT-based DCT routines.
 ///

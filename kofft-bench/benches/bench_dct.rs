@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
-    env,
-    fs,
+    env, fs,
     process::Command,
     sync::Mutex,
     time::{Duration, Instant},
@@ -102,8 +101,7 @@ fn bench_transform<F>(
     mode: &str,
     size: usize,
     func: F,
-)
-where
+) where
     F: Fn(&[f32]) -> Vec<f32>,
 {
     let data: Vec<f32> = (0..size).map(|i| i as f32).collect();
@@ -308,4 +306,3 @@ fn main_bench(c: &mut Criterion) {
 }
 criterion::criterion_group!(benches, main_bench);
 criterion_main!(benches);
-

@@ -12,7 +12,6 @@ fn planner_twiddles_f32_f64() {
     assert!((t32[1].re - expected32.re).abs() < 1e-6);
     assert!((t32[1].im - expected32.im).abs() < 1e-6);
 
-
     // Ensure Bluestein cache lengths are correct for non-power-of-two
     #[cfg(feature = "std")]
     {
