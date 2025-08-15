@@ -6,6 +6,7 @@ use kofft::stft::stft;
 use kofft::window::hann;
 use num_complex::Complex32;
 use rustfft::FftPlanner;
+use indicatif::ProgressBar;
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -52,6 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(win_len);
     let mut rust_mag: Vec<Vec<f32>> = Vec::with_capacity(frames);
+    let bar = ProgressBar::new(frames as u64);
     for frame in 0..frames {
         let start = frame * hop;
         let mut buffer: Vec<Complex32> = (0..win_len)
@@ -66,7 +68,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect();
         fft.process(&mut buffer);
         rust_mag.push(buffer.iter().map(|c| c.norm()).collect());
+        bar.inc(1);
     }
+    bar.finish();
 
     // compute max difference
     let mut max_diff = 0.0f32;
@@ -91,6 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .chain(rust_mag.iter().flat_map(|v| v.iter()))
         .cloned()
         .fold(0.0f32, f32::max);
+    let heatmap_bar = ProgressBar::new(width as u64);
     for (x, (kf, rf)) in kofft_mag.iter().zip(rust_mag.iter()).enumerate() {
         for y in 0..height {
             let v1 = (kf[y] / max_val * 255.0).min(255.0) as u8;
@@ -98,7 +103,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             img_kofft.put_pixel(x as u32, y as u32, Luma([v1]));
             img_ref.put_pixel(x as u32, y as u32, Luma([v2]));
         }
+        heatmap_bar.inc(1);
     }
+    heatmap_bar.finish();
     img_kofft.save("kofft_spectrogram.png")?;
     img_ref.save("reference_spectrogram.png")?;
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");
