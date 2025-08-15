@@ -447,41 +447,11 @@ impl<T: Float> ScalarFftImpl<T> {
         }
     }
 
-    pub fn split_radix_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
-        fn recurse<T: Float>(planner: &mut FftPlanner<T>, data: &mut [Complex<T>]) {
-            let n = data.len();
-            if n <= 1 {
-                return;
-            }
-            if n == 2 {
-                let a = data[0];
-                let b = data[1];
-                data[0] = a.add(b);
-                data[1] = a.sub(b);
-                return;
-            }
-            let mut even: Vec<Complex<T>> = data.iter().step_by(2).cloned().collect();
-            let mut odd1: Vec<Complex<T>> = data.iter().skip(1).step_by(4).cloned().collect();
-            let mut odd3: Vec<Complex<T>> = data.iter().skip(3).step_by(4).cloned().collect();
-            recurse(planner, &mut even);
-            recurse(planner, &mut odd1);
-            recurse(planner, &mut odd3);
-            let tw = planner.get_twiddles(n);
-            let j = Complex::new(T::zero(), -T::one());
-            for k in 0..n / 4 {
-                let e0 = even[k];
-                let e1 = even[k + n / 4];
-                let t1 = tw[k].mul(odd1[k]);
-                let t2 = tw[(3 * k) % n].mul(odd3[k]);
-                let t1p2 = t1.add(t2);
-                let t1m2 = t1.sub(t2);
-                data[k] = e0.add(t1p2);
-                data[k + n / 2] = e0.sub(t1p2);
-                let t = t1m2.mul(j);
-                data[k + n / 4] = e1.add(t);
-                data[k + n / 4 + n / 2] = e1.sub(t);
-            }
-        }
+    pub fn split_radix_fft(
+        &self,
+        input: &mut [Complex<T>],
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
@@ -489,8 +459,50 @@ impl<T: Float> ScalarFftImpl<T> {
         if !n.is_power_of_two() {
             return self.fft(input);
         }
+        if scratch.len() < n {
+            return Err(FftError::MismatchedLengths);
+        }
+
         let mut planner = self.planner.borrow_mut();
-        recurse(&mut planner, input);
+        let bitrev = planner.get_bitrev(n);
+        // Permute into scratch using precomputed bit-reversal table
+        for (i, &rev) in bitrev.iter().enumerate().take(n) {
+            scratch[i] = input[rev];
+        }
+
+        let twiddles = planner.get_twiddles(n);
+
+        // Ping-pong buffers for iterative Cooley-Tukey FFT
+        let mut in_buf: &mut [Complex<T>] = scratch;
+        let mut out_buf: &mut [Complex<T>] = input;
+        let mut size = 2;
+        let mut out_is_input = true;
+
+        while size <= n {
+            let half = size / 2;
+            let step = n / size;
+            for start in (0..n).step_by(size) {
+                let mut k = 0;
+                for j in 0..half {
+                    let u = in_buf[start + j];
+                    let t = in_buf[start + j + half].mul(twiddles[k]);
+                    out_buf[start + j] = u.add(t);
+                    out_buf[start + j + half] = u.sub(t);
+                    k += step;
+                }
+            }
+            if size == n {
+                break;
+            }
+            size <<= 1;
+            core::mem::swap(&mut in_buf, &mut out_buf);
+            out_is_input = !out_is_input;
+        }
+
+        // Ensure results end up in `input`
+        if !out_is_input {
+            input.copy_from_slice(scratch);
+        }
         Ok(())
     }
 }
@@ -506,7 +518,13 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if (n & (n - 1)) == 0 {
             // Power of two: use split-radix FFT
-            return self.split_radix_fft(input);
+            let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+            unsafe {
+                scratch.set_len(n);
+                let scratch_slice =
+                    core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut Complex<T>, n);
+                return self.split_radix_fft(input, scratch_slice);
+            }
         }
         // Bluestein's algorithm for non-power-of-two
         #[cfg(not(feature = "std"))]
@@ -712,7 +730,16 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         match chosen {
             FftStrategy::Radix2 => self.fft(input),
             FftStrategy::Radix4 => self.fft_radix4(input),
-            FftStrategy::SplitRadix => self.split_radix_fft(input),
+            FftStrategy::SplitRadix => {
+                let n = input.len();
+                let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+                unsafe {
+                    scratch.set_len(n);
+                    let scratch_slice =
+                        core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut Complex<T>, n);
+                    self.split_radix_fft(input, scratch_slice)
+                }
+            }
             FftStrategy::Auto => self.fft(input),
         }
     }
@@ -1086,12 +1113,16 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
         {
             #[cfg(any(feature = "avx512", target_feature = "avx512f"))]
             if std::arch::is_x86_feature_detected!("avx512f") {
-                unsafe { return fft_avx512(input); }
+                unsafe {
+                    return fft_avx512(input);
+                }
             }
             if std::arch::is_x86_feature_detected!("avx2")
                 && std::arch::is_x86_feature_detected!("fma")
             {
-                unsafe { return fft_avx2(input); }
+                unsafe {
+                    return fft_avx2(input);
+                }
             }
         }
 
@@ -1463,7 +1494,10 @@ unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
     Ok(())
 }
 
-#[cfg(all(target_arch = "x86_64", any(feature = "avx512", target_feature = "avx512f")))]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(feature = "avx512", target_feature = "avx512f")
+))]
 #[target_feature(enable = "avx512f")]
 unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
     let n = input.len();
@@ -2261,8 +2295,7 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
         if std::arch::is_x86_feature_detected!("avx512f") {
             return Box::new(SimdFftX86_64Impl);
         }
-        if std::arch::is_x86_feature_detected!("avx2")
-            && std::arch::is_x86_feature_detected!("fma")
+        if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
         {
             return Box::new(SimdFftX86_64Impl);
         }
