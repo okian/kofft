@@ -152,12 +152,12 @@ pub fn fft3d_inplace<T: Float>(
     Ok(())
 }
 
-// TODO: 3D FFT, real input, streaming, property-based tests
-
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     use crate::fft::{Complex, FftError, ScalarFftImpl};
+    use alloc::format;
+    use proptest::prelude::*;
 
     fn inverse_2d<T: Float>(
         data: &mut [Complex<T>],
@@ -305,6 +305,54 @@ mod tests {
         for (a, b) in data.iter().zip(orig.iter()) {
             let err = (a.re - b.re).abs().max((a.im - b.im).abs());
             assert!(err < 1e-3, "a = {:?}, b = {:?}, err = {}", a, b, err);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_fft2d_roundtrip(rows in proptest::sample::select(vec![2usize,4,8]),
+                                cols in proptest::sample::select(vec![2usize,4,8]),
+                                ref signal in proptest::collection::vec(-1000.0f32..1000.0, 64)) {
+            let len = rows * cols;
+            let mut data: Vec<Complex<f32>> = signal.iter().take(len)
+                .cloned().map(|x| Complex::new(x, 0.0)).collect();
+            let orig = data.clone();
+            let fft = ScalarFftImpl::<f32>::default();
+            let mut scratch = vec![Complex::zero(); rows];
+            fft2d_inplace(&mut data, rows, cols, &fft, &mut scratch).unwrap();
+            inverse_2d(&mut data, rows, cols, &fft);
+            for (a, b) in orig.iter().zip(data.iter()) {
+                let err = (a.re - b.re).abs().max((a.im - b.im).abs());
+                prop_assert!(err < 1e-2);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_fft3d_roundtrip(depth in proptest::sample::select(vec![2usize,4]),
+                                rows in proptest::sample::select(vec![2usize,4]),
+                                cols in proptest::sample::select(vec![2usize,4]),
+                                ref signal in proptest::collection::vec(-1000.0f32..1000.0, 64)) {
+            let len = depth * rows * cols;
+            let mut data: Vec<Complex<f32>> = signal.iter().take(len)
+                .cloned().map(|x| Complex::new(x, 0.0)).collect();
+            let orig = data.clone();
+            let fft = ScalarFftImpl::<f32>::default();
+            let mut tube = vec![Complex::zero(); depth];
+            let mut row = vec![Complex::zero(); rows];
+            let mut col = vec![Complex::zero(); cols];
+            let mut scratch = Fft3dScratch {
+                tube: &mut tube,
+                row: &mut row,
+                col: &mut col,
+            };
+            fft3d_inplace(&mut data, depth, rows, cols, &fft, &mut scratch).unwrap();
+            inverse_3d(&mut data, depth, rows, cols, &fft);
+            for (a, b) in orig.iter().zip(data.iter()) {
+                let err = (a.re - b.re).abs().max((a.im - b.im).abs());
+                prop_assert!(err < 1e-2);
+            }
         }
     }
 
