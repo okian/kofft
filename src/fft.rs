@@ -513,7 +513,7 @@ impl<T: Float> ScalarFftImpl<T> {
         }
     }
 
-    pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+   pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
@@ -532,80 +532,58 @@ impl<T: Float> ScalarFftImpl<T> {
             return Ok(());
         }
 
-        // bit-reversal permutation
-        let mut j = 0usize;
-        for i in 1..n - 1 {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
+        // Stockham auto-sort FFT using a double-buffered approach.
+        let (twiddles, mut scratch) = {
+            let mut planner = self.planner.borrow_mut();
+            let twiddles = planner.get_twiddles(n);
+            let scratch = core::mem::take(&mut planner.scratch);
+            (twiddles, scratch)
+        };
+
+        if scratch.len() < n {
+            scratch.resize(n, Complex::zero());
         }
-        #[cfg(feature = "parallel")]
-        let use_par = should_parallelize_fft(n)
-            && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>();
-        let mut len = 2;
-        while len <= n {
-            // Retrieve the contiguous twiddle table for this stage length.
-            let twiddles = {
-                let mut planner = self.planner.borrow_mut();
-                planner.get_twiddles(len)
-            };
-            #[cfg(feature = "parallel")]
-            {
-                if use_par {
-                    let block = parallel_fft_block_size().max(1);
-                    let block_len = block * len;
-                    let twiddles32: &[Complex32] = unsafe {
-                        core::slice::from_raw_parts(
-                            twiddles.as_ptr() as *const Complex32,
-                            twiddles.len(),
-                        )
-                    };
-                    let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                    input32.par_chunks_mut(block_len).for_each(|chunk| {
-                        let groups = chunk.len() / len;
-                        for g in 0..groups {
-                            let base = g * len;
-                            for j in 0..(len / 2) {
-                                let w = twiddles32[j];
-                                let u = chunk[base + j];
-                                let v = chunk[base + j + len / 2].mul(w);
-                                chunk[base + j] = u.add(v);
-                                chunk[base + j + len / 2] = u.sub(v);
-                            }
-                        }
-                    });
-                } else {
-                    for i in (0..n).step_by(len) {
-                        for j in 0..(len / 2) {
-                            let w = twiddles[j];
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
-                        }
-                    }
+
+        // Keep raw ptr so we can copy back if the final output ends up in scratch.
+        let input_ptr = input.as_mut_ptr();
+        let mut src: &mut [Complex<T>] = input;
+        let mut dst: &mut [Complex<T>] = &mut scratch[..n];
+
+        // n1 = number of groups, n2 = size of each group in this pass.
+        let mut n1 = 1usize;
+        let mut n2 = n;
+        while n1 < n {
+            n2 >>= 1;
+
+            for k in 0..n1 {
+                // Twiddle for this group: exp(-2πi * k / (2*n1)) = table[k * n2]
+                let w = twiddles[k * n2];
+                let base0 = 2 * k * n2;
+                let base1 = base0 + n2;
+
+                for j in 0..n2 {
+                    let u = src[base0 + j];
+                    let v = src[base1 + j].mul(w);
+                    dst[k * n2 + j] = u.add(v);
+                    dst[(k + n1) * n2 + j] = u.sub(v);
                 }
             }
-            #[cfg(not(feature = "parallel"))]
-            {
-                for i in (0..n).step_by(len) {
-                    for j in 0..(len / 2) {
-                        let w = twiddles[j];
-                        let u = input[i + j];
-                        let v = input[i + j + len / 2].mul(w);
-                        input[i + j] = u.add(v);
-                        input[i + j + len / 2] = u.sub(v);
-                    }
-                }
-            }
-            len <<= 1;
+
+            core::mem::swap(&mut src, &mut dst);
+            n1 <<= 1;
         }
+
+        // If result is in scratch, copy back to input.
+        if src.as_ptr() != input_ptr {
+            unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), input_ptr, n) };
+        }
+
+        // Return scratch to planner for reuse.
+        {
+            let mut planner = self.planner.borrow_mut();
+            planner.scratch = scratch;
+        }
+
         Ok(())
     }
 }
