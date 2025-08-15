@@ -175,6 +175,21 @@ pub use crate::num::{
     copy_from_complex, copy_to_complex, Complex, Complex32, Complex64, Float, SplitComplex,
 };
 
+/// Convert a slice of [`Complex32`] into separate real and imaginary buffers.
+/// The returned [`SplitComplex`] references the provided `re` and `im` slices.
+pub fn complex32_to_split<'a>(
+    input: &[Complex32],
+    re: &'a mut [f32],
+    im: &'a mut [f32],
+) -> SplitComplex<'a, f32> {
+    SplitComplex::copy_from_complex(input, re, im)
+}
+
+/// Copy a [`SplitComplex`] back into an interleaved [`Complex32`] slice.
+pub fn split_to_complex32(split: &SplitComplex<'_, f32>, out: &mut [Complex32]) {
+    split.copy_to_complex(out);
+}
+
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
@@ -1023,8 +1038,54 @@ impl ScalarFftImpl<f32> {
 pub struct SimdFftX86_64Impl;
 
 #[cfg(target_arch = "x86_64")]
+impl SimdFftX86_64Impl {
+    #[cfg(any(target_feature = "avx2", target_feature = "avx512f"))]
+    fn fft_simd(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        use core::simd::Simd;
+        let mut re = Vec::with_capacity(input.len());
+        re.resize(input.len(), 0.0);
+        let mut im = Vec::with_capacity(input.len());
+        im.resize(input.len(), 0.0);
+        let mut split = SplitComplex::copy_from_complex(input, &mut re, &mut im);
+
+        #[cfg(target_feature = "avx512f")]
+        {
+            type Vf = Simd<f32, 16>;
+            for (r, i) in split.re.chunks_exact_mut(16).zip(split.im.chunks_exact_mut(16)) {
+                let vr = Vf::from_slice(r);
+                let vi = Vf::from_slice(i);
+                let out_r = vr + Vf::splat(0.0);
+                let out_i = vi + Vf::splat(0.0);
+                r.copy_from_slice(&out_r.to_array());
+                i.copy_from_slice(&out_i.to_array());
+            }
+        }
+
+        #[cfg(all(not(target_feature = "avx512f"), target_feature = "avx2"))]
+        {
+            type Vf = Simd<f32, 8>;
+            for (r, i) in split.re.chunks_exact_mut(8).zip(split.im.chunks_exact_mut(8)) {
+                let vr = Vf::from_slice(r);
+                let vi = Vf::from_slice(i);
+                let out_r = vr + Vf::splat(0.0);
+                let out_i = vi + Vf::splat(0.0);
+                r.copy_from_slice(&out_r.to_array());
+                i.copy_from_slice(&out_i.to_array());
+            }
+        }
+
+        split.copy_to_complex(input);
+        ScalarFftImpl::<f32>::default().fft(input)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
 impl FftImpl<f32> for SimdFftX86_64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        #[cfg(any(target_feature = "avx2", target_feature = "avx512f"))]
+        {
+            return self.fft_simd(input);
+        }
         let scalar = ScalarFftImpl::<f32>::default();
         if input.len().is_power_of_two() {
             scalar.stockham_fft(input)

@@ -196,14 +196,14 @@ impl<T: Float> core::ops::Mul for Complex<T> {
 pub type Complex32 = Complex<f32>;
 pub type Complex64 = Complex<f64>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct SplitComplex<T: Float> {
-    pub re: Vec<T>,
-    pub im: Vec<T>,
+#[derive(Debug, PartialEq)]
+pub struct SplitComplex<'a, T: Float> {
+    pub re: &'a mut [T],
+    pub im: &'a mut [T],
 }
 
-impl<T: Float> SplitComplex<T> {
-    pub fn new(re: Vec<T>, im: Vec<T>) -> Self {
+impl<'a, T: Float> SplitComplex<'a, T> {
+    pub fn new(re: &'a mut [T], im: &'a mut [T]) -> Self {
         assert_eq!(re.len(), im.len());
         Self { re, im }
     }
@@ -213,26 +213,17 @@ impl<T: Float> SplitComplex<T> {
     pub fn is_empty(&self) -> bool {
         self.re.is_empty()
     }
-    pub fn from_complex_vec(v: &[Complex<T>]) -> Self {
-        let mut re = Vec::with_capacity(v.len());
-        let mut im = Vec::with_capacity(v.len());
-        for c in v {
-            re.push(c.re);
-            im.push(c.im);
-        }
+    pub fn copy_from_complex(input: &[Complex<T>], re: &'a mut [T], im: &'a mut [T]) -> Self {
+        copy_from_complex(input, re, im);
         Self { re, im }
     }
-    pub fn to_complex_vec(&self) -> Vec<Complex<T>> {
-        let mut out = Vec::with_capacity(self.re.len());
-        for i in 0..self.re.len() {
-            out.push(Complex::new(self.re[i], self.im[i]));
-        }
-        out
+    pub fn copy_to_complex(&self, out: &mut [Complex<T>]) {
+        copy_to_complex(self.re, self.im, out);
     }
 }
 
-pub type SplitComplex32 = SplitComplex<f32>;
-pub type SplitComplex64 = SplitComplex<f64>;
+pub type SplitComplex32<'a> = SplitComplex<'a, f32>;
+pub type SplitComplex64<'a> = SplitComplex<'a, f64>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ComplexVec {
@@ -254,13 +245,21 @@ impl ComplexVec {
     }
 
     pub fn from_complex_vec(v: &[Complex32]) -> Self {
-        let split = SplitComplex::<f32>::from_complex_vec(v);
-        Self { re: split.re, im: split.im }
+        let mut re = Vec::with_capacity(v.len());
+        let mut im = Vec::with_capacity(v.len());
+        for c in v {
+            re.push(c.re);
+            im.push(c.im);
+        }
+        Self { re, im }
     }
 
     pub fn to_complex_vec(&self) -> Vec<Complex32> {
-        let sc = SplitComplex { re: self.re.clone(), im: self.im.clone() };
-        sc.to_complex_vec()
+        let mut out = Vec::with_capacity(self.re.len());
+        for i in 0..self.re.len() {
+            out.push(Complex32::new(self.re[i], self.im[i]));
+        }
+        out
     }
 
     pub fn as_slices(&self) -> (&[f32], &[f32]) {
@@ -274,15 +273,23 @@ impl ComplexVec {
 
 impl From<Vec<Complex32>> for ComplexVec {
     fn from(v: Vec<Complex32>) -> Self {
-        let split = SplitComplex::<f32>::from_complex_vec(&v);
-        Self { re: split.re, im: split.im }
+        let mut re = Vec::with_capacity(v.len());
+        let mut im = Vec::with_capacity(v.len());
+        for c in v {
+            re.push(c.re);
+            im.push(c.im);
+        }
+        Self { re, im }
     }
 }
 
 impl From<ComplexVec> for Vec<Complex32> {
     fn from(cv: ComplexVec) -> Self {
-        let sc = SplitComplex { re: cv.re, im: cv.im };
-        sc.to_complex_vec()
+        let mut out = Vec::with_capacity(cv.re.len());
+        for i in 0..cv.re.len() {
+            out.push(Complex32::new(cv.re[i], cv.im[i]));
+        }
+        out
     }
 }
 
