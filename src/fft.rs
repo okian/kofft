@@ -1147,7 +1147,6 @@ unsafe fn swap_pairs_avx(input: &mut [Complex32], table: &[usize]) {
     }
 }
 
-
 #[cfg(target_arch = "x86_64")]
 #[derive(Default)]
 pub struct SimdFftX86_64Impl;
@@ -2314,7 +2313,11 @@ impl<T: Float> FftPlan<T> {
         if data.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
-        self.fft.fft_split(&mut data.re, &mut data.im)
+        // `ComplexVec` stores its components as `Vec<f32>`. Explicitly convert
+        // them to mutable slices so the call matches the signature of
+        // `fft_split`, satisfying clippy's type expectations.
+        self.fft
+            .fft_split(data.re.as_mut_slice(), data.im.as_mut_slice())
     }
 
     #[cfg(any(feature = "simd", feature = "soa"))]
@@ -2322,7 +2325,9 @@ impl<T: Float> FftPlan<T> {
         if data.len() != self.n {
             return Err(FftError::MismatchedLengths);
         }
-        self.fft.ifft_split(&mut data.re, &mut data.im)
+        // See above; convert to slices before invoking the split transform.
+        self.fft
+            .ifft_split(data.re.as_mut_slice(), data.im.as_mut_slice())
     }
 }
 

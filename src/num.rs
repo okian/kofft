@@ -1,5 +1,5 @@
-use core::f32::consts::PI as PI32;
 use alloc::vec::Vec;
+use core::f32::consts::PI as PI32;
 
 // Minimal float trait for generic FFT (no_std, no external deps)
 pub trait Float:
@@ -210,6 +210,9 @@ impl<T: Float> SplitComplex<T> {
     pub fn len(&self) -> usize {
         self.re.len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.re.is_empty()
+    }
     pub fn from_complex_vec(v: &[Complex<T>]) -> Self {
         let mut re = Vec::with_capacity(v.len());
         let mut im = Vec::with_capacity(v.len());
@@ -247,13 +250,23 @@ impl ComplexVec {
         self.re.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.re.is_empty()
+    }
+
     pub fn from_complex_vec(v: &[Complex32]) -> Self {
         let split = SplitComplex::<f32>::from_complex_vec(v);
-        Self { re: split.re, im: split.im }
+        Self {
+            re: split.re,
+            im: split.im,
+        }
     }
 
     pub fn to_complex_vec(&self) -> Vec<Complex32> {
-        let sc = SplitComplex { re: self.re.clone(), im: self.im.clone() };
+        let sc = SplitComplex {
+            re: self.re.clone(),
+            im: self.im.clone(),
+        };
         sc.to_complex_vec()
     }
 
@@ -269,13 +282,19 @@ impl ComplexVec {
 impl From<Vec<Complex32>> for ComplexVec {
     fn from(v: Vec<Complex32>) -> Self {
         let split = SplitComplex::<f32>::from_complex_vec(&v);
-        Self { re: split.re, im: split.im }
+        Self {
+            re: split.re,
+            im: split.im,
+        }
     }
 }
 
 impl From<ComplexVec> for Vec<Complex32> {
     fn from(cv: ComplexVec) -> Self {
-        let sc = SplitComplex { re: cv.re, im: cv.im };
+        let sc = SplitComplex {
+            re: cv.re,
+            im: cv.im,
+        };
         sc.to_complex_vec()
     }
 }
