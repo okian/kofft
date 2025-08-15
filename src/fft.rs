@@ -43,19 +43,71 @@ static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 static PARALLEL_FFT_BLOCK_SIZE_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "parallel")]
 static PARALLEL_FFT_THREAD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(all(feature = "parallel", feature = "std"))]
+static PARALLEL_ENV: OnceLock<ParallelEnv> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static PARALLEL_FFT_THRESHOLD: OnceLock<usize> = OnceLock::new();
 
 #[cfg(all(feature = "parallel", feature = "std"))]
-static CPU_COUNT: OnceLock<usize> = OnceLock::new();
+struct ParallelEnv {
+    threshold: usize,
+    cache_bytes: usize,
+    per_core_work: usize,
+    block_size: usize,
+    threads: usize,
+    calibrated_per_core_work: usize,
+}
+
 #[cfg(all(feature = "parallel", feature = "std"))]
-static ENV_PAR_FFT_THRESHOLD: OnceLock<Option<usize>> = OnceLock::new();
+fn parallel_env() -> &'static ParallelEnv {
+    PARALLEL_ENV.get_or_init(|| {
+        let threshold = std::env::var("KOFFT_PAR_FFT_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        let cache_bytes = std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(32 * 1024);
+        let per_core_work = std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(4096);
+        let block_size = std::env::var("KOFFT_PAR_FFT_BLOCK_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1024);
+        let threads = std::env::var("KOFFT_PAR_FFT_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or_else(|| num_cpus::get().max(1));
+        ParallelEnv {
+            threshold,
+            cache_bytes,
+            per_core_work,
+            block_size,
+            threads,
+            calibrated_per_core_work: calibrated_per_core_work(),
+        }
+    })
+}
+
 #[cfg(all(feature = "parallel", feature = "std"))]
-static ENV_PAR_FFT_CACHE_BYTES: OnceLock<Option<usize>> = OnceLock::new();
-#[cfg(all(feature = "parallel", feature = "std"))]
-static ENV_PAR_FFT_PER_CORE_WORK: OnceLock<Option<usize>> = OnceLock::new();
-#[cfg(all(feature = "parallel", feature = "std"))]
-static ENV_PAR_FFT_BLOCK_SIZE: OnceLock<Option<usize>> = OnceLock::new();
-#[cfg(all(feature = "parallel", feature = "std"))]
-static ENV_PAR_FFT_THREADS: OnceLock<Option<usize>> = OnceLock::new();
+fn parallel_fft_threshold() -> usize {
+    *PARALLEL_FFT_THRESHOLD.get_or_init(|| {
+        let env = parallel_env();
+        if env.threshold != 0 {
+            env.threshold
+        } else {
+            let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
+            let cache_elems = env.cache_bytes / bytes_per_elem;
+            let per_core_work = core::cmp::max(env.per_core_work, env.calibrated_per_core_work);
+            let per_core_min =
+                core::cmp::max(cache_elems, core::cmp::max(per_core_work, env.block_size));
+            per_core_min * env.threads
+        }
+    })
+}
 
 #[cfg(feature = "parallel")]
 /// Set a custom minimum FFT length to use parallel processing.
@@ -109,13 +161,7 @@ fn parallel_fft_threads() -> usize {
     }
     #[cfg(feature = "std")]
     {
-        ENV_PAR_FFT_THREADS
-            .get_or_init(|| {
-                std::env::var("KOFFT_PAR_FFT_THREADS")
-                    .ok()
-                    .and_then(|v| v.parse::<usize>().ok())
-            })
-            .unwrap_or_else(|| *CPU_COUNT.get_or_init(|| num_cpus::get().max(1)))
+        parallel_env().threads
     }
     #[cfg(not(feature = "std"))]
     {
@@ -131,13 +177,7 @@ fn parallel_fft_block_size() -> usize {
     }
     #[cfg(feature = "std")]
     {
-        ENV_PAR_FFT_BLOCK_SIZE
-            .get_or_init(|| {
-                std::env::var("KOFFT_PAR_FFT_BLOCK_SIZE")
-                    .ok()
-                    .and_then(|v| v.parse::<usize>().ok())
-            })
-            .unwrap_or(1024)
+        parallel_env().block_size
     }
     #[cfg(not(feature = "std"))]
     {
@@ -162,88 +202,70 @@ fn calibrated_per_core_work() -> usize {
 }
 
 #[cfg(feature = "parallel")]
-fn should_parallelize_fft(n: usize) -> bool {
+fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     let override_thr = PARALLEL_FFT_THRESHOLD_OVERRIDE.load(Ordering::Relaxed);
-    let threshold = if override_thr == 0 {
-        #[cfg(feature = "std")]
-        {
-            ENV_PAR_FFT_THRESHOLD
-                .get_or_init(|| {
-                    std::env::var("KOFFT_PAR_FFT_THRESHOLD")
-                        .ok()
-                        .and_then(|v| v.parse::<usize>().ok())
-                })
-                .unwrap_or(0)
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            0
-        }
-    } else {
+    let threshold = if override_thr != 0 {
         override_thr
+    } else {
+        base_threshold
     };
-
     if threshold != 0 {
         return n >= threshold;
     }
-
-    let cores = parallel_fft_threads();
-
-    let cache_bytes = {
-        let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
-        if override_bytes != 0 {
-            override_bytes
-        } else {
-            #[cfg(feature = "std")]
-            {
-                ENV_PAR_FFT_CACHE_BYTES
-                    .get_or_init(|| {
-                        std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
-                            .ok()
-                            .and_then(|v| v.parse::<usize>().ok())
-                    })
-                    .unwrap_or(32 * 1024)
+    #[cfg(feature = "std")]
+    {
+        let env = parallel_env();
+        let cache_bytes = {
+            let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+            if override_bytes != 0 {
+                override_bytes
+            } else {
+                env.cache_bytes
             }
-            #[cfg(not(feature = "std"))]
-            {
+        };
+        let per_core_work = {
+            let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+            if override_work != 0 {
+                override_work
+            } else {
+                env.per_core_work
+            }
+        };
+        let per_core_work = core::cmp::max(per_core_work, env.calibrated_per_core_work);
+        let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
+        let cache_elems = cache_bytes / bytes_per_elem;
+        let per_core_min = core::cmp::max(
+            cache_elems,
+            core::cmp::max(per_core_work, parallel_fft_block_size()),
+        );
+        n >= per_core_min * parallel_fft_threads()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let cache_bytes = {
+            let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+            if override_bytes != 0 {
+                override_bytes
+            } else {
                 32 * 1024
             }
-        }
-    };
-
-    let per_core_work = {
-        let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
-        if override_work != 0 {
-            override_work
-        } else {
-            #[cfg(feature = "std")]
-            {
-                ENV_PAR_FFT_PER_CORE_WORK
-                    .get_or_init(|| {
-                        std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
-                            .ok()
-                            .and_then(|v| v.parse::<usize>().ok())
-                    })
-                    .unwrap_or(4096)
-            }
-            #[cfg(not(feature = "std"))]
-            {
+        };
+        let per_core_work = {
+            let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+            if override_work != 0 {
+                override_work
+            } else {
                 4096
             }
-        }
-    };
-
-    #[cfg(all(feature = "parallel", feature = "std"))]
-    let per_core_work = core::cmp::max(per_core_work, calibrated_per_core_work());
-
-    let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
-    let cache_elems = cache_bytes / bytes_per_elem;
-    let per_core_min = core::cmp::max(
-        cache_elems,
-        core::cmp::max(per_core_work, parallel_fft_block_size()),
-    );
-
-    n >= per_core_min * cores
+        };
+        let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
+        let cache_elems = cache_bytes / bytes_per_elem;
+        let per_core_min = core::cmp::max(
+            cache_elems,
+            core::cmp::max(per_core_work, parallel_fft_block_size()),
+        );
+        n >= per_core_min * parallel_fft_threads()
+    }
 }
 
 pub use crate::num::{
@@ -514,6 +536,19 @@ impl<T: Float> ScalarFftImpl<T> {
     }
 
     pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+        #[cfg(all(feature = "parallel", feature = "std"))]
+        let threshold = parallel_fft_threshold();
+        #[cfg(not(all(feature = "parallel", feature = "std")))]
+        let threshold = 0;
+        self.stockham_fft_with_threshold(input, threshold)
+    }
+
+    fn stockham_fft_with_threshold(
+        &self,
+        input: &mut [Complex<T>],
+        _threshold: usize,
+    ) -> Result<(), FftError> {
+        let _ = _threshold;
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
@@ -622,7 +657,14 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if (n & (n - 1)) == 0 {
             // Power of two: use Stockham FFT
-            return self.stockham_fft(input);
+            #[cfg(all(feature = "parallel", feature = "std"))]
+            {
+                return self.stockham_fft_with_threshold(input, parallel_fft_threshold());
+            }
+            #[cfg(not(all(feature = "parallel", feature = "std")))]
+            {
+                return self.stockham_fft_with_threshold(input, 0);
+            }
         }
         // Bluestein's algorithm for non-power-of-two
         #[cfg(not(feature = "std"))]
@@ -677,7 +719,11 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         #[cfg(feature = "parallel")]
         {
-            if should_parallelize_fft(n)
+            #[cfg(all(feature = "parallel", feature = "std"))]
+            let threshold = parallel_fft_threshold();
+            #[cfg(not(all(feature = "parallel", feature = "std")))]
+            let threshold = 0;
+            if should_parallelize_fft(n, threshold)
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {
                 let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
@@ -2067,5 +2113,42 @@ mod coverage_tests {
             let mut data: Vec<Complex32> = (0..n).map(|i| Complex32::new(i as f32, 0.0)).collect();
             fft.fft_radix4(&mut data).unwrap();
         }
+    }
+}
+
+#[cfg(all(test, feature = "parallel", feature = "std"))]
+mod parallel_override_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn threshold_overrides_work() {
+        let _g = LOCK.lock().unwrap();
+        set_parallel_fft_threshold(0);
+        set_parallel_fft_threads(0);
+        set_parallel_fft_block_size(0);
+        set_parallel_fft_l1_cache(0);
+        set_parallel_fft_per_core_work(0);
+
+        let base = parallel_fft_threshold();
+        assert!(base > 0);
+        assert!(should_parallelize_fft(base, base));
+        assert!(!should_parallelize_fft(base - 1, base));
+
+        set_parallel_fft_threshold(base + 1);
+        assert!(!should_parallelize_fft(base, base));
+        set_parallel_fft_threshold(1);
+        assert!(should_parallelize_fft(2, base));
+        set_parallel_fft_threshold(0);
+
+        set_parallel_fft_threads(2);
+        assert_eq!(parallel_fft_threads(), 2);
+        set_parallel_fft_threads(0);
+
+        set_parallel_fft_block_size(64);
+        assert_eq!(parallel_fft_block_size(), 64);
+        set_parallel_fft_block_size(0);
     }
 }
