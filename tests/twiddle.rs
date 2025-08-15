@@ -14,7 +14,7 @@ fn planner_twiddles_f32_f64() {
 
     // Ensure bit-reversal table is correct
     let bitrev = p32.get_bitrev(8);
-    assert_eq!(&*bitrev, &[0, 4, 2, 6, 1, 5, 3, 7]);
+    assert_eq!(&*bitrev, &[1, 4, 3, 6]);
 
     // Ensure Bluestein cache lengths are correct for non-power-of-two
     #[cfg(feature = "std")]

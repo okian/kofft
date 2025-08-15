@@ -280,9 +280,19 @@ impl<T: Float> FftPlanner<T> {
 
 fn compute_bitrev_table(n: usize) -> Vec<usize> {
     let bits = n.trailing_zeros();
-    (0..n)
-        .map(|i| i.reverse_bits() >> (usize::BITS - bits))
-        .collect()
+    let mut table = Vec::new();
+    for i in 0..n {
+        let j = i.reverse_bits() >> (usize::BITS - bits);
+        if i < j {
+            table.push(i);
+            table.push(j);
+        }
+    }
+    if table.len() % 4 != 0 {
+        let pad = 4 - table.len() % 4;
+        table.resize(table.len() + pad, 0);
+    }
+    table
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -924,11 +934,8 @@ impl ScalarFftImpl<f32> {
             let mut planner = self.planner.borrow_mut();
             planner.get_bitrev(n)
         };
-        for i in 0..n {
-            let j = bitrev[i];
-            if i < j {
-                input.swap(i, j);
-            }
+        for pair in bitrev.chunks_exact(2) {
+            input.swap(pair[0], pair[1]);
         }
         let mut len = 2;
         while len <= n {
@@ -1042,11 +1049,8 @@ impl ScalarFftImpl<f32> {
             let mut planner = self.planner.borrow_mut();
             planner.get_bitrev(n)
         };
-        for i in 0..n {
-            let j = bitrev[i];
-            if i < j {
-                input.swap(i, j);
-            }
+        for pair in bitrev.chunks_exact(2) {
+            input.swap(pair[0], pair[1]);
         }
         let mut len = 2;
         while len <= n {
@@ -1103,6 +1107,48 @@ impl ScalarFftImpl<f32> {
 use core::arch::x86_64::*;
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn swap_pairs_sse(input: &mut [Complex32], table: &[usize], aligned: bool) {
+    let ptr = input.as_mut_ptr() as *mut f32;
+    let mut k = 0;
+    while k < table.len() {
+        let i = table[k];
+        let j = table[k + 1];
+        let pi = ptr.add(i * 2);
+        let pj = ptr.add(j * 2);
+        if aligned {
+            let vi = _mm_load_ps(pi);
+            let vj = _mm_load_ps(pj);
+            _mm_store_ps(pi, vj);
+            _mm_store_ps(pj, vi);
+        } else {
+            let vi = _mm_loadu_ps(pi);
+            let vj = _mm_loadu_ps(pj);
+            _mm_storeu_ps(pi, vj);
+            _mm_storeu_ps(pj, vi);
+        }
+        k += 2;
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn swap_pairs_avx(input: &mut [Complex32], table: &[usize]) {
+    let ptr = input.as_mut_ptr() as *mut f32;
+    let mut k = 0;
+    while k < table.len() {
+        let i = table[k];
+        let j = table[k + 1];
+        let pi = ptr.add(i * 2);
+        let pj = ptr.add(j * 2);
+        let v = _mm256_loadu2_m128(pj, pi);
+        _mm256_storeu2_m128(pi, pj, v);
+        k += 2;
+    }
+}
+
+
+#[cfg(target_arch = "x86_64")]
 #[derive(Default)]
 pub struct SimdFftX86_64Impl;
 
@@ -1132,53 +1178,10 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
             return Ok(());
         }
         let aligned = (input.as_ptr() as usize) % 16 == 0;
-        if n >= 4 {
+        if n > 1 {
             unsafe {
-                let mut j = 0;
-                let mut i = 1;
-                while i + 3 < n {
-                    let mut bit = n >> 1;
-                    while j & bit != 0 {
-                        j ^= bit;
-                        bit >>= 1;
-                    }
-                    j ^= bit;
-                    if i < j {
-                        let ptr_i = input.as_mut_ptr().add(i);
-                        let ptr_j = input.as_mut_ptr().add(j);
-                        if aligned {
-                            let re_i = _mm_load_ps(ptr_i as *const f32);
-                            let im_i = _mm_load_ps(ptr_i.add(1) as *const f32);
-                            let re_j = _mm_load_ps(ptr_j as *const f32);
-                            let im_j = _mm_load_ps(ptr_j.add(1) as *const f32);
-                            _mm_store_ps(ptr_i as *mut f32, re_j);
-                            _mm_store_ps(ptr_i.add(1) as *mut f32, im_j);
-                            _mm_store_ps(ptr_j as *mut f32, re_i);
-                            _mm_store_ps(ptr_j.add(1) as *mut f32, im_i);
-                        } else {
-                            let re_i = _mm_loadu_ps(ptr_i as *const f32);
-                            let im_i = _mm_loadu_ps(ptr_i.add(1) as *const f32);
-                            let re_j = _mm_loadu_ps(ptr_j as *const f32);
-                            let im_j = _mm_loadu_ps(ptr_j.add(1) as *const f32);
-                            _mm_storeu_ps(ptr_i as *mut f32, re_j);
-                            _mm_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
-                            _mm_storeu_ps(ptr_j as *mut f32, re_i);
-                            _mm_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
-                        }
-                    }
-                    i += 4;
-                }
-                for k in i..n {
-                    let mut bit = n >> 1;
-                    while j & bit != 0 {
-                        j ^= bit;
-                        bit >>= 1;
-                    }
-                    j ^= bit;
-                    if k < j {
-                        input.swap(k, j);
-                    }
-                }
+                let table = compute_bitrev_table(n);
+                swap_pairs_sse(input, &table, aligned);
             }
         }
 
@@ -1344,66 +1347,8 @@ unsafe fn fft_avx2(input: &mut [Complex32]) -> Result<(), FftError> {
         return Ok(());
     }
     let aligned = (input.as_ptr() as usize) % 32 == 0;
-    if n >= 8 {
-        let mut j = 0;
-        let mut i = 1;
-        while i + 7 < n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                let ptr_i = input.as_mut_ptr().add(i);
-                let ptr_j = input.as_mut_ptr().add(j);
-                if aligned {
-                    let re_i = _mm256_load_ps(ptr_i as *const f32);
-                    let im_i = _mm256_load_ps(ptr_i.add(1) as *const f32);
-                    let re_j = _mm256_load_ps(ptr_j as *const f32);
-                    let im_j = _mm256_load_ps(ptr_j.add(1) as *const f32);
-                    _mm256_store_ps(ptr_i as *mut f32, re_j);
-                    _mm256_store_ps(ptr_i.add(1) as *mut f32, im_j);
-                    _mm256_store_ps(ptr_j as *mut f32, re_i);
-                    _mm256_store_ps(ptr_j.add(1) as *mut f32, im_i);
-                } else {
-                    let re_i = _mm256_loadu_ps(ptr_i as *const f32);
-                    let im_i = _mm256_loadu_ps(ptr_i.add(1) as *const f32);
-                    let re_j = _mm256_loadu_ps(ptr_j as *const f32);
-                    let im_j = _mm256_loadu_ps(ptr_j.add(1) as *const f32);
-                    _mm256_storeu_ps(ptr_i as *mut f32, re_j);
-                    _mm256_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
-                    _mm256_storeu_ps(ptr_j as *mut f32, re_i);
-                    _mm256_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
-                }
-            }
-            i += 8;
-        }
-        for k in i..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if k < j {
-                input.swap(k, j);
-            }
-        }
-    } else {
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-    }
+    let table = compute_bitrev_table(n);
+    swap_pairs_avx(input, &table);
     if n % 8 != 0 {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft(input)?;
@@ -1505,66 +1450,8 @@ unsafe fn fft_avx512(input: &mut [Complex32]) -> Result<(), FftError> {
         return Ok(());
     }
     let aligned = (input.as_ptr() as usize) % 64 == 0;
-    if n >= 16 {
-        let mut j = 0;
-        let mut i = 1;
-        while i + 15 < n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                let ptr_i = input.as_mut_ptr().add(i);
-                let ptr_j = input.as_mut_ptr().add(j);
-                if aligned {
-                    let re_i = _mm512_load_ps(ptr_i as *const f32);
-                    let im_i = _mm512_load_ps(ptr_i.add(1) as *const f32);
-                    let re_j = _mm512_load_ps(ptr_j as *const f32);
-                    let im_j = _mm512_load_ps(ptr_j.add(1) as *const f32);
-                    _mm512_store_ps(ptr_i as *mut f32, re_j);
-                    _mm512_store_ps(ptr_i.add(1) as *mut f32, im_j);
-                    _mm512_store_ps(ptr_j as *mut f32, re_i);
-                    _mm512_store_ps(ptr_j.add(1) as *mut f32, im_i);
-                } else {
-                    let re_i = _mm512_loadu_ps(ptr_i as *const f32);
-                    let im_i = _mm512_loadu_ps(ptr_i.add(1) as *const f32);
-                    let re_j = _mm512_loadu_ps(ptr_j as *const f32);
-                    let im_j = _mm512_loadu_ps(ptr_j.add(1) as *const f32);
-                    _mm512_storeu_ps(ptr_i as *mut f32, re_j);
-                    _mm512_storeu_ps(ptr_i.add(1) as *mut f32, im_j);
-                    _mm512_storeu_ps(ptr_j as *mut f32, re_i);
-                    _mm512_storeu_ps(ptr_j.add(1) as *mut f32, im_i);
-                }
-            }
-            i += 16;
-        }
-        for k in i..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if k < j {
-                input.swap(k, j);
-            }
-        }
-    } else {
-        let mut j = 0;
-        for i in 1..n {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
-        }
-    }
+    let table = compute_bitrev_table(n);
+    swap_pairs_avx(input, &table);
     if n % 16 != 0 {
         let scalar = ScalarFftImpl::<f32>::default();
         scalar.fft(input)?;
