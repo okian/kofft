@@ -23,8 +23,6 @@ use crate::fft_kernels::{fft16, fft2, fft4, fft8};
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-#[cfg(feature = "parallel")]
-use rayon::scope_fifo;
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
@@ -533,83 +531,56 @@ impl<T: Float> ScalarFftImpl<T> {
             }
             return Ok(());
         }
+        // Stockham auto-sort FFT using a double-buffered approach. This
+        // eliminates the bit-reversal permutation and keeps the output in
+        // natural order while ensuring sequential memory access.
+        let (twiddles, mut scratch) = {
+            let mut planner = self.planner.borrow_mut();
+            let twiddles = planner.get_twiddles(n);
+            let scratch = core::mem::take(&mut planner.scratch);
+            (twiddles, scratch)
+        };
 
-        // bit-reversal permutation
-        let mut j = 0usize;
-        for i in 1..n - 1 {
-            let mut bit = n >> 1;
-            while j & bit != 0 {
-                j ^= bit;
-                bit >>= 1;
-            }
-            j ^= bit;
-            if i < j {
-                input.swap(i, j);
-            }
+        if scratch.len() < n {
+            scratch.resize(n, Complex::zero());
         }
-        let mut len = 2;
-        while len <= n {
-            // Retrieve the contiguous twiddle table for this stage length.
-            let twiddles = {
-                let mut planner = self.planner.borrow_mut();
-                planner.get_twiddles(len)
-            };
-            #[cfg(feature = "parallel")]
-            {
-                if should_parallelize_fft(n)
-                    && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
-                {
-                    let groups = n / len;
-                    let block = parallel_fft_block_size().max(1);
-                    let input_ptr = input.as_mut_ptr() as usize;
-                    let twiddles_ptr = twiddles.as_ptr() as usize;
-                    let num_chunks = groups.div_ceil(block);
-                    scope_fifo(|scope| {
-                        for chunk in 0..num_chunks {
-                            scope.spawn_fifo(move |_| unsafe {
-                                let input_ptr = input_ptr as *mut Complex32;
-                                let twiddles_ptr = twiddles_ptr as *const Complex32;
-                                let start_group = chunk * block;
-                                let end_group = (start_group + block).min(groups);
-                                for g in start_group..end_group {
-                                    let base = input_ptr.add(g * len);
-                                    for j in 0..(len / 2) {
-                                        let w = *twiddles_ptr.add(j);
-                                        let u = *base.add(j);
-                                        let v = (*base.add(j + len / 2)).mul(w);
-                                        *base.add(j) = u.add(v);
-                                        *base.add(j + len / 2) = u.sub(v);
-                                    }
-                                }
-                            });
-                        }
-                    });
-                } else {
-                    for i in (0..n).step_by(len) {
-                        for j in 0..(len / 2) {
-                            let w = twiddles[j];
-                            let u = input[i + j];
-                            let v = input[i + j + len / 2].mul(w);
-                            input[i + j] = u.add(v);
-                            input[i + j + len / 2] = u.sub(v);
-                        }
-                    }
+
+        // Keep the raw pointer to the original input so we can detect if the
+        // final result resides in the scratch buffer without re-borrowing
+        // `input` later.
+        let input_ptr = input.as_mut_ptr();
+        let mut src: &mut [Complex<T>] = input;
+        let mut dst: &mut [Complex<T>] = &mut scratch[..n];
+        let mut n1 = 1usize;
+        let mut n2 = n;
+        while n1 < n {
+            n2 >>= 1;
+            for k in 0..n1 {
+                let w = twiddles[k * n2];
+                for j in 0..n2 {
+                    let u = src[j + n2 * (2 * k)];
+                    let v = src[j + n2 * (2 * k + 1)].mul(w);
+                    dst[j + n2 * k] = u.add(v);
+                    dst[j + n2 * (k + n1)] = u.sub(v);
                 }
             }
-            #[cfg(not(feature = "parallel"))]
-            {
-                for i in (0..n).step_by(len) {
-                    for j in 0..(len / 2) {
-                        let w = twiddles[j];
-                        let u = input[i + j];
-                        let v = input[i + j + len / 2].mul(w);
-                        input[i + j] = u.add(v);
-                        input[i + j + len / 2] = u.sub(v);
-                    }
-                }
-            }
-            len <<= 1;
+            core::mem::swap(&mut src, &mut dst);
+            n1 <<= 1;
         }
+
+        if src.as_ptr() != input_ptr {
+            // SAFETY: `src` points to `scratch` and `input_ptr` to the original
+            // buffer; both are valid for `n` elements and non-overlapping.
+            unsafe {
+                core::ptr::copy_nonoverlapping(src.as_ptr(), input_ptr, n);
+            }
+        }
+
+        {
+            let mut planner = self.planner.borrow_mut();
+            planner.scratch = scratch;
+        }
+
         Ok(())
     }
 }
