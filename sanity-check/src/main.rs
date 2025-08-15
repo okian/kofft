@@ -14,6 +14,8 @@ use rustfft::FftPlanner;
 use std::error::Error;
 use std::fs::File;
 use std::path::PathBuf;
+use svg::node::element::Rectangle;
+use svg::Document;
 
 /// Compare kofft STFT with rustfft on a FLAC file and save heatmaps.
 #[derive(ValueEnum, Clone)]
@@ -46,6 +48,10 @@ struct Args {
     /// Bit depth for the output PNG
     #[arg(long, value_enum, default_value_t = PngDepth::Eight)]
     png_depth: PngDepth,
+
+    /// Optional path to save an SVG spectrogram
+    #[arg(long)]
+    svg_output: Option<PathBuf>,
 }
 
 fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
@@ -119,6 +125,28 @@ fn save_png(
             encoder.write_image(img.as_raw().as_bytes(), w, h, ColorType::Rgb16)?;
         }
     }
+    Ok(())
+}
+
+fn save_svg(img: &ImageBuffer<Rgb<u16>, Vec<u16>>, path: &str) -> Result<(), Box<dyn Error>> {
+    let (w, h) = (img.width(), img.height());
+    let mut document = Document::new().set("viewBox", (0, 0, w, h));
+    for (x, y, pixel) in img.enumerate_pixels() {
+        let color = format!(
+            "#{:02x}{:02x}{:02x}",
+            (pixel[0] >> 8),
+            (pixel[1] >> 8),
+            (pixel[2] >> 8)
+        );
+        let rect = Rectangle::new()
+            .set("x", x)
+            .set("y", y)
+            .set("width", 1)
+            .set("height", 1)
+            .set("fill", color);
+        document = document.add(rect);
+    }
+    svg::save(path, &document)?;
     Ok(())
 }
 
@@ -205,6 +233,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     heatmap_bar.finish_and_clear();
     save_png(&img_kofft, "kofft_spectrogram.png", args.png_depth)?;
     save_png(&img_ref, "reference_spectrogram.png", args.png_depth)?;
+    if let Some(path) = args.svg_output.as_ref() {
+        save_svg(&img_kofft, path.to_str().unwrap())?;
+    }
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");
     Ok(())
 }
@@ -236,5 +267,16 @@ mod tests {
 
         fs::remove_file(path8).unwrap();
         fs::remove_file(path16).unwrap();
+    }
+
+    #[test]
+    fn saves_svg_output() {
+        let img: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(1, 1, Rgb([65535, 0, 0]));
+        let tmp = std::env::temp_dir().join("test.svg");
+        save_svg(&img, tmp.to_str().unwrap()).unwrap();
+        let content = fs::read_to_string(&tmp).unwrap();
+        assert!(content.contains("<svg"));
+        fs::remove_file(tmp).unwrap();
     }
 }
