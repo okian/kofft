@@ -39,6 +39,26 @@
 //! let mut scratch = vec![0.0; out.len()];
 //! istft(&mut frames, &window, hop, &mut out, &mut scratch, &fft).unwrap();
 //! ```
+//!
+//! Streaming ISTFT:
+//! ```no_run
+//! use kofft::stft::{StftStream, IstftStream};
+//! use kofft::window::hann;
+//! use kofft::fft::{Complex32, ScalarFftImpl};
+//!
+//! let signal = vec![1.0, 2.0, 3.0, 4.0];
+//! let window = hann(2);
+//! let hop = 1;
+//! let fft = ScalarFftImpl::<f32>::default();
+//! let mut stft_stream = StftStream::new(&signal, &window, hop, &fft).unwrap();
+//! let mut istft_stream = IstftStream::new(window.len(), hop, window.clone(), &fft).unwrap();
+//! let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
+//! let mut out = Vec::new();
+//! while stft_stream.next_frame(&mut frame).unwrap() {
+//!     out.extend_from_slice(istft_stream.push_frame(&frame).unwrap());
+//! }
+//! out.extend_from_slice(istft_stream.flush());
+//! ```
 
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
@@ -374,12 +394,20 @@ pub fn inverse_frame<Fft: FftImpl<f32>>(
     Ok(())
 }
 
+/// Streaming inverse STFT (ISTFT) helper implementing overlap-add with
+/// normalization.
+///
+/// Frames are pushed using [`push_frame`], which returns the next `hop` samples
+/// of the reconstructed signal. After the final frame has been processed, call
+/// [`flush`](IstftStream::flush) to obtain the remaining samples.
 pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
     win_len: usize,
     hop: usize,
     window: alloc::vec::Vec<f32>,
     fft: &'a Fft,
     buffer: alloc::vec::Vec<f32>,
+    /// Buffer storing the sum of squared window values for normalization.
+    norm_buf: alloc::vec::Vec<f32>,
     time_buf: alloc::vec::Vec<crate::fft::Complex32>,
     buf_pos: usize,
     out_pos: usize,
@@ -397,6 +425,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
             return Err(FftError::InvalidHopSize);
         }
         let buffer = vec![0.0f32; win_len + hop * 2];
+        let norm_buf = vec![0.0f32; win_len + hop * 2];
         let time_buf = vec![crate::fft::Complex32::new(0.0, 0.0); win_len];
         Ok(Self {
             win_len,
@@ -404,6 +433,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
             window,
             fft,
             buffer,
+            norm_buf,
             time_buf,
             buf_pos: 0,
             out_pos: 0,
@@ -411,7 +441,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         })
     }
 
-    /// Feed in the next STFT frame, get a slice of output samples (may be empty if not enough overlap)
+    /// Feed in the next STFT frame and obtain a slice of normalized output samples.
+    ///
+    /// Returns a slice of length `hop` containing the next chunk of time-domain
+    /// signal. Remaining samples after all frames have been pushed can be
+    /// retrieved via [`flush`].
     pub fn push_frame(&mut self, frame: &[crate::fft::Complex32]) -> Result<&[f32], FftError> {
         if frame.len() != self.win_len {
             return Err(FftError::MismatchedLengths);
@@ -420,24 +454,60 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         self.fft.ifft(&mut self.time_buf)?;
         // Window and overlap-add
         for i in 0..self.win_len {
-            let val = self.time_buf[i].re * self.window[i];
-            self.buffer[self.buf_pos + i] += val;
+            let win = self.window[i];
+            let val = self.time_buf[i].re * win;
+            let idx = self.buf_pos + i;
+            self.buffer[idx] += val;
+            self.norm_buf[idx] += win * win;
         }
         self.frame_count += 1;
         // Output is available after the first frame
         let out_start = self.out_pos;
         let out_end = self.out_pos + self.hop;
+        // Normalize output before returning
+        for i in out_start..out_end {
+            if self.norm_buf[i] > 1e-8 {
+                self.buffer[i] /= self.norm_buf[i];
+            }
+            self.norm_buf[i] = 0.0;
+        }
         self.out_pos += self.hop;
         self.buf_pos += self.hop;
         // Zero the region that will be written next time
         if self.buf_pos + self.win_len > self.buffer.len() {
             // Extend buffer if needed
-            self.buffer.resize(self.buf_pos + self.win_len, 0.0);
+            let new_len = self.buf_pos + self.win_len;
+            self.buffer.resize(new_len, 0.0);
+            self.norm_buf.resize(new_len, 0.0);
         }
         for i in 0..self.hop {
-            self.buffer[self.buf_pos + self.win_len - self.hop + i] = 0.0;
+            let idx = self.buf_pos + self.win_len - self.hop + i;
+            self.buffer[idx] = 0.0;
+            self.norm_buf[idx] = 0.0;
         }
         Ok(&self.buffer[out_start..out_end])
+    }
+
+    /// Return any remaining normalized samples after all frames have been
+    /// processed.
+    ///
+    /// This should be called after the final frame is pushed to obtain the
+    /// tail of the signal (`win_len - hop` samples). Subsequent calls will
+    /// return an empty slice.
+    pub fn flush(&mut self) -> &[f32] {
+        let out_start = self.out_pos;
+        let out_end = self.buf_pos + self.win_len - self.hop;
+        if out_start >= out_end {
+            return &[];
+        }
+        for i in out_start..out_end {
+            if self.norm_buf[i] > 1e-8 {
+                self.buffer[i] /= self.norm_buf[i];
+            }
+            self.norm_buf[i] = 0.0;
+        }
+        self.out_pos = out_end;
+        &self.buffer[out_start..out_end]
     }
 }
 
@@ -679,13 +749,11 @@ mod edge_case_tests {
             let out = istft_stream.push_frame(&frame).unwrap();
             output.extend_from_slice(out);
         }
-        frame.iter_mut().for_each(|c| *c = Complex32::new(0.0, 0.0));
-        for _ in 0..win_len {
-            let out = istft_stream.push_frame(&frame).unwrap();
-            output.extend_from_slice(out);
-        }
+        let tail = istft_stream.flush();
+        output.extend_from_slice(tail);
         output.truncate(signal.len());
         assert!(output.is_empty());
+        assert!(tail.is_empty());
     }
 }
 
