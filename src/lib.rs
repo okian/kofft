@@ -69,6 +69,9 @@ extern crate alloc;
 extern crate std;
 
 pub mod fft;
+#[cfg(feature = "internal-tests")]
+pub mod fft_kernels;
+#[cfg(not(feature = "internal-tests"))]
 mod fft_kernels;
 /// Real-input FFT helpers built on top of complex FFT routines
 /// for converting between real and complex domains.

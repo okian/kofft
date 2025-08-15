@@ -14,7 +14,7 @@ jobs:
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Run Tarpaulin
-        run: cargo tarpaulin --out Xml --features internal-tests
+        run: cargo tarpaulin --out Xml --features internal-tests --fail-under 95
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

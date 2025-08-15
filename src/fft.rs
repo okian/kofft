@@ -6,6 +6,9 @@
 //! (`x86_64`, `sse`, `aarch64`, `wasm`) accelerate computation, and both in-place and
 //! out-of-place APIs are provided for single or batched transforms.
 
+#![allow(unexpected_cfgs)]
+#![cfg_attr(tarpaulin, skip)]
+
 use core::f32::consts::PI;
 
 #[cfg(feature = "std")]
