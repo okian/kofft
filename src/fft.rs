@@ -458,20 +458,13 @@ impl<T: Float> ScalarFftImpl<T> {
         }
     }
 
-    pub fn split_radix_fft(
-        &self,
-        input: &mut [Complex<T>],
-        scratch: &mut [Complex<T>],
-    ) -> Result<(), FftError> {
+    pub fn split_radix_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
         }
         if !n.is_power_of_two() {
             return self.fft(input);
-        }
-        if scratch.len() < n {
-            return Err(FftError::MismatchedLengths);
         }
         if n <= 16 {
             match n {
@@ -484,45 +477,32 @@ impl<T: Float> ScalarFftImpl<T> {
             return Ok(());
         }
 
+        // Use precomputed bit-reversal table and perform the FFT in-place.
         let mut planner = self.planner.borrow_mut();
-        let bits = n.trailing_zeros();
-        for i in 0..n {
-            let rev = i.reverse_bits() >> (usize::BITS - bits);
-            scratch[i] = input[rev];
+        let bitrev = planner.get_bitrev(n);
+        for pair in bitrev.chunks_exact(2) {
+            if pair[0] != pair[1] {
+                input.swap(pair[0], pair[1]);
+            }
         }
 
         let twiddles = planner.get_twiddles(n);
 
-        // Ping-pong buffers for iterative Cooley-Tukey FFT
-        let mut in_buf: &mut [Complex<T>] = scratch;
-        let mut out_buf: &mut [Complex<T>] = input;
         let mut size = 2;
-        let mut out_is_input = true;
-
         while size <= n {
             let half = size / 2;
             let step = n / size;
             for start in (0..n).step_by(size) {
                 let mut k = 0;
                 for j in 0..half {
-                    let u = in_buf[start + j];
-                    let t = in_buf[start + j + half].mul(twiddles[k]);
-                    out_buf[start + j] = u.add(t);
-                    out_buf[start + j + half] = u.sub(t);
+                    let u = input[start + j];
+                    let t = input[start + j + half].mul(twiddles[k]);
+                    input[start + j] = u.add(t);
+                    input[start + j + half] = u.sub(t);
                     k += step;
                 }
             }
-            if size == n {
-                break;
-            }
             size <<= 1;
-            core::mem::swap(&mut in_buf, &mut out_buf);
-            out_is_input = !out_is_input;
-        }
-
-        // Ensure results end up in `input`
-        if !out_is_input {
-            input.copy_from_slice(scratch);
         }
         Ok(())
     }
@@ -549,13 +529,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         }
         if (n & (n - 1)) == 0 {
             // Power of two: use split-radix FFT
-            let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
-            unsafe {
-                scratch.set_len(n);
-                let scratch_slice =
-                    core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut Complex<T>, n);
-                return self.split_radix_fft(input, scratch_slice);
-            }
+            return self.split_radix_fft(input);
         }
         // Bluestein's algorithm for non-power-of-two
         #[cfg(not(feature = "std"))]
@@ -761,16 +735,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         match chosen {
             FftStrategy::Radix2 => self.fft(input),
             FftStrategy::Radix4 => self.fft_radix4(input),
-            FftStrategy::SplitRadix => {
-                let n = input.len();
-                let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
-                unsafe {
-                    scratch.set_len(n);
-                    let scratch_slice =
-                        core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut Complex<T>, n);
-                    self.split_radix_fft(input, scratch_slice)
-                }
-            }
+            FftStrategy::SplitRadix => self.split_radix_fft(input),
             FftStrategy::Auto => self.fft(input),
         }
     }
