@@ -5,6 +5,8 @@
 extern crate alloc;
 use crate::fft::{Complex32, FftError, ScalarFftImpl};
 use crate::rfft::RfftPlanner;
+#[cfg(not(feature = "std"))]
+use crate::num::Float;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;

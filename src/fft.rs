@@ -7,8 +7,6 @@
 //! out-of-place APIs are provided for single or batched transforms.
 
 use core::f32::consts::PI;
-
-#[cfg(feature = "std")]
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 #[cfg(all(feature = "parallel", feature = "std"))]
@@ -885,7 +883,10 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         };
         match chosen {
             FftStrategy::Radix2 => self.fft(input),
+            #[cfg(feature = "std")]
             FftStrategy::Radix4 => self.fft_radix4(input),
+            #[cfg(not(feature = "std"))]
+            FftStrategy::Radix4 => self.fft(input),
             FftStrategy::SplitRadix => self.stockham_fft(input),
             FftStrategy::Auto => self.fft(input),
         }
@@ -1141,7 +1142,14 @@ impl ScalarFftImpl<f32> {
         if factors.iter().all(|&f| f == 2 || f == 4) {
             // Use radix-2/radix-4 as appropriate
             if factors.iter().all(|&f| f == 4) {
-                self.fft_radix4(input)
+                #[cfg(feature = "std")]
+                {
+                    self.fft_radix4(input)
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    self.fft(input)
+                }
             } else {
                 self.fft_radix2(input)
             }

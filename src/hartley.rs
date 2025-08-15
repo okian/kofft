@@ -7,9 +7,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use libm::{cosf, sinf};
 
-#[cfg(not(feature = "std"))]
-use libm::{cosf, sinf};
-
 /// Discrete Hartley Transform (DHT)
 #[cfg(feature = "std")]
 pub fn dht(input: &[f32]) -> Vec<f32> {
@@ -31,7 +28,6 @@ pub fn dht(input: &[f32]) -> Vec<f32> {
 
 #[cfg(not(feature = "std"))]
 pub fn dht(input: &[f32]) -> Vec<f32> {
-    use libm::{cosf, sinf};
     let n = input.len();
     let mut output = vec![0.0; n];
     let factor = 2.0 * core::f32::consts::PI / n as f32;
