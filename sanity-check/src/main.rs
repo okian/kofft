@@ -157,7 +157,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let win_len = args.win_len;
     let hop = win_len / 2;
     let window = hann(win_len);
-    let frames = samples.len().saturating_sub(win_len) / hop + 1;
+    let frames = samples.len().div_ceil(hop);
 
     // kofft STFT
     let mut kofft_frames = vec![vec![]; frames];
@@ -278,5 +278,15 @@ mod tests {
         let content = fs::read_to_string(&tmp).unwrap();
         assert!(content.contains("<svg"));
         fs::remove_file(tmp).unwrap();
+    }
+
+    #[test]
+    fn stft_accepts_div_ceil_frames() {
+        let signal = vec![0.0; 10];
+        let window = hann(4);
+        let hop = 2;
+        let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
+        let fft = ScalarFftImpl::<f32>::default();
+        assert!(stft(&signal, &window, hop, &mut frames, &fft).is_ok());
     }
 }
