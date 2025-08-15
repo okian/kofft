@@ -14,12 +14,12 @@ fn dct2_naive(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0f32; n];
     let factor = std::f32::consts::PI / n as f32;
-    for k in 0..n {
+    for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
-        for i in 0..n {
-            sum += input[i] * (factor * (i as f32 + 0.5) * k as f32).cos();
+        for (i, &val) in input.iter().enumerate() {
+            sum += val * (factor * (i as f32 + 0.5) * k as f32).cos();
         }
-        output[k] = sum;
+        *out = sum;
     }
     output
 }
@@ -33,9 +33,9 @@ impl Dct2Planner {
     fn new(n: usize) -> Self {
         let factor = std::f32::consts::PI / n as f32;
         let mut cos_table = vec![vec![0.0f32; n]; n];
-        for k in 0..n {
-            for i in 0..n {
-                cos_table[k][i] = (factor * (i as f32 + 0.5) * k as f32).cos();
+        for (k, row) in cos_table.iter_mut().enumerate() {
+            for (i, val) in row.iter_mut().enumerate() {
+                *val = (factor * (i as f32 + 0.5) * k as f32).cos();
             }
         }
         Self { cos_table }
@@ -44,12 +44,12 @@ impl Dct2Planner {
     fn dct2(&self, input: &[f32]) -> Vec<f32> {
         let n = input.len();
         let mut output = vec![0.0f32; n];
-        for k in 0..n {
+        for (row, out) in self.cos_table.iter().zip(output.iter_mut()) {
             let mut sum = 0.0;
-            for i in 0..n {
-                sum += input[i] * self.cos_table[k][i];
+            for (val, cos_val) in input.iter().zip(row.iter()) {
+                sum += *val * *cos_val;
             }
-            output[k] = sum;
+            *out = sum;
         }
         output
     }
