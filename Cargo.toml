@@ -35,12 +35,15 @@ num_cpus = { version = "1.16", optional = true }
 default = ["std"]
 std = ["num_cpus"]
 parallel = ["rayon"]
-x86_64 = []
-sse = []
-aarch64 = []
-wasm = []
-avx2 = []
-avx512 = []
+# Architecture-specific SIMD backends
+x86_64 = []      # AVX/SSE on x86_64
+sse = []         # Force SSE2-only backend
+aarch64 = []     # NEON on 64-bit ARM
+wasm = []        # WebAssembly SIMD128
+avx2 = []        # Enable AVX2-specific code paths
+avx512 = []      # Enable AVX-512 code paths
+
+# Miscellaneous features
 slow = []
 internal-tests = ["proptest", "rand"]
 compile-time-rfft = []

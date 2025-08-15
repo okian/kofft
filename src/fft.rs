@@ -13,6 +13,7 @@ use alloc::sync::Arc;
 #[cfg(all(feature = "parallel", feature = "std"))]
 use alloc::vec;
 use alloc::vec::Vec;
+use core::any::Any;
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
 use hashbrown::HashMap;
@@ -372,7 +373,7 @@ pub enum FftStrategy {
 }
 
 // Refactor FftImpl and ScalarFftImpl to be generic over T: Float
-pub trait FftImpl<T: Float> {
+pub trait FftImpl<T: Float>: Any {
     fn fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError>;
     fn ifft(&self, input: &mut [Complex<T>]) -> Result<(), FftError>;
     fn fft_out_of_place(
@@ -1241,6 +1242,158 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
+#[derive(Default)]
+pub struct SimdFftAarch64Impl;
+
+#[cfg(target_arch = "aarch64")]
+impl SimdFftAarch64Impl {
+    #[cfg(target_feature = "neon")]
+    fn fft_simd(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        // Placeholder SIMD implementation using the Stockham FFT with cached
+        // twiddle factors to enable future vectorization without recomputation.
+        ScalarFftImpl::<f32>::default().stockham_fft(input)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl FftImpl<f32> for SimdFftAarch64Impl {
+    fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        #[cfg(target_feature = "neon")]
+        {
+            return self.fft_simd(input);
+        }
+        let scalar = ScalarFftImpl::<f32>::default();
+        if input.len().is_power_of_two() {
+            scalar.stockham_fft(input)
+        } else {
+            scalar.fft(input)
+        }
+    }
+    fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().ifft(input)
+    }
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().fft_strided(input, stride, scratch)
+    }
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().ifft_strided(input, stride, scratch)
+    }
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default()
+            .fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default()
+            .ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().fft_with_strategy(input, strategy)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+pub struct SimdFftWasmImpl;
+
+#[cfg(target_arch = "wasm32")]
+impl SimdFftWasmImpl {
+    #[cfg(target_feature = "simd128")]
+    fn fft_simd(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        // Placeholder SIMD implementation delegating to Stockham FFT with
+        // precomputed twiddles for future vectorization.
+        ScalarFftImpl::<f32>::default().stockham_fft(input)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl FftImpl<f32> for SimdFftWasmImpl {
+    fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        #[cfg(target_feature = "simd128")]
+        {
+            return self.fft_simd(input);
+        }
+        let scalar = ScalarFftImpl::<f32>::default();
+        if input.len().is_power_of_two() {
+            scalar.stockham_fft(input)
+        } else {
+            scalar.fft(input)
+        }
+    }
+    fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().ifft(input)
+    }
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().fft_strided(input, stride, scratch)
+    }
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().ifft_strided(input, stride, scratch)
+    }
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default()
+            .fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default()
+            .ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
+        ScalarFftImpl::<f32>::default().fft_with_strategy(input, strategy)
+    }
+}
+
 /// Returns the best available FFT implementation for the current platform and enabled features.
 pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     #[cfg(all(target_arch = "x86_64", feature = "std"))]
@@ -1257,8 +1410,21 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
             return Box::new(SimdFftX86_64Impl);
         }
     }
-    // TODO: Add optimized implementations for other architectures (e.g., AArch64, WASM).
-    // For now, fall back to the portable scalar version on non-x86_64 targets.
+    #[cfg(all(target_arch = "aarch64", feature = "std"))]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return Box::new(SimdFftAarch64Impl);
+        }
+    }
+    #[cfg(all(target_arch = "aarch64", not(feature = "std"), target_feature = "neon"))]
+    {
+        return Box::new(SimdFftAarch64Impl);
+    }
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        return Box::new(SimdFftWasmImpl);
+    }
+    // Fall back to the portable scalar version on unsupported targets.
     Box::new(ScalarFftImpl::<f32>::default())
 }
 
