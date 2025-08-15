@@ -7,6 +7,8 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
+use hashbrown::HashMap;
+
 use core::any::TypeId;
 use core::mem::MaybeUninit;
 
@@ -35,7 +37,7 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
 
 /// Planner that caches RFFT twiddle tables by transform length.
 pub struct RfftPlanner<T: Float> {
-    cache: Vec<(usize, Arc<[Complex<T>]>)>,
+    cache: HashMap<usize, Arc<[Complex<T>]>>,
     scratch: Vec<Complex<T>>,
 }
 
@@ -54,7 +56,7 @@ impl<T: Float> RfftPlanner<T> {
 
     /// Create a new [`RfftPlanner`].
     pub fn new() -> Self {
-        let mut cache: Vec<(usize, Arc<[Complex<T>]>)> = Vec::new();
+        let mut cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
 
         #[cfg(feature = "compile-time-rfft")]
         {
@@ -62,35 +64,36 @@ impl<T: Float> RfftPlanner<T> {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
                 for &(m, table) in precomputed::F32 {
                     let tbl: &'static [Complex<T>] = unsafe { transmute(table) };
-                    cache.push((m, Arc::from(tbl)));
+                    cache.insert(m, Arc::from(tbl));
                 }
             } else if TypeId::of::<T>() == TypeId::of::<f64>() {
                 for &(m, table) in precomputed::F64 {
                     let tbl: &'static [Complex<T>] = unsafe { transmute(table) };
-                    cache.push((m, Arc::from(tbl)));
+                    cache.insert(m, Arc::from(tbl));
                 }
             }
         }
 
         for &m in Self::PRECOMPUTED {
-            if cache.iter().all(|(len, _)| *len != m) {
+            cache.entry(m).or_insert_with(|| {
                 let vec = build_twiddle_table::<T>(m);
-                cache.push((m, Arc::from(vec)));
-            }
+                Arc::from(vec)
+            });
         }
 
-        Self { cache, scratch: Vec::new() }
+        Self {
+            cache,
+            scratch: Vec::new(),
+        }
     }
 
     /// Retrieve or build the twiddle table for length `m`.
     pub fn get_twiddles(&mut self, m: usize) -> &[Complex<T>] {
-        if let Some(pos) = self.cache.iter().position(|(len, _)| *len == m) {
-            self.cache[pos].1.as_ref()
-        } else {
+        if !self.cache.contains_key(&m) {
             let vec = build_twiddle_table::<T>(m);
-            self.cache.push((m, Arc::from(vec)));
-            self.cache.last().unwrap().1.as_ref()
+            self.cache.insert(m, Arc::from(vec));
         }
+        self.cache.get(&m).unwrap().as_ref()
     }
 
     /// Compute a real-input FFT using cached twiddle tables.
