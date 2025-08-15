@@ -23,9 +23,9 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 Latest benchmarks on an Intel Xeon Platinum 8370C show:
 
-- 1024-point complex FFT: ~81 µs
-- 4096-point complex FFT: ~1.0 ms
-- 1,048,576-point real FFT: ~67 ms
+- 1024-point complex FFT: ~7.1 µs
+- 4096-point complex FFT: ~28 µs
+- 1,048,576-point real FFT: ~11 ms
 
 See [benchmarks/latest.json](benchmarks/latest.json) for full results.
 
@@ -312,7 +312,12 @@ cargo run --example ndfft_usage
 cargo run --example embedded_example
 cargo run --example benchmark
 cargo run --example rfft_usage
+cargo run --example dct_usage --release
 ```
+
+`dct_usage` compares a naive DCT-II against a planner that caches cosine
+values and reports the average runtime of each approach, demonstrating the
+benefit of reusing planning data.
 
 ## Advanced Features
 
