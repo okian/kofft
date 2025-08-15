@@ -22,8 +22,6 @@ use crate::fft_kernels::{fft16, fft2, fft4, fft8};
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-#[cfg(feature = "parallel")]
-use rayon::scope_fifo;
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
@@ -546,6 +544,9 @@ impl<T: Float> ScalarFftImpl<T> {
                 input.swap(i, j);
             }
         }
+        #[cfg(feature = "parallel")]
+        let use_par = should_parallelize_fft(n)
+            && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>();
         let mut len = 2;
         while len <= n {
             // Retrieve the contiguous twiddle table for this stage length.
@@ -555,32 +556,27 @@ impl<T: Float> ScalarFftImpl<T> {
             };
             #[cfg(feature = "parallel")]
             {
-                if should_parallelize_fft(n)
-                    && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
-                {
-                    let groups = n / len;
+                if use_par {
                     let block = parallel_fft_block_size().max(1);
-                    let input_ptr = input.as_mut_ptr() as usize;
-                    let twiddles_ptr = twiddles.as_ptr() as usize;
-                    let num_chunks = groups.div_ceil(block);
-                    scope_fifo(|scope| {
-                        for chunk in 0..num_chunks {
-                            scope.spawn_fifo(move |_| unsafe {
-                                let input_ptr = input_ptr as *mut Complex32;
-                                let twiddles_ptr = twiddles_ptr as *const Complex32;
-                                let start_group = chunk * block;
-                                let end_group = (start_group + block).min(groups);
-                                for g in start_group..end_group {
-                                    let base = input_ptr.add(g * len);
-                                    for j in 0..(len / 2) {
-                                        let w = *twiddles_ptr.add(j);
-                                        let u = *base.add(j);
-                                        let v = (*base.add(j + len / 2)).mul(w);
-                                        *base.add(j) = u.add(v);
-                                        *base.add(j + len / 2) = u.sub(v);
-                                    }
-                                }
-                            });
+                    let block_len = block * len;
+                    let twiddles32: &[Complex32] = unsafe {
+                        core::slice::from_raw_parts(
+                            twiddles.as_ptr() as *const Complex32,
+                            twiddles.len(),
+                        )
+                    };
+                    let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
+                    input32.par_chunks_mut(block_len).for_each(|chunk| {
+                        let groups = chunk.len() / len;
+                        for g in 0..groups {
+                            let base = g * len;
+                            for j in 0..(len / 2) {
+                                let w = twiddles32[j];
+                                let u = chunk[base + j];
+                                let v = chunk[base + j + len / 2].mul(w);
+                                chunk[base + j] = u.add(v);
+                                chunk[base + j + len / 2] = u.sub(v);
+                            }
                         }
                     });
                 } else {
