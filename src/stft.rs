@@ -492,9 +492,13 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     /// processed.
     ///
     /// This should be called after the final frame is pushed to obtain the
-    /// tail of the signal (`win_len - hop` samples). Subsequent calls will
-    /// return an empty slice.
+    /// tail of the signal (`win_len - hop` samples). If no frames have been
+    /// processed, this returns an empty slice. Subsequent calls will
+    /// also return an empty slice.
     pub fn flush(&mut self) -> &[f32] {
+        if self.frame_count == 0 {
+            return &[];
+        }
         let out_start = self.out_pos;
         let out_end = self.buf_pos + self.win_len - self.hop;
         if out_start >= out_end {
