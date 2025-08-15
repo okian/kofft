@@ -192,6 +192,16 @@ let mut blackman: [f32; 8] = [0.0; 8];
 blackman_inplace_stack(&mut blackman);
 ```
 
+## Sanity Check Utility
+
+The workspace provides a `sanity-check` binary for comparing spectrograms
+between `kofft` and `rustfft`. It can optionally emit an SVG file using
+`--svg-output`:
+
+```bash
+cargo run -r -p sanity-check -- input.flac --svg-output=spec.svg
+```
+
 ## Desktop/Standard Library Usage
 
 With the `std` feature (enabled by default), you get heap-based APIs for more flexibility.

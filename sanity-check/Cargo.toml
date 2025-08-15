@@ -12,3 +12,4 @@ num-complex = "0.4"
 kofft = { path = ".." }
 indicatif = "0.17"
 colorous = "1"
+svg = "0.10"
