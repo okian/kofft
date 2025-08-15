@@ -102,6 +102,7 @@ impl Float for f64 {
     }
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Complex<T: Float> {
     pub re: T,

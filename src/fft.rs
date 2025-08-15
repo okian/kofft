@@ -296,7 +296,7 @@ impl<T: Float> FftPlanner<T> {
     /// Retrieve a contiguous table of twiddle factors for a given stage size
     /// `n`. The returned slice has length `n/2` and contains
     /// `exp(-2πi * k / n)` for `k = 0..n/2-1`.
-    pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
+    pub fn get_twiddles(&mut self, n: usize) -> Arc<[Complex<T>]> {
         if !self.cache.contains_key(&n) {
             let half = n / 2;
             let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
@@ -313,7 +313,7 @@ impl<T: Float> FftPlanner<T> {
             }
             self.cache.insert(n, Arc::from(table));
         }
-        self.cache.get(&n).unwrap().as_ref()
+        Arc::clone(self.cache.get(&n).unwrap())
     }
 
     #[cfg(feature = "std")]
@@ -551,25 +551,27 @@ impl<T: Float> ScalarFftImpl<T> {
             // Retrieve the contiguous twiddle table for this stage length.
             let twiddles = {
                 let mut planner = self.planner.borrow_mut();
-                planner.get_twiddles(len).to_vec()
+                planner.get_twiddles(len)
             };
             #[cfg(feature = "parallel")]
             {
                 if should_parallelize_fft(n)
                     && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
                 {
-                    let indices: Vec<usize> = (0..n).step_by(len).collect();
+                    let groups = n / len;
                     let block = parallel_fft_block_size().max(1);
                     let input_ptr = input.as_mut_ptr() as usize;
                     let twiddles_ptr = twiddles.as_ptr() as usize;
+                    let num_chunks = groups.div_ceil(block);
                     scope_fifo(|scope| {
-                        for chunk in indices.chunks(block) {
-                            let chunk_vec = chunk.to_vec();
+                        for chunk in 0..num_chunks {
                             scope.spawn_fifo(move |_| unsafe {
                                 let input_ptr = input_ptr as *mut Complex32;
                                 let twiddles_ptr = twiddles_ptr as *const Complex32;
-                                for &i in &chunk_vec {
-                                    let base = input_ptr.add(i);
+                                let start_group = chunk * block;
+                                let end_group = (start_group + block).min(groups);
+                                for g in start_group..end_group {
+                                    let base = input_ptr.add(g * len);
                                     for j in 0..(len / 2) {
                                         let w = *twiddles_ptr.add(j);
                                         let u = *base.add(j);
