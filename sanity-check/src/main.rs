@@ -1,6 +1,7 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use claxon::FlacReader;
-use image::{GrayImage, Luma};
+use colorous;
+use image::{Rgb, RgbImage};
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
 use kofft::window::hann;
@@ -10,10 +11,21 @@ use std::error::Error;
 use std::path::PathBuf;
 
 /// Compare kofft STFT with rustfft on a FLAC file and save heatmaps.
+#[derive(ValueEnum, Clone)]
+enum ColorMap {
+    Gray,
+    Viridis,
+    Plasma,
+}
+
 #[derive(Parser)]
 struct Args {
     /// Path to input FLAC file
     input: PathBuf,
+
+    /// Color map for the output PNG
+    #[arg(long, value_enum, default_value_t = ColorMap::Gray)]
+    colormap: ColorMap,
 }
 
 fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
@@ -24,6 +36,24 @@ fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
         samples.push(v as f32 / i32::MAX as f32);
     }
     Ok(samples)
+}
+
+fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u8; 3] {
+    let t = (value / max).clamp(0.0, 1.0) as f64;
+    match cmap {
+        ColorMap::Gray => {
+            let g = (t * 255.0).round() as u8;
+            [g, g, g]
+        }
+        ColorMap::Viridis => {
+            let c = colorous::VIRIDIS.eval_continuous(t);
+            [c.r, c.g, c.b]
+        }
+        ColorMap::Plasma => {
+            let c = colorous::PLASMA.eval_continuous(t);
+            [c.r, c.g, c.b]
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -83,20 +113,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     // save heatmaps for visual inspection (use first half of spectrum)
     let height = win_len / 2;
     let width = frames;
-    let mut img_kofft = GrayImage::new(width as u32, height as u32);
-    let mut img_ref = GrayImage::new(width as u32, height as u32);
+    let mut img_kofft = RgbImage::new(width as u32, height as u32);
+    let mut img_ref = RgbImage::new(width as u32, height as u32);
     let max_val = kofft_mag
         .iter()
         .flat_map(|v| v.iter())
         .chain(rust_mag.iter().flat_map(|v| v.iter()))
         .cloned()
         .fold(0.0f32, f32::max);
+    let max_val = if max_val > 0.0 { max_val } else { 1.0 };
+
     for (x, (kf, rf)) in kofft_mag.iter().zip(rust_mag.iter()).enumerate() {
         for y in 0..height {
-            let v1 = (kf[y] / max_val * 255.0).min(255.0) as u8;
-            let v2 = (rf[y] / max_val * 255.0).min(255.0) as u8;
-            img_kofft.put_pixel(x as u32, y as u32, Luma([v1]));
-            img_ref.put_pixel(x as u32, y as u32, Luma([v2]));
+            let col1 = map_color(kf[y], max_val, &args.colormap);
+            let col2 = map_color(rf[y], max_val, &args.colormap);
+            img_kofft.put_pixel(x as u32, y as u32, Rgb(col1));
+            img_ref.put_pixel(x as u32, y as u32, Rgb(col2));
         }
     }
     img_kofft.save("kofft_spectrogram.png")?;
