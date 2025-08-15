@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
-use once_cell::unsync::OnceCell;
+use hashbrown::HashMap;
 
 use crate::fft_kernels::{fft16, fft2, fft4, fft8};
 #[cfg(feature = "parallel")]
@@ -178,9 +178,9 @@ pub use crate::num::{
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 pub struct FftPlanner<T: Float> {
-    cache: Vec<OnceCell<Arc<[Complex<T>]>>>,
-    bitrev_cache: Vec<OnceCell<Arc<[usize]>>>,
-    bluestein_cache: Vec<OnceCell<BluesteinPair<T>>>,
+    cache: HashMap<usize, Arc<[Complex<T>]>>,
+    bitrev_cache: HashMap<usize, Arc<[usize]>>,
+    bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
 }
 
@@ -193,60 +193,52 @@ impl<T: Float> Default for FftPlanner<T> {
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
         Self {
-            cache: Vec::new(),
-            bitrev_cache: Vec::new(),
-            bluestein_cache: Vec::new(),
+            cache: HashMap::new(),
+            bitrev_cache: HashMap::new(),
+            bluestein_cache: HashMap::new(),
             scratch: Vec::new(),
         }
     }
     pub fn get_twiddles(&mut self, n: usize) -> &[Complex<T>] {
-        if self.cache.len() <= n {
-            self.cache.resize_with(n + 1, OnceCell::new);
-        }
-        self.cache[n]
-            .get_or_init(|| {
-                let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
-                let (sin, cos) = angle.sin_cos();
-                let w = Complex::new(cos, sin);
-                // Allocate uninitialized buffer of length `n` and fill it in-place.
-                let mut vec: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
-                // SAFETY: `vec` is set to length `n` and every element is written
-                // before being read. The allocation is then reinterpreted as
-                // initialized `Vec<Complex<T>>`.
-                unsafe {
-                    vec.set_len(n);
-                    let slice =
-                        core::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut Complex<T>, n);
-                    let mut current = Complex::new(T::one(), T::zero());
-                    for elem in slice.iter_mut() {
-                        *elem = current;
-                        current = current * w;
-                    }
-                    let ptr = slice.as_mut_ptr();
-                    let cap = vec.capacity();
-                    core::mem::forget(vec);
-                    let vec = Vec::from_raw_parts(ptr, n, cap);
-                    Arc::<[Complex<T>]>::from(vec)
+        if !self.cache.contains_key(&n) {
+            let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
+            let (sin, cos) = angle.sin_cos();
+            let w = Complex::new(cos, sin);
+            // Allocate uninitialized buffer of length `n` and fill it in-place.
+            let mut vec: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(n);
+            // SAFETY: `vec` is set to length `n` and every element is written
+            // before being read. The allocation is then reinterpreted as
+            // initialized `Vec<Complex<T>>`.
+            unsafe {
+                vec.set_len(n);
+                let slice =
+                    core::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut Complex<T>, n);
+                let mut current = Complex::new(T::one(), T::zero());
+                for elem in slice.iter_mut() {
+                    *elem = current;
+                    current = current * w;
                 }
-            })
-            .as_ref()
+                let ptr = slice.as_mut_ptr();
+                let cap = vec.capacity();
+                core::mem::forget(vec);
+                let vec = Vec::from_raw_parts(ptr, n, cap);
+                self.cache.insert(n, Arc::<[Complex<T>]>::from(vec));
+            }
+        }
+        self.cache.get(&n).unwrap().as_ref()
     }
 
     pub fn get_bitrev(&mut self, n: usize) -> Arc<[usize]> {
-        if self.bitrev_cache.len() <= n {
-            self.bitrev_cache.resize_with(n + 1, OnceCell::new);
-        }
-        Arc::clone(
-            self.bitrev_cache[n].get_or_init(|| Arc::<[usize]>::from(compute_bitrev_table(n))),
-        )
+        let entry = self
+            .bitrev_cache
+            .entry(n)
+            .or_insert_with(|| Arc::<[usize]>::from(compute_bitrev_table(n)));
+        Arc::clone(entry)
     }
 
     #[cfg(feature = "std")]
     pub fn get_bluestein(&mut self, n: usize) -> BluesteinPair<T> {
-        if self.bluestein_cache.len() <= n {
-            self.bluestein_cache.resize_with(n + 1, OnceCell::new);
-        }
-        let pair = self.bluestein_cache[n].get_or_init(|| {
+        let pair = self.bluestein_cache.entry(n).or_insert_with(|| {
             let m = (2 * n - 1).next_power_of_two();
             let mut chirp: Vec<Complex<T>> = Vec::with_capacity(n);
             let mut b: Vec<Complex<T>> = Vec::with_capacity(m);

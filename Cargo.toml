@@ -29,7 +29,6 @@ libm = "0.2"
 proptest = { version = "1.4", optional = true }
 rand = { version = "0.8", optional = true }
 hashbrown = "0.14"
-once_cell = { version = "1.18", default-features = false, features = ["alloc"] }
 num_cpus = { version = "1.16", optional = true }
 
 [features]
