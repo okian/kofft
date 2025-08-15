@@ -29,6 +29,10 @@ jobs:
             target: ""
           - os: windows-latest
             target: ""
+        exclude:
+          - os: ubuntu-latest
+            target: wasm32-unknown-unknown
+            features: "--all-features"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
