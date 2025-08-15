@@ -9,9 +9,8 @@ use alloc::{sync::Arc, vec::Vec};
 
 use hashbrown::HashMap;
 
-use core::mem::MaybeUninit;
-#[cfg(all(target_arch = "x86_64", any(feature = "sse", target_feature = "sse2")))]
 use core::any::TypeId;
+use core::mem::MaybeUninit;
 
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
