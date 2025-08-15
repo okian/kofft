@@ -823,26 +823,59 @@ impl<T: Float> ScalarFftImpl<T> {
                     i += len;
                 }
             } else {
-                let w_step = {
+                let (w_step1, w_step2, w_step3) = {
                     let mut planner = self.planner.borrow_mut();
-                    let twiddles = planner.get_twiddles(n);
-                    twiddles[n / len]
+                    let twiddles = planner.get_twiddles(len);
+                    (twiddles[1], twiddles[2], twiddles[3])
                 };
+                let quarter = len / 4;
                 while i < n {
                     let mut w1 = Complex::new(T::one(), T::zero());
-                    for j in 0..(len / 4) {
-                        let w2 = w1.mul(w1);
-                        let w3 = w2.mul(w1);
+                    let mut w2 = Complex::new(T::one(), T::zero());
+                    let mut w3 = Complex::new(T::one(), T::zero());
+                    let mut j = 0usize;
+                    while j + 1 < quarter {
+                        let a0 = input[i + j];
+                        let b0 = input[i + j + quarter].mul(w1);
+                        let c0 = input[i + j + len / 2].mul(w2);
+                        let d0 = input[i + j + 3 * quarter].mul(w3);
+                        let (x0, x1, x2, x3) = butterfly4(a0, b0, c0, d0);
+                        input[i + j] = x0;
+                        input[i + j + quarter] = x1;
+                        input[i + j + len / 2] = x2;
+                        input[i + j + 3 * quarter] = x3;
+
+                        w1 = w1.mul(w_step1);
+                        w2 = w2.mul(w_step2);
+                        w3 = w3.mul(w_step3);
+
+                        let j1 = j + 1;
+                        let a1 = input[i + j1];
+                        let b1 = input[i + j1 + quarter].mul(w1);
+                        let c1 = input[i + j1 + len / 2].mul(w2);
+                        let d1 = input[i + j1 + 3 * quarter].mul(w3);
+                        let (y0, y1, y2, y3) = butterfly4(a1, b1, c1, d1);
+                        input[i + j1] = y0;
+                        input[i + j1 + quarter] = y1;
+                        input[i + j1 + len / 2] = y2;
+                        input[i + j1 + 3 * quarter] = y3;
+
+                        w1 = w1.mul(w_step1);
+                        w2 = w2.mul(w_step2);
+                        w3 = w3.mul(w_step3);
+
+                        j += 2;
+                    }
+                    if j < quarter {
                         let a = input[i + j];
-                        let b = input[i + j + len / 4].mul(w1);
+                        let b = input[i + j + quarter].mul(w1);
                         let c = input[i + j + len / 2].mul(w2);
-                        let d = input[i + j + 3 * len / 4].mul(w3);
+                        let d = input[i + j + 3 * quarter].mul(w3);
                         let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
                         input[i + j] = x0;
-                        input[i + j + len / 4] = x1;
+                        input[i + j + quarter] = x1;
                         input[i + j + len / 2] = x2;
-                        input[i + j + 3 * len / 4] = x3;
-                        w1 = w1.mul(w_step);
+                        input[i + j + 3 * quarter] = x3;
                     }
                     i += len;
                 }
@@ -1004,21 +1037,58 @@ impl ScalarFftImpl<f32> {
         let mut len = 4;
         while len <= n {
             let step = n / len;
+            let w_step1 = twiddles.get(step);
+            let w_step2 = twiddles.get(2 * step);
+            let w_step3 = twiddles.get(3 * step);
+            let quarter = len / 4;
             let mut i = 0;
             while i < n {
-                for j in 0..(len / 4) {
-                    let w1 = twiddles.get(j * step);
-                    let w2 = twiddles.get(2 * j * step);
-                    let w3 = twiddles.get(3 * j * step);
+                let mut w1 = Complex32::new(1.0, 0.0);
+                let mut w2 = Complex32::new(1.0, 0.0);
+                let mut w3 = Complex32::new(1.0, 0.0);
+                let mut j = 0usize;
+                while j + 1 < quarter {
+                    let a0 = input[i + j];
+                    let b0 = input[i + j + quarter].mul(w1);
+                    let c0 = input[i + j + len / 2].mul(w2);
+                    let d0 = input[i + j + 3 * quarter].mul(w3);
+                    let (x0, x1, x2, x3) = butterfly4(a0, b0, c0, d0);
+                    input[i + j] = x0;
+                    input[i + j + quarter] = x1;
+                    input[i + j + len / 2] = x2;
+                    input[i + j + 3 * quarter] = x3;
+
+                    w1 = w1.mul(w_step1);
+                    w2 = w2.mul(w_step2);
+                    w3 = w3.mul(w_step3);
+
+                    let j1 = j + 1;
+                    let a1 = input[i + j1];
+                    let b1 = input[i + j1 + quarter].mul(w1);
+                    let c1 = input[i + j1 + len / 2].mul(w2);
+                    let d1 = input[i + j1 + 3 * quarter].mul(w3);
+                    let (y0, y1, y2, y3) = butterfly4(a1, b1, c1, d1);
+                    input[i + j1] = y0;
+                    input[i + j1 + quarter] = y1;
+                    input[i + j1 + len / 2] = y2;
+                    input[i + j1 + 3 * quarter] = y3;
+
+                    w1 = w1.mul(w_step1);
+                    w2 = w2.mul(w_step2);
+                    w3 = w3.mul(w_step3);
+
+                    j += 2;
+                }
+                if j < quarter {
                     let a = input[i + j];
-                    let b = input[i + j + len / 4].mul(w1);
+                    let b = input[i + j + quarter].mul(w1);
                     let c = input[i + j + len / 2].mul(w2);
-                    let d = input[i + j + 3 * len / 4].mul(w3);
+                    let d = input[i + j + 3 * quarter].mul(w3);
                     let (x0, x1, x2, x3) = butterfly4(a, b, c, d);
                     input[i + j] = x0;
-                    input[i + j + len / 4] = x1;
+                    input[i + j + quarter] = x1;
                     input[i + j + len / 2] = x2;
-                    input[i + j + 3 * len / 4] = x3;
+                    input[i + j + 3 * quarter] = x3;
                 }
                 i += len;
             }
