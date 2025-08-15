@@ -58,7 +58,7 @@ where
     let mut current = input.to_vec();
     let mut details = Vec::with_capacity(levels);
     for _ in 0..levels {
-        if current.len() % 2 != 0 {
+        if !current.len().is_multiple_of(2) {
             if let Some(&last) = current.last() {
                 current.push(last);
             }

@@ -251,7 +251,7 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
@@ -292,7 +292,7 @@ pub fn irfft_packed<T: Float, F: FftImpl<T>>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
@@ -336,7 +336,7 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
@@ -379,7 +379,7 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
@@ -428,7 +428,7 @@ where
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;
@@ -492,7 +492,7 @@ where
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(FftError::InvalidValue);
     }
     let m = n / 2;

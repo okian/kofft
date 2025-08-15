@@ -807,7 +807,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if in_stride == 0 || out_stride == 0 {
             return Err(FftError::InvalidStride);
         }
-        if input.len() % in_stride != 0 || output.len() % out_stride != 0 {
+        if !input.len().is_multiple_of(in_stride) || !output.len().is_multiple_of(out_stride) {
             return Err(FftError::InvalidStride);
         }
         let n = input.len() / in_stride;
@@ -841,7 +841,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if in_stride == 0 || out_stride == 0 {
             return Err(FftError::InvalidStride);
         }
-        if input.len() % in_stride != 0 || output.len() % out_stride != 0 {
+        if !input.len().is_multiple_of(in_stride) || !output.len().is_multiple_of(out_stride) {
             return Err(FftError::InvalidStride);
         }
         let n = input.len() / in_stride;
@@ -909,7 +909,7 @@ impl<T: Float> ScalarFftImpl<T> {
 
     pub fn fft_radix4(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
-        if !n.is_power_of_two() || n.trailing_zeros() % 2 != 0 {
+        if !n.is_power_of_two() || !n.trailing_zeros().is_multiple_of(2) {
             // Fallback to generic FFT if not power of four
             return self.fft(input);
         }
@@ -1028,14 +1028,14 @@ impl TwiddleFactorBuffer {
 fn factorize(mut n: usize) -> alloc::vec::Vec<usize> {
     let mut factors = alloc::vec::Vec::new();
     for &p in &[2, 3, 5] {
-        while n % p == 0 {
+        while n.is_multiple_of(p) {
             factors.push(p);
             n /= p;
         }
     }
     let mut f = 7;
     while f * f <= n {
-        while n % f == 0 {
+        while n.is_multiple_of(f) {
             factors.push(f);
             n /= f;
         }

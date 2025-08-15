@@ -1,4 +1,3 @@
-#![allow(clippy::manual_is_multiple_of)]
 //! # kofft - High-performance DSP library for Rust
 //!
 //! A comprehensive Digital Signal Processing (DSP) library featuring FFT, DCT, DST,
@@ -454,7 +453,7 @@ mod tests {
         // The first element should be real
         assert!(freq[0].im.abs() < 1e-6);
         // The last element should be real if N is even
-        if input.len() % 2 == 0 {
+        if input.len().is_multiple_of(2) {
             assert!(freq[freq.len() - 1].im.abs() < 1e-6);
         }
     }

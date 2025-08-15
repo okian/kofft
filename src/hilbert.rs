@@ -24,7 +24,7 @@ pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
     }
     let fft = ScalarFftImpl::<f32>::default();
     fft.fft(&mut freq)?;
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         for f in freq.iter_mut().take(n / 2).skip(1) {
             f.re *= 2.0;
             f.im *= 2.0;
