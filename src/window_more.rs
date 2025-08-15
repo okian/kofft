@@ -5,9 +5,6 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
-
-#[allow(unused_imports)]
-use crate::fft::Float;
 use libm::{cosf, fabsf, floorf, sinf};
 
 /// Tukey window (tapered cosine)

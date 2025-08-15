@@ -210,6 +210,9 @@ impl<T: Float> SplitComplex<T> {
     pub fn len(&self) -> usize {
         self.re.len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.re.is_empty()
+    }
     pub fn from_complex_vec(v: &[Complex<T>]) -> Self {
         let mut re = Vec::with_capacity(v.len());
         let mut im = Vec::with_capacity(v.len());
@@ -245,6 +248,9 @@ impl ComplexVec {
 
     pub fn len(&self) -> usize {
         self.re.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.re.is_empty()
     }
 
     pub fn from_complex_vec(v: &[Complex32]) -> Self {

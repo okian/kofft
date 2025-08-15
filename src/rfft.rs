@@ -18,8 +18,8 @@ use crate::num::Float;
 #[cfg(feature = "compile-time-rfft")]
 mod precomputed {
     use crate::fft::{Complex32, Complex64};
-    pub const F32: &[(usize, &'static [Complex32])] = &[];
-    pub const F64: &[(usize, &'static [Complex64])] = &[];
+    pub const F32: &[(usize, &[Complex32])] = &[];
+    pub const F64: &[(usize, &[Complex64])] = &[];
 }
 
 fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {

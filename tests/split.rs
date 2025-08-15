@@ -1,10 +1,9 @@
-use kofft::fft::{ScalarFftImpl, FftImpl};
-use kofft::fft::Complex32;
+use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 
 #[test]
 fn fft_split_matches_aos() {
     let n = 16;
-    let mut data: Vec<Complex32> = (0..n).map(|i| Complex32::new(i as f32, 0.0)).collect();
+    let data: Vec<Complex32> = (0..n).map(|i| Complex32::new(i as f32, 0.0)).collect();
     let mut re: Vec<f32> = data.iter().map(|c| c.re).collect();
     let mut im: Vec<f32> = data.iter().map(|c| c.im).collect();
 

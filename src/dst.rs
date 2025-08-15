@@ -3,8 +3,7 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-#[allow(unused_imports)]
-use crate::fft::{FftError, Float};
+use crate::fft::FftError;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
