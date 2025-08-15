@@ -8,17 +8,20 @@ on:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: ["", "--all-features"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
-      - name: Run Tarpaulin
-        run: cargo tarpaulin --out Xml --features internal-tests
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run coverage
+        run: cargo llvm-cov --features internal-tests ${{ matrix.features }} --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         if: ${{ secrets.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v4
         with:
-          files: tarpaulin-report.xml
+          files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
         continue-on-error: true
