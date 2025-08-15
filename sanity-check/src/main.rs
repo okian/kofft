@@ -27,6 +27,10 @@ struct Args {
     /// Color map for the output PNG
     #[arg(long, value_enum, default_value_t = ColorMap::Inferno)]
     colormap: ColorMap,
+
+    /// Window length for STFT
+    #[arg(long, default_value_t = 4096)]
+    win_len: usize,
 }
 
 fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
@@ -68,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let samples = read_flac(&args.input)?;
 
-    let win_len = 1024usize;
+    let win_len = args.win_len;
     let hop = win_len / 2;
     let window = hann(win_len);
     let frames = samples.len().saturating_sub(win_len) / hop + 1;
