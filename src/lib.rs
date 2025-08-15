@@ -453,7 +453,7 @@ mod tests {
         // The first element should be real
         assert!(freq[0].im.abs() < 1e-6);
         // The last element should be real if N is even
-        if input.len() % 2 == 0 {
+        if input.len().is_multiple_of(2) {
             assert!(freq[freq.len() - 1].im.abs() < 1e-6);
         }
     }

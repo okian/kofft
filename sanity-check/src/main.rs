@@ -1,7 +1,8 @@
 use clap::{Parser, ValueEnum};
 use claxon::FlacReader;
+use indicatif::ProgressBar;
 use colorous;
-use image::{Rgb, RgbImage};
+use image::{Rgb, RgbImage, GrayImage, Luma};
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
 use kofft::window::hann;
@@ -82,6 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(win_len);
     let mut rust_mag: Vec<Vec<f32>> = Vec::with_capacity(frames);
+    let bar = ProgressBar::new(frames as u64);
     for frame in 0..frames {
         let start = frame * hop;
         let mut buffer: Vec<Complex32> = (0..win_len)
@@ -96,7 +98,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect();
         fft.process(&mut buffer);
         rust_mag.push(buffer.iter().map(|c| c.norm()).collect());
+        bar.inc(1);
     }
+    bar.finish_and_clear();
 
     // compute max difference
     let mut max_diff = 0.0f32;
@@ -121,6 +125,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .chain(rust_mag.iter().flat_map(|v| v.iter()))
         .cloned()
         .fold(0.0f32, f32::max);
+    let heatmap_bar = ProgressBar::new(width as u64);
     let max_val = if max_val > 0.0 { max_val } else { 1.0 };
 
     for (x, (kf, rf)) in kofft_mag.iter().zip(rust_mag.iter()).enumerate() {
@@ -130,7 +135,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             img_kofft.put_pixel(x as u32, y as u32, Rgb(col1));
             img_ref.put_pixel(x as u32, y as u32, Rgb(col2));
         }
+        heatmap_bar.inc(1);
     }
+    heatmap_bar.finish_and_clear();
     img_kofft.save("kofft_spectrogram.png")?;
     img_ref.save("reference_spectrogram.png")?;
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");

@@ -197,7 +197,7 @@ pub fn dst2_inplace_stack<const N: usize>(
     input: &[f32; N],
     output: &mut [f32; N],
 ) -> Result<(), FftError> {
-    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+    if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / N as f32;
@@ -218,7 +218,7 @@ pub fn dst2_inplace_stack_fft<const N: usize>(
     input: &[f32; N],
     output: &mut [f32; N],
 ) -> Result<(), FftError> {
-    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+    if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = PI / N as f32;
@@ -239,7 +239,7 @@ pub fn dst3_inplace_stack_fft<const N: usize>(
     input: &[f32; N],
     output: &mut [f32; N],
 ) -> Result<(), FftError> {
-    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+    if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     // Direct computation using stack memory to ensure parity with heap-based version.
@@ -261,7 +261,7 @@ pub fn dst4_inplace_stack<const N: usize>(
     input: &[f32; N],
     output: &mut [f32; N],
 ) -> Result<(), FftError> {
-    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+    if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / N as f32;

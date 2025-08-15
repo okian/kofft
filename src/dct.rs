@@ -117,7 +117,7 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
     let factor = PI / (n as f32 - 1.0);
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = input[0]
-            + if k % 2 == 0 {
+            + if k.is_multiple_of(2) {
                 input[n - 1]
             } else {
                 -input[n - 1]
@@ -219,13 +219,13 @@ pub fn dct1_inplace_stack<const N: usize>(
     input: &[f32; N],
     output: &mut [f32; N],
 ) -> Result<(), FftError> {
-    if N < 2 || N % 2 != 0 || !N.is_power_of_two() {
+    if N < 2 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / (N as f32 - 1.0);
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = input[0]
-            + if k % 2 == 0 {
+            + if k.is_multiple_of(2) {
                 input[N - 1]
             } else {
                 -input[N - 1]
@@ -245,7 +245,7 @@ pub fn dct2_inplace_stack<const N: usize>(
     input: &[f32; N],
     output: &mut [f32; N],
 ) -> Result<(), FftError> {
-    if N == 0 || N % 2 != 0 || !N.is_power_of_two() {
+    if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let factor = core::f32::consts::PI / N as f32;
