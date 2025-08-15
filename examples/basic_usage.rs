@@ -59,6 +59,22 @@ fn main() {
     );
     println!();
 
+    // Strided FFT using a reusable scratch buffer
+    let mut interleaved = vec![
+        Complex32::new(1.0, 0.0),
+        Complex32::zero(),
+        Complex32::new(2.0, 0.0),
+        Complex32::zero(),
+        Complex32::new(3.0, 0.0),
+        Complex32::zero(),
+        Complex32::new(4.0, 0.0),
+        Complex32::zero(),
+    ];
+    let mut scratch = vec![Complex32::zero(); interleaved.len() / 2];
+    fft.fft_strided(&mut interleaved, 2, &mut scratch).unwrap();
+    fft.ifft_strided(&mut interleaved, 2, &mut scratch).unwrap();
+    println!();
+
     // 2. Real FFT (optimized for real input)
     println!("2. Real FFT");
     let mut real_input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
