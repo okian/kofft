@@ -26,7 +26,7 @@ endif
 
 FEATURES := $(strip $(SIMD_FEATURES) $(PAR_FEATURE))
 
-.PHONY: build test clippy fmt analyze benchmark sanity
+.PHONY: build test clippy fmt analyze benchmark bench-libs sanity
 
 build:
 	cargo build $(if $(FEATURES),--features "$(FEATURES)")
@@ -43,7 +43,11 @@ fmt:
 analyze: fmt clippy
 
 benchmark:
-	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --example $(EXAMPLE) $(if $(FEATURES),--features "$(FEATURES)") --release
+        RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --example $(EXAMPLE) $(if $(FEATURES),--features "$(FEATURES)") --release
+
+# Run criterion benchmarks comparing kofft with other FFT libraries
+bench-libs:
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo bench --manifest-path kofft-bench/Cargo.toml $(if $(FEATURES),--features "$(FEATURES)")
 
 sanity:
 	cargo run -p sanity-check -- $(FLAC)
