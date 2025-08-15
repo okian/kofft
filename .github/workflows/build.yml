@@ -14,8 +14,8 @@ jobs:
         features:
           - ""
           - "--no-default-features"
-          - "--features \"sse std\""
-          - "--features \"parallel\""
+          - "--features sse,std"
+          - "--features parallel"
           - "--all-features"
         target:
           - ""
