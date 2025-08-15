@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batch and multi-channel processing
 - Real FFT optimization for real input signals
 - Comprehensive test suite with property-based testing
+- Property-based tests for 2D and 3D FFT round-trip correctness
 
 ### Features
 - `no_std` support for embedded systems
