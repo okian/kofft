@@ -4,9 +4,86 @@
 
 extern crate alloc;
 use crate::fft::FftError;
-use alloc::vec;
-use alloc::vec::Vec;
+use crate::num::Float;
+use alloc::{sync::Arc, vec, vec::Vec};
+use hashbrown::HashMap;
 use core::f32::consts::PI;
+
+/// Planner that caches sine tables for various DST types.
+///
+/// Each table is indexed by the transform length and reused across calls
+/// to avoid repeated trigonometric computations. A small scratch buffer is
+/// also provided for algorithms that require temporary storage, mirroring the
+/// behaviour of [`RfftPlanner`].
+#[derive(Default)]
+pub struct DstPlanner<T: Float> {
+    /// Cached tables for DST-II factors.
+    cache2: HashMap<usize, Arc<[T]>>,
+    /// Cached tables for DST-III factors.
+    cache3: HashMap<usize, Arc<[T]>>,
+    /// Cached tables for DST-IV factors.
+    cache4: HashMap<usize, Arc<[T]>>,
+    /// Reusable scratch buffer.
+    scratch: Vec<T>,
+}
+
+impl<T: Float> DstPlanner<T> {
+    /// Create a new [`DstPlanner`].
+    pub fn new() -> Self {
+        Self {
+            cache2: HashMap::new(),
+            cache3: HashMap::new(),
+            cache4: HashMap::new(),
+            scratch: Vec::new(),
+        }
+    }
+
+    fn build_table_offset(n: usize, offset: f32) -> Vec<T> {
+        let factor = T::pi() / T::from_f32(n as f32);
+        let off = T::from_f32(offset);
+        let mut table = Vec::with_capacity(n);
+        for i in 0..n {
+            let angle = factor * (T::from_f32(i as f32) + off);
+            table.push(angle.sin());
+        }
+        table
+    }
+
+    /// Retrieve or build the sine factors used by DST-II of length `n`.
+    pub fn plan_dst2(&mut self, n: usize) -> &[T] {
+        if !self.cache2.contains_key(&n) {
+            let vec = Self::build_table_offset(n, 0.5);
+            self.cache2.insert(n, Arc::from(vec));
+        }
+        self.cache2.get(&n).unwrap().as_ref()
+    }
+
+    /// Retrieve or build the sine factors used by DST-III of length `n`.
+    pub fn plan_dst3(&mut self, n: usize) -> &[T] {
+        if !self.cache3.contains_key(&n) {
+            let vec = Self::build_table_offset(n, 0.0);
+            self.cache3.insert(n, Arc::from(vec));
+        }
+        self.cache3.get(&n).unwrap().as_ref()
+    }
+
+    /// Retrieve or build the sine factors used by DST-IV of length `n`.
+    pub fn plan_dst4(&mut self, n: usize) -> &[T] {
+        if !self.cache4.contains_key(&n) {
+            let vec = Self::build_table_offset(n, 0.5);
+            self.cache4.insert(n, Arc::from(vec));
+        }
+        self.cache4.get(&n).unwrap().as_ref()
+    }
+
+    /// Provide a scratch buffer of at least `len` elements.
+    pub fn scratch(&mut self, len: usize) -> &mut [T] {
+        if self.scratch.len() < len {
+            self.scratch.resize(len, T::zero());
+        }
+        &mut self.scratch[..len]
+    }
+}
 
 /// DST-I (sine transform, odd symmetry)
 pub fn dst1(input: &[f32]) -> Vec<f32> {
