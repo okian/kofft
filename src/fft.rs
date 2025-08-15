@@ -513,7 +513,7 @@ impl<T: Float> ScalarFftImpl<T> {
         }
     }
 
-   pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
+    pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         let n = input.len();
         if n == 0 {
             return Err(FftError::EmptyInput);
@@ -561,11 +561,24 @@ impl<T: Float> ScalarFftImpl<T> {
                 let base0 = 2 * k * n2;
                 let base1 = base0 + n2;
 
-                for j in 0..n2 {
-                    let u = src[base0 + j];
-                    let v = src[base1 + j].mul(w);
-                    dst[k * n2 + j] = u.add(v);
-                    dst[(k + n1) * n2 + j] = u.sub(v);
+                debug_assert!(base1 + n2 <= src.len());
+                debug_assert!((k + 1) * n2 <= dst.len());
+                debug_assert!((k + n1 + 1) * n2 <= dst.len());
+
+                unsafe {
+                    let base0_ptr = src.as_ptr().add(base0);
+                    let base1_ptr = src.as_ptr().add(base1);
+                    let dst0_ptr = dst.as_mut_ptr().add(k * n2);
+                    let dst1_ptr = dst.as_mut_ptr().add((k + n1) * n2);
+
+                    let mut j = 0;
+                    while j < n2 {
+                        let u = *base0_ptr.add(j);
+                        let v = (*base1_ptr.add(j)).mul(w);
+                        *dst0_ptr.add(j) = u.add(v);
+                        *dst1_ptr.add(j) = u.sub(v);
+                        j += 1;
+                    }
                 }
             }
 
