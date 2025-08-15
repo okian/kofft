@@ -3,7 +3,9 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use crate::fft::FftError;
+use crate::fft::{FftError, ScalarFftImpl};
+use crate::rfft::RfftPlanner;
+use crate::Complex32;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
@@ -24,16 +26,41 @@ pub fn dst1(input: &[f32]) -> Vec<f32> {
 }
 
 /// DST-II (used in signal processing)
+///
+/// This implementation forms an odd-symmetric extension of the input,
+/// computes a real FFT and extracts the sine components. The result matches
+/// the scaling of the previous naive implementation.
 pub fn dst2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
-    let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
+    if n == 0 {
+        return vec![];
+    }
+
+    let mut extended = vec![0.0f32; 2 * n];
+    extended[..n].copy_from_slice(input);
+    for (i, &x) in input.iter().enumerate() {
+        extended[2 * n - 1 - i] = -x;
+    }
+
+    let fft = ScalarFftImpl::<f32>::default();
+    let mut planner = RfftPlanner::new();
+    let mut spectrum = vec![Complex32::new(0.0, 0.0); n + 1];
+    let mut scratch = vec![Complex32::new(0.0, 0.0); n];
+    // SAFETY: planner will initialize the output and scratch buffers.
+    planner
+        .rfft_with_scratch(&fft, &mut extended, &mut spectrum, &mut scratch)
+        .unwrap();
+
+    let mut output = vec![0.0f32; n];
+    let denom = 2.0 * n as f32;
     for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
-        }
-        *out = sum;
+        let t = spectrum[k + 1];
+        let theta = PI * (k as f32 + 1.0) / denom;
+        let c = theta.cos();
+        let s = theta.sin();
+        // Multiply by exp(-i*theta)
+        let im = t.im * c - t.re * s;
+        *out = -im / 2.0;
     }
     output
 }
