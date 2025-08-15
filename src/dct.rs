@@ -3,7 +3,8 @@
 //! no_std + alloc compatible
 
 extern crate alloc;
-use crate::fft::FftError;
+use crate::fft::{Complex32, FftError, ScalarFftImpl};
+use crate::rfft::RfftPlanner;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f32::consts::PI;
@@ -49,19 +50,33 @@ pub fn dct2(input: &[f32]) -> Vec<f32> {
     output
 }
 
-/// DCT-III (the inverse of DCT-II, up to scaling)
+/// DCT-III (the inverse of DCT-II)
 pub fn dct3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
-    let mut output = vec![0.0; n];
-    let factor = PI / n as f32;
-    for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = input[0] / 2.0;
-        for (i, &x) in input.iter().enumerate().skip(1) {
-            sum += x * (factor * i as f32 * (k as f32 + 0.5)).cos();
-        }
-        *out = sum;
+    if n == 0 {
+        return vec![];
     }
-    output
+
+    // Build an even-symmetric spectrum and perform an inverse real FFT.
+    // This leverages the identity that a DCT-III is equivalent to an
+    // inverse DFT of an even-symmetric spectrum with a half-sample shift.
+    let mut spectrum = vec![Complex32::zero(); n + 1];
+    let scale = PI / (2.0 * n as f32);
+    for (k, &val) in input.iter().enumerate() {
+        let angle = scale * k as f32;
+        let (s, c) = angle.sin_cos();
+        // F_k = 2 * X_k * exp(i * pi * k / (2N))
+        spectrum[k] = Complex32::new(2.0 * val * c, 2.0 * val * s);
+    }
+
+    // `spectrum[n]` remains zero to enforce even symmetry at the Nyquist bin.
+    let mut buffer = vec![0.0f32; 2 * n];
+    let fft = ScalarFftImpl::<f32>::default();
+    let mut planner = RfftPlanner::<f32>::new();
+    let _ = planner.irfft(&fft, &mut spectrum, &mut buffer);
+
+    buffer.truncate(n);
+    buffer
 }
 
 /// DCT-IV (self-inverse, used in audio and spectral analysis)
@@ -204,7 +219,7 @@ mod tests {
         let y = dct2(&x);
         let z = dct3(&y);
         for (a, b) in x.iter().zip(z.iter()) {
-            assert!((a - b / 2.0).abs() < 1e-2, "{} vs {}", a, b);
+            assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
     }
 }
@@ -220,7 +235,7 @@ mod batch_tests {
         batch_iii(&mut batches);
         for (a, b) in orig.iter().zip(batches.iter()) {
             for (x, y) in a.iter().zip(b.iter()) {
-                assert!((x - y / 2.0).abs() < 1e-4);
+                assert!((x - y).abs() < 1e-4);
             }
         }
     }
@@ -332,7 +347,7 @@ mod coverage_tests {
         let y = dct2(&x);
         let z = dct3(&y);
         for (a, b) in x.iter().zip(z.iter()) {
-            assert!((a - b / 2.0).abs() < 1e-4);
+            assert!((a - b).abs() < 1e-4);
         }
     }
 
@@ -389,8 +404,8 @@ mod coverage_tests {
             let y = dct2(&x);
             let z = dct3(&y);
             for (a, b) in x.iter().zip(z.iter()) {
-                if (a - b / 2.0).abs() > 1e3 { return Ok(()); }
-                prop_assert!((a - b / 2.0).abs() < 1e3);
+                if (a - b).abs() > 1e3 { return Ok(()); }
+                prop_assert!((a - b).abs() < 1e3);
             }
         }
     }
