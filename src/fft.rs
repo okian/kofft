@@ -13,6 +13,8 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::any::Any;
+#[cfg(feature = "precomputed-twiddles")]
+use core::any::TypeId;
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
@@ -20,6 +22,14 @@ use core::arch::x86_64::*;
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use hashbrown::HashMap;
+
+#[cfg(feature = "precomputed-twiddles")]
+mod precomputed_twiddles {
+    include!(concat!(env!("OUT_DIR"), "/precomputed_twiddles.rs"));
+}
+
+#[cfg(feature = "precomputed-twiddles")]
+use precomputed_twiddles::{lookup_f32, lookup_f64};
 
 use crate::fft_kernels::{fft2, fft4};
 #[cfg(feature = "parallel")]
@@ -348,6 +358,26 @@ impl<T: Float> FftPlanner<T> {
     /// `n`. The returned slice has length `n/2` and contains
     /// `exp(-2πi * k / n)` for `k = 0..n/2-1`.
     pub fn get_twiddles(&mut self, n: usize) -> Arc<[Complex<T>]> {
+        #[cfg(feature = "precomputed-twiddles")]
+        {
+            if TypeId::of::<T>() == TypeId::of::<f32>() {
+                if let Some(tab) = lookup_f32(n) {
+                    // SAFETY: We just checked T == f32
+                    let arc = unsafe {
+                        core::mem::transmute::<Arc<[crate::num::Complex32]>, Arc<[Complex<T>]>>(tab)
+                    };
+                    return arc;
+                }
+            } else if TypeId::of::<T>() == TypeId::of::<f64>() {
+                if let Some(tab) = lookup_f64(n) {
+                    let arc = unsafe {
+                        core::mem::transmute::<Arc<[crate::num::Complex64]>, Arc<[Complex<T>]>>(tab)
+                    };
+                    return arc;
+                }
+            }
+        }
+
         if !self.cache.contains_key(&n) {
             let half = n / 2;
             let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
