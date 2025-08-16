@@ -54,8 +54,13 @@ export function init(
   const seek = doc.querySelector("input[type=range]");
   const canvas = doc.getElementById("spectrogram");
   const themeSelect = doc.getElementById("theme");
-  canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
-  canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
+  const resize = () => {
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * ratio;
+    canvas.height = canvas.clientHeight * ratio;
+  };
+  resize();
+  window.addEventListener("resize", resize);
 
   deps.setupPlayback(audio, seek);
 

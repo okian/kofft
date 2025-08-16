@@ -214,3 +214,39 @@ test("theme selector updates body dataset", () => {
   select.dispatchEvent(new dom.window.Event("change"));
   assert.equal(dom.window.document.body.dataset.theme, "light");
 });
+
+test("canvas resizes with window", () => {
+  const dom = new JSDOM(
+    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram"></canvas>`,
+  );
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  dom.window.devicePixelRatio = 1;
+  const canvas = dom.window.document.getElementById("spectrogram");
+  Object.defineProperty(canvas, "clientWidth", {
+    value: 100,
+    configurable: true,
+  });
+  Object.defineProperty(canvas, "clientHeight", {
+    value: 50,
+    configurable: true,
+  });
+  init(dom.window.document, {
+    decodeAndProcess: async () => ({}),
+    setupPlayback: () => {},
+    startRenderLoop: () => {},
+  });
+  assert.equal(canvas.width, 100);
+  assert.equal(canvas.height, 50);
+  Object.defineProperty(canvas, "clientWidth", {
+    value: 200,
+    configurable: true,
+  });
+  Object.defineProperty(canvas, "clientHeight", {
+    value: 75,
+    configurable: true,
+  });
+  dom.window.dispatchEvent(new dom.window.Event("resize"));
+  assert.equal(canvas.width, 200);
+  assert.equal(canvas.height, 75);
+});
