@@ -24,7 +24,7 @@ use core::mem::MaybeUninit;
 use hashbrown::HashMap;
 
 #[cfg(feature = "precomputed-twiddles")]
-#[allow(clippy::excessive_precision)]
+#[allow(clippy::excessive_precision, clippy::approx_constant)]
 mod precomputed_twiddles {
     include!(concat!(env!("OUT_DIR"), "/precomputed_twiddles.rs"));
 }
