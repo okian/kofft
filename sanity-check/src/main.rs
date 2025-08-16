@@ -5,8 +5,6 @@ use image::{
     codecs::png::{CompressionType, FilterType, PngEncoder},
     ColorType, EncodableLayout, ImageBuffer, Rgb,
 };
-use imageproc::drawing::{draw_filled_rect_mut, draw_line_segment_mut};
-use imageproc::rect::Rect;
 use indicatif::ProgressBar;
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
@@ -182,6 +180,61 @@ fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> Stri
     )
 }
 
+fn draw_line(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    color: Rgb<u16>,
+) {
+    let mut x0 = x0;
+    let mut y0 = y0;
+    let mut x1 = x1;
+    let mut y1 = y1;
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+    loop {
+        if x0 >= 0 && y0 >= 0 && x0 < img.width() as i32 && y0 < img.height() as i32 {
+            img.put_pixel(x0 as u32, y0 as u32, color);
+        }
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+fn draw_filled_rect(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    color: Rgb<u16>,
+) {
+    let x0 = x.max(0) as u32;
+    let y0 = y.max(0) as u32;
+    let x1 = (x + width as i32).min(img.width() as i32) as u32;
+    let y1 = (y + height as i32).min(img.height() as i32) as u32;
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            img.put_pixel(xx, yy, color);
+        }
+    }
+}
+
 fn draw_char(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, ch: char) {
     let pattern = match ch {
         '0' => ["###", "# #", "# #", "# #", "###"],
@@ -241,12 +294,7 @@ fn draw_time_ruler(
     for s in 0..=seconds.ceil() as u32 {
         let x = (s as f32 * px_per_sec) as i32;
         if x < width as i32 {
-            draw_line_segment_mut(
-                img,
-                (x as f32, 0.0),
-                (x as f32, 5.0),
-                Rgb([65535, 65535, 65535]),
-            );
+            draw_line(img, x, 0, x, 5, Rgb([65535, 65535, 65535]));
             let text = format!("{}s", s);
             draw_text(img, x, 6, &text);
         }
@@ -268,10 +316,12 @@ fn draw_frequency_scale(
     for f in (0..=nyquist as u32).step_by(1000) {
         let y = (f as f32 * px_per_hz) as i32;
         if y < height as i32 {
-            draw_line_segment_mut(
+            draw_line(
                 img,
-                ((width - 6) as f32, y as f32),
-                ((width - 1) as f32, y as f32),
+                width as i32 - 6,
+                y,
+                width as i32 - 1,
+                y,
                 Rgb([65535, 65535, 65535]),
             );
             let text = format!("{}Hz", f);
@@ -305,11 +355,7 @@ fn draw_status_bar(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, text: &str, enable
         return;
     }
     let h = img.height();
-    draw_filled_rect_mut(
-        img,
-        Rect::at(0, h as i32 - 16).of_size(img.width(), 16),
-        Rgb([0, 0, 0]),
-    );
+    draw_filled_rect(img, 0, h as i32 - 16, img.width(), 16, Rgb([0, 0, 0]));
     draw_text(img, 0, h as i32 - 15, text);
 }
 
@@ -490,5 +536,20 @@ mod tests {
 
         draw_status_bar(&mut img, "t:0 f:0 a:0", true);
         assert_ne!(img.get_pixel(1, 35), &Rgb([0, 0, 0]));
+    }
+
+    #[test]
+    fn draw_line_and_rect_work() {
+        let mut img: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(10, 10, Rgb([0, 0, 0]));
+        draw_line(&mut img, 0, 0, 9, 9, Rgb([65535, 0, 0]));
+        assert_eq!(img.get_pixel(0, 0), &Rgb([65535, 0, 0]));
+        assert_eq!(img.get_pixel(9, 9), &Rgb([65535, 0, 0]));
+        draw_filled_rect(&mut img, 2, 2, 3, 3, Rgb([0, 65535, 0]));
+        for y in 2..5 {
+            for x in 2..5 {
+                assert_eq!(img.get_pixel(x, y), &Rgb([0, 65535, 0]));
+            }
+        }
     }
 }
