@@ -6,10 +6,13 @@ use image::{
     ColorType, EncodableLayout, ImageBuffer, Rgb,
 };
 use indicatif::ProgressBar;
-use kofft::fft::ScalarFftImpl;
+use kofft::fft::{Complex32, FftError, ScalarFftImpl};
+#[cfg(feature = "parallel")]
+use kofft::stft::parallel;
+#[cfg(not(feature = "parallel"))]
 use kofft::stft::stft;
 use kofft::window::hann;
-use num_complex::Complex32;
+use num_complex::Complex32 as RustfftComplex32;
 use rustfft::FftPlanner;
 use std::error::Error;
 use std::fs::File;
@@ -750,6 +753,23 @@ fn draw_status_bar(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, text: &str, enable
     draw_text(img, 0, h - bar_h + scale, text, scale as u32);
 }
 
+fn compute_stft(
+    samples: &[f32],
+    window: &[f32],
+    hop: usize,
+    fft: &ScalarFftImpl<f32>,
+    frames: &mut [Vec<Complex32>],
+) -> Result<(), FftError> {
+    #[cfg(feature = "parallel")]
+    {
+        parallel(samples, window, hop, frames, fft)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        stft(samples, window, hop, frames, fft)
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let (samples, sample_rate) = read_flac(&args.input)?;
@@ -762,7 +782,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // kofft STFT
     let mut kofft_frames = vec![vec![]; frames];
     let fft = ScalarFftImpl::<f32>::default();
-    stft(&samples, &window, hop, &mut kofft_frames, &fft).unwrap();
+    compute_stft(&samples, &window, hop, &fft, &mut kofft_frames).unwrap();
     let kofft_mag: Vec<Vec<f32>> = kofft_frames
         .iter()
         .map(|f| {
@@ -779,14 +799,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let bar = ProgressBar::new(frames as u64);
     for frame in 0..frames {
         let start = frame * hop;
-        let mut buffer: Vec<Complex32> = (0..win_len)
+        let mut buffer: Vec<RustfftComplex32> = (0..win_len)
             .map(|i| {
                 let x = if start + i < samples.len() {
                     samples[start + i] * window[i]
                 } else {
                     0.0
                 };
-                Complex32::new(x, 0.0)
+                RustfftComplex32::new(x, 0.0)
             })
             .collect();
         fft.process(&mut buffer);
@@ -872,8 +892,22 @@ mod tests {
     use super::*;
     use image::codecs::png::PngDecoder;
     use image::ImageDecoder;
+    use kofft::stft::stft;
     use std::fs;
     use std::fs::File;
+
+    #[test]
+    fn compute_stft_matches_reference() {
+        let signal = vec![0.0; 8];
+        let window = hann(4);
+        let hop = 2;
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut expected = vec![vec![]; 4];
+        stft(&signal, &window, hop, &mut expected, &fft).unwrap();
+        let mut computed = vec![vec![]; 4];
+        compute_stft(&signal, &window, hop, &fft, &mut computed).unwrap();
+        assert_eq!(computed, expected);
+    }
 
     #[test]
     fn saves_png_with_specified_depth() {

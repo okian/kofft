@@ -13,3 +13,11 @@ kofft = { path = ".." }
 indicatif = "0.17"
 colorous = "1"
 svg = "0.10"
+
+[features]
+default = []
+parallel = ["kofft/parallel"]
+x86_64 = ["kofft/x86_64"]
+aarch64 = ["kofft/aarch64"]
+avx2 = ["kofft/avx2"]
+avx512 = ["kofft/avx512"]
