@@ -10,6 +10,8 @@ use core::f32::consts::PI;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use alloc::vec;
 use alloc::vec::Vec;
 use core::any::Any;
 #[cfg(feature = "precomputed-twiddles")]
