@@ -112,6 +112,19 @@ fn env_parallel_fft_threads() -> usize {
     })
 }
 
+#[cfg(feature = "std")]
+fn default_fft_block_size() -> usize {
+    std::env::var("KOFFT_FFT_BLOCK_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1024)
+}
+
+#[cfg(not(feature = "std"))]
+const fn default_fft_block_size() -> usize {
+    1024
+}
+
 #[cfg(all(feature = "parallel", feature = "std"))]
 fn calibrated_per_core_work() -> usize {
     use std::time::Instant;
@@ -327,6 +340,7 @@ pub struct FftPlanner<T: Float> {
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
     bluestein_scratch: Vec<Complex<T>>,
+    block_size: usize,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -337,12 +351,25 @@ impl<T: Float> Default for FftPlanner<T> {
 
 impl<T: Float> FftPlanner<T> {
     pub fn new() -> Self {
+        Self::with_block_size(default_fft_block_size())
+    }
+
+    pub fn with_block_size(block_size: usize) -> Self {
         Self {
             cache: HashMap::new(),
             bluestein_cache: HashMap::new(),
             scratch: Vec::new(),
             bluestein_scratch: Vec::new(),
+            block_size,
         }
+    }
+
+    pub fn block_size(&self) -> usize {
+        self.block_size
+    }
+
+    pub fn set_block_size(&mut self, block_size: usize) {
+        self.block_size = block_size;
     }
     /// Retrieve a contiguous table of twiddle factors for a given stage size
     /// `n`. The returned slice has length `n/2` and contains
@@ -614,6 +641,11 @@ impl<T: Float> ScalarFftImpl<T> {
         let mut src: &mut [Complex<T>] = input;
         let mut dst: &mut [Complex<T>] = &mut scratch[..n];
 
+        let block_size = {
+            let planner = self.planner.borrow();
+            planner.block_size
+        };
+
         // n1 = number of groups, n2 = size of each group in this pass.
         let mut n1 = 1usize;
         let mut n2 = n;
@@ -636,13 +668,33 @@ impl<T: Float> ScalarFftImpl<T> {
                     let dst0_ptr = dst.as_mut_ptr().add(k * n2);
                     let dst1_ptr = dst.as_mut_ptr().add((k + n1) * n2);
 
-                    let mut j = 0;
+                    let mut j = 0usize;
                     while j < n2 {
-                        let u = *base0_ptr.add(j);
-                        let v = (*base1_ptr.add(j)).mul(w);
-                        *dst0_ptr.add(j) = u.add(v);
-                        *dst1_ptr.add(j) = u.sub(v);
-                        j += 1;
+                        let end = core::cmp::min(j + block_size, n2);
+                        let pf = end + block_size;
+                        if pf < n2 {
+                            #[cfg(target_arch = "x86_64")]
+                            {
+                                _mm_prefetch(base0_ptr.add(pf) as *const i8, _MM_HINT_T0);
+                                _mm_prefetch(base1_ptr.add(pf) as *const i8, _MM_HINT_T0);
+                                _mm_prefetch(dst0_ptr.add(pf) as *const i8, _MM_HINT_T0);
+                                _mm_prefetch(dst1_ptr.add(pf) as *const i8, _MM_HINT_T0);
+                            }
+                            #[cfg(target_arch = "aarch64")]
+                            {
+                                prfm::<{ PLDL1KEEP }>(base0_ptr.add(pf) as *const u8);
+                                prfm::<{ PLDL1KEEP }>(base1_ptr.add(pf) as *const u8);
+                                prfm::<{ PLDL1KEEP }>(dst0_ptr.add(pf) as *const u8);
+                                prfm::<{ PLDL1KEEP }>(dst1_ptr.add(pf) as *const u8);
+                            }
+                        }
+                        while j < end {
+                            let u = *base0_ptr.add(j);
+                            let v = (*base1_ptr.add(j)).mul(w);
+                            *dst0_ptr.add(j) = u.add(v);
+                            *dst1_ptr.add(j) = u.sub(v);
+                            j += 1;
+                        }
                     }
                 }
             }
