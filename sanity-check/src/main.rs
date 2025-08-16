@@ -24,7 +24,7 @@ enum ColorMap {
     Viridis,
     Plasma,
     Inferno,
-    Adobe,
+    Rainbow,
 }
 
 #[derive(ValueEnum, Clone, Copy)]
@@ -126,7 +126,7 @@ fn db_scale(value: f32, max: f32, dynamic_range: f32) -> f64 {
     ((db + dynamic_range) / dynamic_range).clamp(0.0, 1.0) as f64
 }
 
-fn adobe_color(t: f64) -> [u16; 3] {
+fn rainbow_color(t: f64) -> [u16; 3] {
     const STOPS: [(f64, [u8; 3]); 6] = [
         (0.0, [0, 0, 0]),
         (0.25, [0, 0, 255]),
@@ -183,7 +183,7 @@ fn map_color(value: f32, max: f32, cmap: &ColorMap, dynamic_range: f32) -> [u16;
                 u16::from(c.b) * 257,
             ]
         }
-        ColorMap::Adobe => adobe_color(t),
+        ColorMap::Rainbow => rainbow_color(t),
     }
 }
 
@@ -369,7 +369,7 @@ fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> Stri
         ColorMap::Viridis => "Viridis",
         ColorMap::Plasma => "Plasma",
         ColorMap::Inferno => "Inferno",
-        ColorMap::Adobe => "Adobe",
+        ColorMap::Rainbow => "Rainbow",
     };
     format!(
         "Spectrogram Visualization: X-axis time frames, Y-axis frequency bins, colors show magnitude in dB using {} colormap, resolution {}x{} pixels, layout includes axis labels, color bar, and grid lines.",
@@ -926,8 +926,8 @@ mod tests {
     }
 
     #[test]
-    fn adobe_gradient_interpolates() {
-        let c = adobe_color(0.375); // between blue and cyan
+    fn rainbow_gradient_interpolates() {
+        let c = rainbow_color(0.375); // between blue and cyan
         assert_eq!(c[0], 0);
         assert_eq!(c[2], 65535);
         assert!(c[1] > 0 && c[1] < 65535);
