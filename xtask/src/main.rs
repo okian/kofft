@@ -22,7 +22,10 @@ enum Commands {
     #[command(name = "update-bench-readme")]
     UpdateBenchReadme,
     Sanity {
-        flac: Option<String>,
+        /// Path to input audio file
+        input: String,
+        /// Path to output PNG file
+        output: String,
     },
 }
 
@@ -47,7 +50,7 @@ fn main() -> std::io::Result<()> {
         Commands::Benchmark => benchmark_command(&cfg).status(),
         Commands::BenchLibs => bench_libs_command(&cfg).status(),
         Commands::UpdateBenchReadme => update_bench_readme_command(&cfg).status(),
-        Commands::Sanity { flac } => sanity_command(flac.as_deref()).status(),
+        Commands::Sanity { input, output } => sanity_command(&input, &output).status(),
     }?;
 
     std::process::exit(status.code().unwrap_or(1));
