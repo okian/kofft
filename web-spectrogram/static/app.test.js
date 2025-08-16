@@ -48,23 +48,20 @@ test("setupPlayback syncs seek with audio", () => {
   assert.equal(audio.currentTime, 2);
 });
 
-test("startRenderLoop draws to canvas", () => {
-  let put = false;
-  let drawn = 0;
-  const canvas = {
-    width: 2,
-    height: 2,
-    getContext: () => ({
-      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
-      putImageData: () => {
-        put = true;
-      },
-      fillStyle: "#000",
-      fillRect: () => {
-        drawn++;
-      },
-    }),
+test("startRenderLoop shifts left and draws vertical column", () => {
+  const calls = { get: null, put: null, fills: [] };
+  const ctx = {
+    getImageData: (...args) => {
+      calls.get = args;
+      return { data: new Uint8ClampedArray(4) };
+    },
+    putImageData: (...args) => {
+      calls.put = args;
+    },
+    fillStyle: "#000",
+    fillRect: (...args) => calls.fills.push(args),
   };
+  const canvas = { width: 2, height: 2, getContext: () => ctx };
   const analyser = {
     frequencyBinCount: 2,
     getByteFrequencyData: (arr) => arr.fill(1),
@@ -76,8 +73,13 @@ test("startRenderLoop draws to canvas", () => {
     cb();
   };
   startRenderLoop(canvas, analyser);
-  assert.ok(put);
-  assert.equal(drawn, 2);
+  assert.deepEqual(calls.get, [1, 0, 1, 2]);
+  assert.equal(calls.put[1], 0);
+  assert.equal(calls.put[2], 0);
+  assert.deepEqual(calls.fills, [
+    [1, 0, 1, 1],
+    [1, 1, 1, 1],
+  ]);
 });
 
 test("init wires up file input change", async () => {
