@@ -24,14 +24,21 @@ export function setupPlayback(audioEl, seekInput) {
 export function startRenderLoop(canvas, analyser) {
   const ctx = canvas.getContext("2d");
   const data = new Uint8Array(analyser.frequencyBinCount);
+  // Ensure the canvas height matches the frequency bin count while
+  // preserving the original aspect ratio.
+  const aspect = canvas.width / canvas.height;
+  if (canvas.height !== data.length) {
+    canvas.height = data.length;
+    canvas.width = Math.round(canvas.height * aspect);
+  }
   function render() {
     analyser.getByteFrequencyData(data);
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height - 1);
-    ctx.putImageData(img, 0, 1);
-    for (let x = 0; x < Math.min(canvas.width, data.length); x++) {
-      const v = data[x];
+    const img = ctx.getImageData(1, 0, canvas.width - 1, canvas.height);
+    ctx.putImageData(img, 0, 0);
+    for (let y = 0; y < Math.min(canvas.height, data.length); y++) {
+      const v = data[y];
       ctx.fillStyle = `rgb(${v},${v},${v})`;
-      ctx.fillRect(x, 0, 1, 1);
+      ctx.fillRect(canvas.width - 1, y, 1, 1);
     }
     requestAnimationFrame(render);
   }
