@@ -17,7 +17,7 @@ use core::any::Any;
 use core::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
-use core::cell::RefCell;
+use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use hashbrown::HashMap;
 
@@ -546,14 +546,28 @@ pub trait FftImpl<T: Float>: Any {
     }
 }
 
+/// FFT implementation backed by an [`FftPlanner`] with interior mutability.
+///
+/// The planner is stored in an [`UnsafeCell`] to avoid the runtime borrow
+/// checking overhead of [`RefCell`]. This type is therefore **not** `Sync` and
+/// all accesses to the planner must ensure exclusive mutable access.
+///
+/// # Safety
+///
+/// Methods on `ScalarFftImpl` obtain unchecked mutable access to the planner
+/// and must not alias that access. External callers only obtain `&self`, and
+/// the lack of `Sync` prevents concurrent mutation across threads.
 pub struct ScalarFftImpl<T: Float> {
-    planner: RefCell<FftPlanner<T>>,
+    // SAFETY: `planner` is mutated through unsafe accessors which ensure
+    // exclusive access. The type is `!Sync` so `&self` is never shared
+    // concurrently across threads.
+    planner: UnsafeCell<FftPlanner<T>>,
 }
 
 impl<T: Float> Default for ScalarFftImpl<T> {
     fn default() -> Self {
         Self {
-            planner: RefCell::new(FftPlanner::new()),
+            planner: UnsafeCell::new(FftPlanner::new()),
         }
     }
 }
@@ -561,8 +575,20 @@ impl<T: Float> Default for ScalarFftImpl<T> {
 impl<T: Float> ScalarFftImpl<T> {
     pub fn with_planner(planner: FftPlanner<T>) -> Self {
         Self {
-            planner: RefCell::new(planner),
+            planner: UnsafeCell::new(planner),
         }
+    }
+
+    /// Returns a mutable reference to the internal [`FftPlanner`].
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure no other references (mutable or immutable) to the
+    /// planner exist while the returned reference is live.
+    #[allow(clippy::mut_from_ref)]
+    #[inline]
+    unsafe fn planner_mut(&self) -> &mut FftPlanner<T> {
+        &mut *self.planner.get()
     }
 
     pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
@@ -599,7 +625,7 @@ impl<T: Float> ScalarFftImpl<T> {
 
         // Stockham auto-sort FFT using a double-buffered approach.
         let (twiddles, mut scratch) = {
-            let mut planner = self.planner.borrow_mut();
+            let planner = unsafe { self.planner_mut() };
             let twiddles = planner.get_twiddles(n);
             let scratch = core::mem::take(&mut planner.scratch);
             (twiddles, scratch)
@@ -658,7 +684,7 @@ impl<T: Float> ScalarFftImpl<T> {
 
         // Return scratch to planner for reuse.
         {
-            let mut planner = self.planner.borrow_mut();
+            let planner = unsafe { self.planner_mut() };
             planner.scratch = scratch;
         }
 
@@ -689,7 +715,7 @@ impl ScalarFftImpl<f32> {
         }
 
         let twiddles = {
-            let mut planner = self.planner.borrow_mut();
+            let planner = unsafe { self.planner_mut() };
             planner.get_twiddles(n)
         };
         let twiddles = twiddles.as_ref();
@@ -814,7 +840,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         #[cfg(feature = "std")]
         {
             let (chirp_arc, fft_b_arc, mut a) = {
-                let mut planner = self.planner.borrow_mut();
+                let planner = unsafe { self.planner_mut() };
                 let (chirp, fft_b) = planner.get_bluestein(n);
                 let scratch = core::mem::take(&mut planner.bluestein_scratch);
                 (chirp, fft_b, scratch)
@@ -851,7 +877,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 *out = a[i].mul(chirp[i]);
             }
             {
-                let mut planner = self.planner.borrow_mut();
+                let planner = unsafe { self.planner_mut() };
                 planner.bluestein_scratch = a;
             }
             Ok(())
@@ -926,29 +952,37 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
 
     fn fft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
         let n = if stride == 0 { 0 } else { input.len() / stride };
-        let mut planner = self.planner.borrow_mut();
-        let mut scratch = core::mem::take(&mut planner.scratch);
-        if scratch.len() < n {
-            scratch.resize(n, Complex::zero());
-        }
-        drop(planner);
+        let mut scratch = {
+            let planner = unsafe { self.planner_mut() };
+            let mut scratch = core::mem::take(&mut planner.scratch);
+            if scratch.len() < n {
+                scratch.resize(n, Complex::zero());
+            }
+            scratch
+        };
         let result = self.fft_strided(input, stride, &mut scratch[..n]);
-        let mut planner = self.planner.borrow_mut();
-        planner.scratch = scratch;
+        {
+            let planner = unsafe { self.planner_mut() };
+            planner.scratch = scratch;
+        }
         result
     }
 
     fn ifft_strided_alloc(&self, input: &mut [Complex<T>], stride: usize) -> Result<(), FftError> {
         let n = if stride == 0 { 0 } else { input.len() / stride };
-        let mut planner = self.planner.borrow_mut();
-        let mut scratch = core::mem::take(&mut planner.scratch);
-        if scratch.len() < n {
-            scratch.resize(n, Complex::zero());
-        }
-        drop(planner);
+        let mut scratch = {
+            let planner = unsafe { self.planner_mut() };
+            let mut scratch = core::mem::take(&mut planner.scratch);
+            if scratch.len() < n {
+                scratch.resize(n, Complex::zero());
+            }
+            scratch
+        };
         let result = self.ifft_strided(input, stride, &mut scratch[..n]);
-        let mut planner = self.planner.borrow_mut();
-        planner.scratch = scratch;
+        {
+            let planner = unsafe { self.planner_mut() };
+            planner.scratch = scratch;
+        }
         result
     }
     fn ifft_strided(
@@ -993,21 +1027,25 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
         }
-        let mut planner = self.planner.borrow_mut();
-        let mut scratch = core::mem::take(&mut planner.scratch);
-        if scratch.len() < n {
-            scratch.resize(n, Complex::zero());
-        }
-        for i in 0..n {
-            scratch[i] = input[i * in_stride];
-        }
-        drop(planner);
+        let mut scratch = {
+            let planner = unsafe { self.planner_mut() };
+            let mut scratch = core::mem::take(&mut planner.scratch);
+            if scratch.len() < n {
+                scratch.resize(n, Complex::zero());
+            }
+            for i in 0..n {
+                scratch[i] = input[i * in_stride];
+            }
+            scratch
+        };
         self.fft(&mut scratch[..n])?;
         for i in 0..n {
             output[i * out_stride] = scratch[i];
         }
-        let mut planner = self.planner.borrow_mut();
-        planner.scratch = scratch;
+        {
+            let planner = unsafe { self.planner_mut() };
+            planner.scratch = scratch;
+        }
         Ok(())
     }
     fn ifft_out_of_place_strided(
@@ -1027,21 +1065,25 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if output.len() / out_stride != n {
             return Err(FftError::MismatchedLengths);
         }
-        let mut planner = self.planner.borrow_mut();
-        let mut scratch = core::mem::take(&mut planner.scratch);
-        if scratch.len() < n {
-            scratch.resize(n, Complex::zero());
-        }
-        for i in 0..n {
-            scratch[i] = input[i * in_stride];
-        }
-        drop(planner);
+        let mut scratch = {
+            let planner = unsafe { self.planner_mut() };
+            let mut scratch = core::mem::take(&mut planner.scratch);
+            if scratch.len() < n {
+                scratch.resize(n, Complex::zero());
+            }
+            for i in 0..n {
+                scratch[i] = input[i * in_stride];
+            }
+            scratch
+        };
         self.ifft(&mut scratch[..n])?;
         for i in 0..n {
             output[i * out_stride] = scratch[i];
         }
-        let mut planner = self.planner.borrow_mut();
-        planner.scratch = scratch;
+        {
+            let planner = unsafe { self.planner_mut() };
+            planner.scratch = scratch;
+        }
         Ok(())
     }
     fn fft_with_strategy(
@@ -1057,7 +1099,7 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         let chosen = if strategy == FftStrategy::Auto {
-            self.planner.borrow_mut().plan_strategy(n)
+            unsafe { self.planner_mut() }.plan_strategy(n)
         } else {
             strategy
         };
@@ -1174,7 +1216,7 @@ impl<T: Float> ScalarFftImpl<T> {
                 }
             } else {
                 let (w_step1, w_step2, w_step3) = {
-                    let mut planner = self.planner.borrow_mut();
+                    let planner = unsafe { self.planner_mut() };
                     let twiddles = planner.get_twiddles(len);
                     (twiddles[1], twiddles[2], twiddles[3])
                 };
