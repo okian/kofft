@@ -13,7 +13,7 @@ fn app(static_dir: impl AsRef<Path>) -> Router {
     let service = get_service(
         ServeDir::new(dir)
             .append_index_html_on_directories(true)
-            .not_found_service(ServeFile::new(dir.join("index.html"))),
+            .fallback(ServeFile::new(dir.join("index.html"))),
     );
 
     Router::new()
@@ -37,6 +37,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use http::{header, Request};
+    use http_body_util::BodyExt;
     use std::fs;
     use tempfile::tempdir;
     use tower::util::ServiceExt;
@@ -84,5 +85,23 @@ mod tests {
                 .unwrap(),
             "*"
         );
+    }
+
+    #[tokio::test]
+    async fn serves_index_for_unknown_path() {
+        let tmp = tempdir().unwrap();
+        let static_dir = tmp.path().join("static");
+        fs::create_dir(&static_dir).unwrap();
+        fs::write(static_dir.join("index.html"), "index").unwrap();
+
+        let router = app(&static_dir);
+
+        let res = router
+            .oneshot(Request::get("/missing").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body.as_ref(), b"index");
     }
 }
