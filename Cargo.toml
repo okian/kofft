@@ -19,6 +19,7 @@ exclude = [
   "tests/*",
   "examples/*",
 ]
+build = "build.rs"
 
 
 [workspace]
@@ -49,6 +50,7 @@ internal-tests = ["proptest", "rand"]
 compile-time-rfft = []
 simd = []
 soa = []
+precomputed-twiddles = ["std"]
 
 [dependencies.rayon]
 version = "1.7"
