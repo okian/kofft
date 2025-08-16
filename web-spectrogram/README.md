@@ -50,4 +50,16 @@ Light and dark themes are available.
 document.body.dataset.theme = "light"; // or "dark"
 ```
 
+## Frequency Scale
+
+Frequencies can be displayed on a linear or logarithmic scale.
+
+**UI:** Use the scale selector to choose between linear and logarithmic modes.
+
+**API:** Pass the desired scale when starting the render loop:
+
+```js
+startRenderLoop(canvas, analyser, "logarithmic"); // or "linear"
+```
+
 Refer back to this file whenever you need details on the available options and how to use them.
