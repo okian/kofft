@@ -5,6 +5,8 @@ use image::{
     codecs::png::{CompressionType, FilterType, PngEncoder},
     ColorType, EncodableLayout, ImageBuffer, Rgb,
 };
+use imageproc::drawing::{draw_filled_rect_mut, draw_line_segment_mut};
+use imageproc::rect::Rect;
 use indicatif::ProgressBar;
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
@@ -52,16 +54,33 @@ struct Args {
     /// Optional path to save an SVG spectrogram
     #[arg(long)]
     svg_output: Option<PathBuf>,
+
+    /// Draw a top time ruler
+    #[arg(long)]
+    time_ruler: bool,
+
+    /// Draw a right-side frequency scale
+    #[arg(long)]
+    freq_scale: bool,
+
+    /// Overlay waveform centered vertically
+    #[arg(long)]
+    waveform: bool,
+
+    /// Draw status bar with time, frequency and amplitude
+    #[arg(long)]
+    status_bar: bool,
 }
 
-fn read_flac(path: &PathBuf) -> Result<Vec<f32>, Box<dyn Error>> {
+fn read_flac(path: &PathBuf) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     let mut reader = FlacReader::open(path)?;
+    let sr = reader.streaminfo().sample_rate;
     let mut samples = Vec::new();
     for s in reader.samples() {
         let v: i32 = s?;
         samples.push(v as f32 / i32::MAX as f32);
     }
-    Ok(samples)
+    Ok((samples, sr))
 }
 
 fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u16; 3] {
@@ -163,9 +182,140 @@ fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> Stri
     )
 }
 
+fn draw_char(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, ch: char) {
+    let pattern = match ch {
+        '0' => ["###", "# #", "# #", "# #", "###"],
+        '1' => ["  #", "  #", "  #", "  #", "  #"],
+        '2' => ["###", "  #", "###", "#  ", "###"],
+        '3' => ["###", "  #", "###", "  #", "###"],
+        '4' => ["# #", "# #", "###", "  #", "  #"],
+        '5' => ["###", "#  ", "###", "  #", "###"],
+        '6' => ["###", "#  ", "###", "# #", "###"],
+        '7' => ["###", "  #", "  #", "  #", "  #"],
+        '8' => ["###", "# #", "###", "# #", "###"],
+        '9' => ["###", "# #", "###", "  #", "###"],
+        't' => ["###", " # ", " # ", " # ", " # "],
+        's' => ["###", "#  ", "###", "  #", "###"],
+        'f' => ["###", "#  ", "## ", "#  ", "#  "],
+        'H' => ["# #", "# #", "###", "# #", "# #"],
+        'z' => ["###", "  #", " # ", "#  ", "###"],
+        'a' => ["###", "  #", "###", "# #", "###"],
+        ':' => ["   ", " # ", "   ", " # ", "   "],
+        '.' => ["   ", "   ", "   ", "   ", " # "],
+        ' ' => ["   ", "   ", "   ", "   ", "   "],
+        _ => ["???", "???", "???", "???", "???"],
+    };
+    for (dy, row) in pattern.iter().enumerate() {
+        for (dx, c) in row.chars().enumerate() {
+            if c == '#' {
+                let px = x + dx as i32;
+                let py = y + dy as i32;
+                if px >= 0 && py >= 0 && px < img.width() as i32 && py < img.height() as i32 {
+                    img.put_pixel(px as u32, py as u32, Rgb([65535, 65535, 65535]));
+                }
+            }
+        }
+    }
+}
+
+fn draw_text(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, text: &str) {
+    let mut cx = x;
+    for ch in text.chars() {
+        draw_char(img, cx, y, ch);
+        cx += 4;
+    }
+}
+
+fn draw_time_ruler(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    sample_rate: u32,
+    hop: usize,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    let width = img.width();
+    let seconds = width as f32 * hop as f32 / sample_rate as f32;
+    let px_per_sec = width as f32 / seconds.max(1.0);
+    for s in 0..=seconds.ceil() as u32 {
+        let x = (s as f32 * px_per_sec) as i32;
+        if x < width as i32 {
+            draw_line_segment_mut(
+                img,
+                (x as f32, 0.0),
+                (x as f32, 5.0),
+                Rgb([65535, 65535, 65535]),
+            );
+            let text = format!("{}s", s);
+            draw_text(img, x, 6, &text);
+        }
+    }
+}
+
+fn draw_frequency_scale(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    sample_rate: u32,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    let height = img.height();
+    let width = img.width();
+    let nyquist = sample_rate as f32 / 2.0;
+    let px_per_hz = height as f32 / nyquist.max(1.0);
+    for f in (0..=nyquist as u32).step_by(1000) {
+        let y = (f as f32 * px_per_hz) as i32;
+        if y < height as i32 {
+            draw_line_segment_mut(
+                img,
+                ((width - 6) as f32, y as f32),
+                ((width - 1) as f32, y as f32),
+                Rgb([65535, 65535, 65535]),
+            );
+            let text = format!("{}Hz", f);
+            let text_y = (y - 6).max(0);
+            draw_text(img, width as i32 - 60, text_y, &text);
+        }
+    }
+}
+
+fn draw_waveform(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    samples: &[f32],
+    hop: usize,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    let mid = img.height() as f32 / 2.0;
+    let width = img.width() as usize;
+    for x in 0..width {
+        let idx = x * hop;
+        let sample = samples.get(idx).copied().unwrap_or(0.0);
+        let y = (mid - sample * (mid - 1.0)).clamp(0.0, img.height() as f32 - 1.0);
+        img.put_pixel(x as u32, y as u32, Rgb([65535, 65535, 65535]));
+    }
+}
+
+fn draw_status_bar(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, text: &str, enabled: bool) {
+    if !enabled {
+        return;
+    }
+    let h = img.height();
+    draw_filled_rect_mut(
+        img,
+        Rect::at(0, h as i32 - 16).of_size(img.width(), 16),
+        Rgb([0, 0, 0]),
+    );
+    draw_text(img, 0, h as i32 - 15, text);
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let samples = read_flac(&args.input)?;
+    let (samples, sample_rate) = read_flac(&args.input)?;
 
     let win_len = args.win_len;
     let hop = win_len / 2;
@@ -244,6 +394,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         heatmap_bar.inc(1);
     }
     heatmap_bar.finish_and_clear();
+
+    draw_time_ruler(&mut img_kofft, sample_rate, hop, args.time_ruler);
+    draw_frequency_scale(&mut img_kofft, sample_rate, args.freq_scale);
+    draw_waveform(&mut img_kofft, &samples, hop, args.waveform);
+    let center_frame = width / 2;
+    let center_bin = height / 2;
+    let time = center_frame as f32 * hop as f32 / sample_rate as f32;
+    let freq = center_bin as f32 * sample_rate as f32 / win_len as f32;
+    let amp = kofft_mag[center_frame][center_bin];
+    let status = format!("t:{:.2}s f:{:.1}Hz a:{:.2}", time, freq, amp);
+    draw_status_bar(&mut img_kofft, &status, args.status_bar);
     save_png(&img_kofft, "kofft_spectrogram.png", args.png_depth)?;
     save_png(&img_ref, "reference_spectrogram.png", args.png_depth)?;
     if let Some(path) = args.svg_output.as_ref() {
@@ -311,5 +472,23 @@ mod tests {
             desc,
             "Spectrogram Visualization: X-axis time frames, Y-axis frequency bins, colors show magnitude in dB using Inferno colormap, resolution 10x20 pixels, layout includes axis labels, color bar, and grid lines."
         );
+    }
+
+    #[test]
+    fn draw_helpers_render_overlays() {
+        let mut img: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(100, 50, Rgb([0, 0, 0]));
+        let samples = vec![0.0; 44100];
+        draw_waveform(&mut img, &samples, 441, true);
+        assert!(img.pixels().any(|p| p.0 != [0, 0, 0]));
+
+        draw_time_ruler(&mut img, 44100, 2205, true);
+        assert_ne!(img.get_pixel(0, 0), &Rgb([0, 0, 0]));
+
+        draw_frequency_scale(&mut img, 44100, true);
+        assert_ne!(img.get_pixel(99, 0), &Rgb([0, 0, 0]));
+
+        draw_status_bar(&mut img, "t:0 f:0 a:0", true);
+        assert_ne!(img.get_pixel(1, 35), &Rgb([0, 0, 0]));
     }
 }
