@@ -19,6 +19,11 @@ body {
   justify-content: center;
 }
 
+body[data-theme="light"] {
+  background: #fff;
+  color: #000;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -51,4 +56,6 @@ a {
 p {
   text-align: center;
   margin: 0.5rem 0;
+body[data-theme="light"] canvas {
+  background: #fff;
 }
