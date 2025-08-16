@@ -1,73 +1,30 @@
-# Web Spectrogram
+# Web Spectrogram PWA
 
-The `web-spectrogram` package provides a WebAssembly-powered spectrogram viewer. It exposes several runtime options that can be controlled from the demo UI or programmatically from JavaScript.
+A React-powered Progressive Web App for visualising audio as a spectrogram. It extracts album art and metadata from audio files and displays them alongside a real-time spectrogram view.
 
-## Colormaps
+## Features
 
-The spectrogram supports multiple colour palettes:
+- **React UI** with responsive layout that works across desktop and mobile browsers.
+- **PWA support** with offline caching via Service Worker.
+- **Album art extraction** using `music-metadata-browser`. Falls back to a generic vinyl image when no art is embedded.
+- **Sidebar metadata** showing title, artist, album, year and track length.
+- **Playback controls** pinned to the bottom of the screen.
+- Placeholder **spectrogram canvas** ready for integration with the WASM renderer.
 
-- `fire`
-- `legacy`
-- `gray`
-- `viridis`
-- `plasma`
-- `inferno`
-- `rainbow`
+## Development
 
-**UI:** Use the colormap selector in the demo to choose a palette.
-
-**API:** Call `set_colormap` with one of the above names after initialising the wasm module:
-
-```js
-import init, { set_colormap } from "web_spectrogram";
-
-await init();
-set_colormap("viridis");
+```bash
+cd web-spectrogram
+npm install
+npm run dev
 ```
 
-## Orientation
+The application will be served at <http://localhost:5173> by default.
 
-Time can run horizontally (left→right) or vertically (top→bottom).
+## Testing
 
-**UI:** Toggle the orientation control to switch between horizontal and vertical layouts.
-
-**API:** Apply a CSS class or transform to the `<canvas>` element:
-
-```js
-// rotate 90deg to make time advance vertically
-canvas.classList.toggle("vertical");
+```bash
+npm test
 ```
 
-## Theme Switching
-
-Light and dark themes are available.
-
-**UI:** Use the theme switcher to toggle between light and dark modes.
-
-**API:** Set the document's theme attribute:
-
-```js
-document.body.dataset.theme = "light"; // or "dark"
-```
-
-## Frequency Scale
-
-Frequencies can be displayed on a linear or logarithmic scale.
-
-**UI:** Use the scale selector to choose between linear and logarithmic modes.
-
-**API:** Pass the desired scale when starting the render loop:
-
-```js
-startRenderLoop(canvas, analyser, "logarithmic"); // or "linear"
-```
-
-## Microphone Input
-
-The spectrogram can visualise live audio from a microphone in addition to files.
-
-**UI:** Use the **Mic** button to toggle capture and the adjacent list to choose an input device. When a file is playing and the mic is enabled, both sources are combined in the same spectrogram.
-
-**API:** Obtain a `MediaStream` with `getUserMedia`, create a `MediaStreamAudioSourceNode`, and connect it to the analyser used for rendering.
-
-Refer back to this file whenever you need details on the available options and how to use them.
+Vitest runs unit tests and reports coverage. All new code must maintain at least 90% coverage.
