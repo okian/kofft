@@ -13,7 +13,7 @@ fn app(static_dir: impl AsRef<Path>) -> Router {
     let service = get_service(
         ServeDir::new(dir)
             .append_index_html_on_directories(true)
-            .not_found_service(ServeFile::new(dir.join("index.html"))),
+            .fallback(ServeFile::new(dir.join("index.html"))),
     );
 
     Router::new()
