@@ -37,7 +37,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use http::{header, Request};
-    use hyper::body::to_bytes;
+    use http_body_util::BodyExt;
     use std::fs;
     use tempfile::tempdir;
     use tower::util::ServiceExt;
@@ -101,7 +101,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let body = to_bytes(res.into_body()).await.unwrap();
-        assert_eq!(&body[..], b"index");
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body.as_ref(), b"index");
     }
 }
