@@ -183,12 +183,9 @@ pub fn update_bench_readme_command(cfg: &BuildConfig) -> Command {
     cmd
 }
 
-pub fn sanity_command(flac: Option<&str>) -> Command {
+pub fn sanity_command(input: &str, output: &str) -> Command {
     let mut cmd = Command::new("cargo");
-    cmd.args(["run", "-r", "-p", "sanity-check", "--"]);
-    if let Some(path) = flac {
-        cmd.arg(path);
-    }
+    cmd.args(["run", "-r", "-p", "sanity-check", "--", input, output]);
     cmd
 }
 
@@ -281,13 +278,14 @@ mod tests {
         assert!(bcmd.get_args().any(|a| a == "bench"));
         let ucmd = update_bench_readme_command(&cfg);
         assert!(ucmd.get_args().any(|a| a == "update_bench_readme"));
-        let scmd = sanity_command(Some("file.flac"));
+        let scmd = sanity_command("in.flac", "out.png");
         let args: Vec<_> = scmd
             .get_args()
             .map(|a| a.to_str().unwrap().to_string())
             .collect();
         assert!(args.contains(&"sanity-check".to_string()));
-        assert!(args.contains(&"file.flac".to_string()));
+        assert!(args.contains(&"in.flac".to_string()));
+        assert!(args.contains(&"out.png".to_string()));
     }
 
     #[test]

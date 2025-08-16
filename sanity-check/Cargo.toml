@@ -9,4 +9,10 @@ image = { version = "0.24", default-features = false, features = ["png"] }
 kofft = { path = ".." }
 colorous = "1"
 svg = "0.10"
+symphonia = { version = "0.5", features = ["flac", "mp3", "wav"] }
 hound = "3.5"
+
+[dev-dependencies]
+hound = "3.5"
+tempfile = "3"
+base64 = "0.21"
