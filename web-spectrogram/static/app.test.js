@@ -55,7 +55,9 @@ test("SeekBar renders amplitudes", () => {
 });
 
 test("setupPlayback syncs seek with audio", () => {
-  const dom = new JSDOM(`<audio></audio><canvas id="seekbar" width="4" height="2"></canvas>`);
+  const dom = new JSDOM(
+    `<audio></audio><canvas id="seekbar" width="4" height="2"></canvas>`,
+  );
   const audio = dom.window.document.querySelector("audio");
   const canvas = dom.window.document.getElementById("seekbar");
   const ops = [];
@@ -354,4 +356,35 @@ test("canvas resizes with window", () => {
   dom.window.dispatchEvent(new dom.window.Event("resize"));
   assert.equal(canvas.width, 200);
   assert.equal(canvas.height, 75);
+});
+
+test("init handles missing seekbar on file selection", async () => {
+  const dom = new JSDOM(
+    `<input type="file"><audio></audio><canvas id="spectrogram"></canvas>`,
+  );
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  const events = [];
+  const deps = {
+    decodeAndProcess: async () => ({
+      ctx: {
+        createAnalyser: () => ({
+          connect: () => {},
+          frequencyBinCount: 1,
+          getByteFrequencyData: () => {},
+        }),
+        createMediaElementSource: () => ({ connect: () => {} }),
+        destination: {},
+      },
+      amplitudes: [0],
+    }),
+    setupPlayback: () => events.push("setup"),
+    startRenderLoop: () => events.push("render"),
+  };
+  const input = dom.window.document.querySelector("input[type=file]");
+  init(dom.window.document, deps);
+  Object.defineProperty(input, "files", { value: [{}], configurable: true });
+  input.dispatchEvent(new dom.window.Event("change"));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(events, ["render"]);
 });
