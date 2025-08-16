@@ -13,4 +13,3 @@ kofft = { path = ".." }
 indicatif = "0.17"
 colorous = "1"
 svg = "0.10"
-imageproc = "0.23"
