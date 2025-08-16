@@ -9,12 +9,158 @@ use alloc::{sync::Arc, vec::Vec};
 
 use hashbrown::HashMap;
 
-#[allow(unused_imports)]
-use core::any::TypeId;
 use core::mem::MaybeUninit;
 
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
+
+/// Trait providing specialized real FFT implementations for concrete
+/// floating-point types.
+#[doc(hidden)]
+pub trait RealFftNum: Float {
+    #[cfg(feature = "compile-time-rfft")]
+    fn load_precomputed(cache: &mut HashMap<usize, Arc<[Complex<Self>]>>);
+
+    fn rfft_with_scratch_impl<F: FftImpl<Self> + ?Sized>(
+        fft: &F,
+        input: &mut [Self],
+        output: &mut [Complex<Self>],
+        scratch: &mut [Complex<Self>],
+        twiddles: &[Complex<Self>],
+        pack_twiddles: &[Complex<Self>],
+    ) -> Result<(), FftError>;
+
+    fn irfft_with_scratch_impl<F: FftImpl<Self> + ?Sized>(
+        fft: &F,
+        input: &mut [Complex<Self>],
+        output: &mut [Self],
+        scratch: &mut [Complex<Self>],
+        twiddles: &[Complex<Self>],
+        pack_twiddles: &[Complex<Self>],
+    ) -> Result<(), FftError>;
+}
+
+impl RealFftNum for f32 {
+    #[cfg(feature = "compile-time-rfft")]
+    fn load_precomputed(cache: &mut HashMap<usize, Arc<[Complex<Self>]>>) {
+        for &(m, table) in precomputed::F32 {
+            cache.insert(m, Arc::from(table));
+        }
+    }
+
+    fn rfft_with_scratch_impl<F: FftImpl<Self> + ?Sized>(
+        fft: &F,
+        input: &mut [Self],
+        output: &mut [Complex<Self>],
+        scratch: &mut [Complex<Self>],
+        twiddles: &[Complex<Self>],
+        pack_twiddles: &[Complex<Self>],
+    ) -> Result<(), FftError> {
+        #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
+        {
+            unsafe {
+                rfft_direct_f32_avx(
+                    |d| fft.fft(d),
+                    input,
+                    output,
+                    scratch,
+                    twiddles,
+                    pack_twiddles,
+                )
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+        {
+            unsafe {
+                rfft_direct_f32_neon(
+                    |d| fft.fft(d),
+                    input,
+                    output,
+                    scratch,
+                    twiddles,
+                    pack_twiddles,
+                )
+            }
+        }
+        #[cfg(not(any(
+            all(target_arch = "x86_64", feature = "x86_64"),
+            all(target_arch = "aarch64", feature = "aarch64"),
+        )))]
+        rfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
+    }
+
+    fn irfft_with_scratch_impl<F: FftImpl<Self> + ?Sized>(
+        fft: &F,
+        input: &mut [Complex<Self>],
+        output: &mut [Self],
+        scratch: &mut [Complex<Self>],
+        twiddles: &[Complex<Self>],
+        pack_twiddles: &[Complex<Self>],
+    ) -> Result<(), FftError> {
+        #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
+        {
+            unsafe {
+                irfft_direct_f32_avx(
+                    |d| fft.ifft(d),
+                    input,
+                    output,
+                    scratch,
+                    twiddles,
+                    pack_twiddles,
+                )
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
+        {
+            unsafe {
+                irfft_direct_f32_neon(
+                    |d| fft.ifft(d),
+                    input,
+                    output,
+                    scratch,
+                    twiddles,
+                    pack_twiddles,
+                )
+            }
+        }
+        #[cfg(not(any(
+            all(target_arch = "x86_64", feature = "x86_64"),
+            all(target_arch = "aarch64", feature = "aarch64"),
+        )))]
+        irfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
+    }
+}
+
+impl RealFftNum for f64 {
+    #[cfg(feature = "compile-time-rfft")]
+    fn load_precomputed(cache: &mut HashMap<usize, Arc<[Complex<Self>]>>) {
+        for &(m, table) in precomputed::F64 {
+            cache.insert(m, Arc::from(table));
+        }
+    }
+
+    fn rfft_with_scratch_impl<F: FftImpl<Self> + ?Sized>(
+        fft: &F,
+        input: &mut [Self],
+        output: &mut [Complex<Self>],
+        scratch: &mut [Complex<Self>],
+        twiddles: &[Complex<Self>],
+        pack_twiddles: &[Complex<Self>],
+    ) -> Result<(), FftError> {
+        rfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
+    }
+
+    fn irfft_with_scratch_impl<F: FftImpl<Self> + ?Sized>(
+        fft: &F,
+        input: &mut [Complex<Self>],
+        output: &mut [Self],
+        scratch: &mut [Complex<Self>],
+        twiddles: &[Complex<Self>],
+        pack_twiddles: &[Complex<Self>],
+    ) -> Result<(), FftError> {
+        irfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
+    }
+}
 
 #[cfg(feature = "compile-time-rfft")]
 mod precomputed {
@@ -45,7 +191,7 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
 /// conceptually identical to the ones used by the [`realfft`] crate and
 /// allow the kernels below to operate directly on the packed buffer without
 /// recomputing trigonometric values on every invocation.
-pub struct RfftPlanner<T: Float> {
+pub struct RfftPlanner<T: RealFftNum> {
     /// Post-processing twiddle factors used after the complex FFT.
     cache: HashMap<usize, Arc<[Complex<T>]>>,
     /// Twiddles used when packing/unpacking the real-even/odd layout.
@@ -54,13 +200,13 @@ pub struct RfftPlanner<T: Float> {
     scratch: Vec<Complex<T>>,
 }
 
-impl<T: Float> Default for RfftPlanner<T> {
+impl<T: RealFftNum> Default for RfftPlanner<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Float> RfftPlanner<T> {
+impl<T: RealFftNum> RfftPlanner<T> {
     /// Common transform lengths that are precomputed during planner
     /// construction. These cover typical power-of-two sizes used in audio
     /// and DSP applications and provide a sensible baseline without any
@@ -73,20 +219,7 @@ impl<T: Float> RfftPlanner<T> {
         let mut pack_cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
 
         #[cfg(feature = "compile-time-rfft")]
-        {
-            use core::mem::transmute;
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                for &(m, table) in precomputed::F32 {
-                    let tbl: &'static [Complex<T>] = unsafe { transmute(table) };
-                    cache.insert(m, Arc::from(tbl));
-                }
-            } else if TypeId::of::<T>() == TypeId::of::<f64>() {
-                for &(m, table) in precomputed::F64 {
-                    let tbl: &'static [Complex<T>] = unsafe { transmute(table) };
-                    cache.insert(m, Arc::from(tbl));
-                }
-            }
-        }
+        T::load_precomputed(&mut cache);
 
         for &m in Self::PRECOMPUTED {
             cache.entry(m).or_insert_with(|| {
@@ -138,55 +271,7 @@ impl<T: Float> RfftPlanner<T> {
         let m = input.len() / 2;
         let twiddles = self.get_twiddles(m);
         let pack_twiddles = self.get_pack_twiddles(m);
-        #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
-        {
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                unsafe {
-                    let input32 = &mut *(input as *mut [T] as *mut [f32]);
-                    let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
-                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
-                    let twiddles32 =
-                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    let pack32 =
-                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    return rfft_direct_f32_avx(
-                        |d: &mut [Complex32]| {
-                            fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
-                        },
-                        input32,
-                        output32,
-                        scratch32,
-                        twiddles32,
-                        pack32,
-                    );
-                }
-            }
-        }
-        #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
-        {
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                unsafe {
-                    let input32 = &mut *(input as *mut [T] as *mut [f32]);
-                    let output32 = &mut *(output as *mut [Complex<T>] as *mut [Complex32]);
-                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
-                    let twiddles32 =
-                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    let pack32 =
-                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    return rfft_direct_f32_neon(
-                        |d: &mut [Complex32]| {
-                            fft.fft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
-                        },
-                        input32,
-                        output32,
-                        scratch32,
-                        twiddles32,
-                        pack32,
-                    );
-                }
-            }
-        }
-        rfft_direct(
+        T::rfft_with_scratch_impl(
             fft,
             input,
             output,
@@ -224,55 +309,7 @@ impl<T: Float> RfftPlanner<T> {
         let m = output.len() / 2;
         let twiddles = self.get_twiddles(m);
         let pack_twiddles = self.get_pack_twiddles(m);
-        #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
-        {
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                unsafe {
-                    let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
-                    let output32 = &mut *(output as *mut [T] as *mut [f32]);
-                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
-                    let twiddles32 =
-                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    let pack32 =
-                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    return irfft_direct_f32_avx(
-                        |d: &mut [Complex32]| {
-                            fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
-                        },
-                        input32,
-                        output32,
-                        scratch32,
-                        twiddles32,
-                        pack32,
-                    );
-                }
-            }
-        }
-        #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
-        {
-            if TypeId::of::<T>() == TypeId::of::<f32>() {
-                unsafe {
-                    let input32 = &mut *(input as *mut [Complex<T>] as *mut [Complex32]);
-                    let output32 = &mut *(output as *mut [T] as *mut [f32]);
-                    let scratch32 = &mut *(scratch as *mut [Complex<T>] as *mut [Complex32]);
-                    let twiddles32 =
-                        &*(twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    let pack32 =
-                        &*(pack_twiddles.as_ref() as *const [Complex<T>] as *const [Complex32]);
-                    return irfft_direct_f32_neon(
-                        |d: &mut [Complex32]| {
-                            fft.ifft(&mut *(d as *mut [Complex32] as *mut [Complex<T>]))
-                        },
-                        input32,
-                        output32,
-                        scratch32,
-                        twiddles32,
-                        pack32,
-                    );
-                }
-            }
-        }
-        irfft_direct(
+        T::irfft_with_scratch_impl(
             fft,
             input,
             output,
@@ -301,7 +338,7 @@ impl<T: Float> RfftPlanner<T> {
 }
 
 /// Old packed real FFT kernel used for comparison and fallback.
-pub fn rfft_packed<T: Float, F: FftImpl<T>>(
+pub fn rfft_packed<T: RealFftNum, F: FftImpl<T>>(
     planner: &mut RfftPlanner<T>,
     fft: &F,
     input: &mut [T],
@@ -342,7 +379,7 @@ pub fn rfft_packed<T: Float, F: FftImpl<T>>(
 }
 
 /// Packed inverse real FFT kernel used for comparison and fallback.
-pub fn irfft_packed<T: Float, F: FftImpl<T>>(
+pub fn irfft_packed<T: RealFftNum, F: FftImpl<T>>(
     planner: &mut RfftPlanner<T>,
     fft: &F,
     input: &mut [Complex<T>],
@@ -735,7 +772,7 @@ where
 }
 
 /// Trait providing real-valued FFT transforms built on top of [`FftImpl`].
-pub trait RealFftImpl<T: Float>: FftImpl<T> {
+pub trait RealFftImpl<T: RealFftNum>: FftImpl<T> {
     /// Compute the real-input FFT, producing `N/2 + 1` complex samples.
     /// The provided scratch buffer must have length `N/2` and is used as
     /// workspace for the intermediate complex FFT. When SIMD features are
@@ -797,7 +834,7 @@ pub trait RealFftImpl<T: Float>: FftImpl<T> {
 }
 
 // Blanket implementation for any complex FFT provider.
-impl<T: Float, U: FftImpl<T>> RealFftImpl<T> for U {}
+impl<T: RealFftNum, U: FftImpl<T>> RealFftImpl<T> for U {}
 
 /// Perform a real-input FFT using only stack allocation.
 ///
