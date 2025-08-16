@@ -13,7 +13,11 @@ SIMD_FEATURES :=
 RUSTFLAGS_ADD :=
 
 ifeq ($(findstring x86_64,$(ARCH)),x86_64)
-  ifneq ($(findstring avx2,$(CPUFLAGS)),)
+  SIMD_FEATURES += x86_64
+  ifneq ($(findstring avx512f,$(CPUFLAGS)),)
+    SIMD_FEATURES += avx512
+    RUSTFLAGS_ADD += -C target-feature=+avx512f,+fma
+  else ifneq ($(findstring avx2,$(CPUFLAGS)),)
     SIMD_FEATURES += avx2
     RUSTFLAGS_ADD += -C target-feature=+avx2,+fma
   else ifneq ($(findstring sse4_1,$(CPUFLAGS)),)
@@ -30,7 +34,8 @@ ifneq ($(shell [ $(NPROC) -gt 1 ] && echo yes),)
   EXAMPLE := parallel_benchmark
 endif
 
-FEATURES := $(strip $(SIMD_FEATURES) $(PAR_FEATURE))
+EXTRA_FEATURES := $(strip $(KOFFT_FEATURES))
+FEATURES := $(strip $(SIMD_FEATURES) $(PAR_FEATURE) $(EXTRA_FEATURES))
 
 .PHONY: build test clippy fmt analyze benchmark bench-libs update-bench-readme sanity
 

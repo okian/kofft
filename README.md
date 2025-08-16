@@ -384,6 +384,14 @@ automatically select the best implementation.
 SIMD backends are also enabled automatically when compiling with the
 appropriate `target-feature` flags (e.g., `RUSTFLAGS="-C target-feature=+avx2"`).
 
+To opt into additional optional features for local builds, set the
+`KOFFT_FEATURES` environment variable. Any features listed there are appended
+to those detected by the Makefile:
+
+```bash
+KOFFT_FEATURES="simd compile-time-rfft" make test
+```
+
 ### Parallel Processing
 
 Enable the `parallel` feature (using Rayon) as shown above:
