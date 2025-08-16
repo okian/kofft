@@ -6,7 +6,7 @@
 //! ```
 //!
 //! The input should be a 16-bit mono WAV file. The output is a PNG image where
-//! STFT magnitudes are mapped onto a yellow→purple color gradient.
+//! STFT magnitudes are mapped onto a dark purple→bright yellow/white color gradient.
 
 use std::env;
 use std::error::Error;
@@ -17,6 +17,14 @@ use image::{Rgb, RgbImage};
 use kofft::fft::ScalarFftImpl;
 use kofft::stft::stft;
 use kofft::window::hann;
+
+fn color_from_magnitude(mag: f32, max_mag: f32) -> Rgb<u8> {
+    let t = if max_mag > 0.0 { mag / max_mag } else { 0.0 };
+    let r = 64.0 * (1.0 - t) + 255.0 * t;
+    let g = 255.0 * t;
+    let b = 64.0 * (1.0 - t) + 224.0 * t;
+    Rgb([r as u8, g as u8, b as u8])
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -60,18 +68,38 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut img = RgbImage::new(width as u32, height as u32);
     for (x, frame_mag) in mags.iter().enumerate() {
         for (y, &mag) in frame_mag.iter().enumerate() {
-            let t = if max_mag > 0.0 { mag / max_mag } else { 0.0 };
-            let r = 255.0 - 127.0 * t;
-            let g = 255.0 * (1.0 - t);
-            let b = 128.0 * t;
             img.put_pixel(
                 x as u32,
                 (height - 1 - y) as u32,
-                Rgb([r as u8, g as u8, b as u8]),
+                color_from_magnitude(mag, max_mag),
             );
         }
     }
 
     img.save(output)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::color_from_magnitude;
+    use image::Rgb;
+
+    #[test]
+    fn low_magnitude_is_dark_purple() {
+        let Rgb([r, g, b]) = color_from_magnitude(0.0, 1.0);
+        assert_eq!((r, g, b), (64, 0, 64));
+    }
+
+    #[test]
+    fn high_magnitude_is_light_yellow() {
+        let Rgb([r, g, b]) = color_from_magnitude(1.0, 1.0);
+        assert_eq!((r, g, b), (255, 255, 224));
+    }
+
+    #[test]
+    fn midpoint_is_intermediate_color() {
+        let Rgb([r, g, b]) = color_from_magnitude(0.5, 1.0);
+        assert_eq!((r, g, b), (159, 127, 144));
+    }
 }
