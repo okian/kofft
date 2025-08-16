@@ -49,18 +49,21 @@ export function init(
   canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
   canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
 
+  deps.setupPlayback(audio, seek);
+
+  let ctx;
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const { ctx, audioBuffer } = await deps.decodeAndProcess(file, audio);
-    const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
+    if (ctx) {
+      await ctx.close();
+    }
+    ({ ctx } = await deps.decodeAndProcess(file, audio));
     const analyser = ctx.createAnalyser();
+    const source = ctx.createMediaElementSource(audio);
     source.connect(analyser);
     analyser.connect(ctx.destination);
-    deps.setupPlayback(audio, seek);
     deps.startRenderLoop(canvas, analyser);
-    source.start();
   });
 }
 

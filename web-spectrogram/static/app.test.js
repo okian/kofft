@@ -88,36 +88,94 @@ test("init wires up file input change", async () => {
   globalThis.document = dom.window.document;
   dom.window.URL.createObjectURL = () => "blob:url";
   const file = { arrayBuffer: async () => new ArrayBuffer(8) };
-  let setupCalled = false;
-  let renderCalled = false;
+  let setupCalled = 0;
+  let renderCalled = 0;
   const deps = {
     decodeAndProcess: async () => ({
       ctx: {
-        createBufferSource: () => ({
-          buffer: null,
-          connect: () => {},
-          start: () => {},
-        }),
+        createMediaElementSource: () => ({ connect: () => {} }),
         createAnalyser: () => ({
           connect: () => {},
           frequencyBinCount: 2,
           getByteFrequencyData: () => {},
         }),
         destination: {},
+        close: () => {},
       },
-      audioBuffer: {},
     }),
     setupPlayback: () => {
-      setupCalled = true;
+      setupCalled++;
     },
     startRenderLoop: () => {
-      renderCalled = true;
+      renderCalled++;
     },
   };
   init(dom.window.document, deps);
+  assert.equal(setupCalled, 1);
   const input = dom.window.document.querySelector("input[type=file]");
   Object.defineProperty(input, "files", { value: [file] });
   input.dispatchEvent(new dom.window.Event("change"));
   await new Promise((r) => setTimeout(r, 0));
-  assert.ok(setupCalled && renderCalled);
+  assert.equal(renderCalled, 1);
+});
+
+test("init closes previous context and keeps seek in sync", async () => {
+  const dom = new JSDOM(
+    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram" width="10" height="10"></canvas>`,
+  );
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  dom.window.URL.createObjectURL = () => "blob:url";
+  const files = [
+    { arrayBuffer: async () => new ArrayBuffer(8) },
+    { arrayBuffer: async () => new ArrayBuffer(8) },
+  ];
+  const closed = [];
+  const mediaSources = [];
+  const deps = {
+    decodeAndProcess: async () => ({
+      ctx: {
+        createMediaElementSource: () => {
+          mediaSources.push(true);
+          return { connect: () => {} };
+        },
+        createAnalyser: () => ({
+          connect: () => {},
+          frequencyBinCount: 2,
+          getByteFrequencyData: () => {},
+        }),
+        destination: {},
+        close: () => {
+          closed.push(true);
+        },
+      },
+    }),
+    setupPlayback,
+    startRenderLoop: () => {},
+  };
+  init(dom.window.document, deps);
+  const input = dom.window.document.querySelector("input[type=file]");
+  Object.defineProperty(input, "files", {
+    value: [files[0]],
+    configurable: true,
+  });
+  input.dispatchEvent(new dom.window.Event("change"));
+  await new Promise((r) => setTimeout(r, 0));
+  Object.defineProperty(input, "files", {
+    value: [files[1]],
+    configurable: true,
+  });
+  input.dispatchEvent(new dom.window.Event("change"));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(mediaSources.length, 2);
+  assert.equal(closed.length, 1);
+  const audio = dom.window.document.querySelector("audio");
+  const seek = dom.window.document.querySelector("input[type=range]");
+  Object.defineProperty(audio, "duration", { value: 10 });
+  audio.currentTime = 4;
+  audio.dispatchEvent(new dom.window.Event("timeupdate"));
+  assert.equal(seek.value, "4");
+  seek.value = "2";
+  seek.dispatchEvent(new dom.window.Event("input"));
+  assert.equal(audio.currentTime, 2);
 });
