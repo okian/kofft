@@ -58,7 +58,7 @@ impl RealFftNum for f32 {
     ) -> Result<(), FftError> {
         #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
         {
-            return unsafe {
+            unsafe {
                 rfft_direct_f32_avx(
                     |d| fft.fft(d),
                     input,
@@ -67,11 +67,11 @@ impl RealFftNum for f32 {
                     twiddles,
                     pack_twiddles,
                 )
-            };
+            }
         }
         #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
         {
-            return unsafe {
+            unsafe {
                 rfft_direct_f32_neon(
                     |d| fft.fft(d),
                     input,
@@ -80,8 +80,12 @@ impl RealFftNum for f32 {
                     twiddles,
                     pack_twiddles,
                 )
-            };
+            }
         }
+        #[cfg(not(any(
+            all(target_arch = "x86_64", feature = "x86_64"),
+            all(target_arch = "aarch64", feature = "aarch64"),
+        )))]
         rfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
     }
 
@@ -95,7 +99,7 @@ impl RealFftNum for f32 {
     ) -> Result<(), FftError> {
         #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
         {
-            return unsafe {
+            unsafe {
                 irfft_direct_f32_avx(
                     |d| fft.ifft(d),
                     input,
@@ -104,11 +108,11 @@ impl RealFftNum for f32 {
                     twiddles,
                     pack_twiddles,
                 )
-            };
+            }
         }
         #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
         {
-            return unsafe {
+            unsafe {
                 irfft_direct_f32_neon(
                     |d| fft.ifft(d),
                     input,
@@ -117,8 +121,12 @@ impl RealFftNum for f32 {
                     twiddles,
                     pack_twiddles,
                 )
-            };
+            }
         }
+        #[cfg(not(any(
+            all(target_arch = "x86_64", feature = "x86_64"),
+            all(target_arch = "aarch64", feature = "aarch64"),
+        )))]
         irfft_direct(fft, input, output, scratch, twiddles, pack_twiddles)
     }
 }
