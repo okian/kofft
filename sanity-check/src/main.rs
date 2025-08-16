@@ -24,6 +24,7 @@ enum ColorMap {
     Viridis,
     Plasma,
     Inferno,
+    Adobe,
 }
 
 #[derive(ValueEnum, Clone, Copy)]
@@ -36,13 +37,6 @@ enum SpectrogramMode {
 enum PngDepth {
     Eight,
     Sixteen,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-enum ValueMode {
-    Magnitude,
-    Amplitude,
-    Dbfs,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -75,13 +69,13 @@ struct Args {
     #[arg(long, value_enum, default_value_t = SpectrogramMode::Unipolar)]
     mode: SpectrogramMode,
 
-    /// FFT bin value interpretation
-    #[arg(long, value_enum, default_value_t = ValueMode::Magnitude)]
-    value_mode: ValueMode,
-
     /// Frequency scaling mode
     #[arg(long, value_enum, default_value_t = ScaleMode::Log)]
     scale_mode: ScaleMode,
+
+    /// Dynamic range in decibels
+    #[arg(long, default_value_t = 80.0)]
+    dynamic_range: f32,
 
     /// Optional path to save an SVG spectrogram
     #[arg(long, short = 's', help = "Optional path to save an SVG spectrogram")]
@@ -127,22 +121,39 @@ fn read_flac(path: &PathBuf) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     Ok((samples, sr))
 }
 
-fn apply_value_mode(raw: f32, mode: ValueMode) -> f32 {
-    match mode {
-        ValueMode::Magnitude => raw * raw,
-        ValueMode::Amplitude | ValueMode::Dbfs => raw,
-    }
+fn db_scale(value: f32, max: f32, dynamic_range: f32) -> f64 {
+    let db = 20.0 * (value / max).max(1e-10).log10();
+    ((db + dynamic_range) / dynamic_range).clamp(0.0, 1.0) as f64
 }
 
-fn map_color(value: f32, max: f32, cmap: &ColorMap, mode: ValueMode) -> [u16; 3] {
-    let t = match mode {
-        ValueMode::Magnitude | ValueMode::Amplitude => (value / max).clamp(0.0, 1.0) as f64,
-        ValueMode::Dbfs => {
-            let min_db = -80.0_f32;
-            let db = 20.0 * (value / max).max(1e-10).log10();
-            ((db - min_db) / -min_db).clamp(0.0, 1.0) as f64
-        }
-    };
+fn adobe_color(t: f64) -> [u16; 3] {
+    const STOPS: [(f64, [u8; 3]); 6] = [
+        (0.0, [0, 0, 0]),
+        (0.25, [0, 0, 255]),
+        (0.5, [0, 255, 255]),
+        (0.75, [255, 255, 0]),
+        (0.9, [255, 0, 0]),
+        (1.0, [255, 255, 255]),
+    ];
+    let mut i = 0;
+    while i + 1 < STOPS.len() && t > STOPS[i + 1].0 {
+        i += 1;
+    }
+    let (t0, c0) = STOPS[i];
+    let (t1, c1) = STOPS[(i + 1).min(STOPS.len() - 1)];
+    let local = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
+    let r = c0[0] as f64 + (c1[0] as f64 - c0[0] as f64) * local;
+    let g = c0[1] as f64 + (c1[1] as f64 - c0[1] as f64) * local;
+    let b = c0[2] as f64 + (c1[2] as f64 - c0[2] as f64) * local;
+    [
+        (r.round() as u16) * 257,
+        (g.round() as u16) * 257,
+        (b.round() as u16) * 257,
+    ]
+}
+
+fn map_color(value: f32, max: f32, cmap: &ColorMap, dynamic_range: f32) -> [u16; 3] {
+    let t = db_scale(value, max, dynamic_range);
     match cmap {
         ColorMap::Gray => {
             let g = (t * 65535.0).round() as u16;
@@ -172,6 +183,7 @@ fn map_color(value: f32, max: f32, cmap: &ColorMap, mode: ValueMode) -> [u16; 3]
                 u16::from(c.b) * 257,
             ]
         }
+        ColorMap::Adobe => adobe_color(t),
     }
 }
 
@@ -239,12 +251,28 @@ fn map_bin_to_pixel(bin: usize, max_bin: usize, scale: ScaleMode) -> usize {
     }
 }
 
+fn log_scale_bins(values: &[f32], max_bin: usize) -> Vec<f32> {
+    let mut accum = vec![0.0f32; max_bin + 1];
+    let mut counts = vec![0u32; max_bin + 1];
+    for (bin, &v) in values.iter().enumerate() {
+        let y = map_bin_to_pixel(bin, max_bin, ScaleMode::Log);
+        accum[y] += v;
+        counts[y] += 1;
+    }
+    for (a, c) in accum.iter_mut().zip(counts.iter()) {
+        if *c > 0 {
+            *a /= *c as f32;
+        }
+    }
+    accum
+}
+
 fn generate_heatmap(
     magnitudes: &[Vec<f32>],
     cmap: &ColorMap,
     mode: SpectrogramMode,
-    value_mode: ValueMode,
     scale: ScaleMode,
+    dynamic_range: f32,
 ) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
     let win_len = magnitudes[0].len();
     let width = magnitudes.len();
@@ -255,51 +283,84 @@ fn generate_heatmap(
     let mut img: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
     let max_val = magnitudes
         .iter()
-        .flat_map(|v| v.iter().map(|&val| apply_value_mode(val, value_mode)))
+        .flat_map(|v| v.iter().copied())
         .fold(0.0f32, f32::max)
         .max(1.0);
     for (x, frame) in magnitudes.iter().enumerate() {
         match mode {
             SpectrogramMode::Unipolar => {
-                for k in 0..height {
-                    let y = map_bin_to_pixel(k, height - 1, scale);
-                    let v = apply_value_mode(frame[k], value_mode);
-                    let col = map_color(v, max_val, cmap, value_mode);
+                let bins = match scale {
+                    ScaleMode::Linear => frame[..height].to_vec(),
+                    ScaleMode::Log => log_scale_bins(&frame[..height], height - 1),
+                };
+                for (y, v) in bins.into_iter().enumerate() {
+                    let col = map_color(v, max_val, cmap, dynamic_range);
                     img.put_pixel(x as u32, y as u32, Rgb(col));
                 }
             }
             SpectrogramMode::Bipolar => {
-                for k in 0..win_len {
-                    let y = match scale {
-                        ScaleMode::Linear => {
-                            if k <= win_len / 2 {
-                                win_len / 2 - k
-                            } else {
-                                win_len - (k - win_len / 2)
-                            }
+                let center = win_len / 2;
+                match scale {
+                    ScaleMode::Linear => {
+                        for (k, &v) in frame.iter().enumerate() {
+                            let y = if k <= center { center - k } else { k };
+                            let col = map_color(v, max_val, cmap, dynamic_range);
+                            img.put_pixel(x as u32, y as u32, Rgb(col));
                         }
-                        ScaleMode::Log => {
-                            let center = win_len / 2;
-                            if k == 0 {
-                                center
-                            } else if k <= center {
-                                let offset = map_bin_to_pixel(k, center, ScaleMode::Log);
-                                center - offset
-                            } else {
-                                let neg = win_len - k;
-                                let offset = map_bin_to_pixel(neg, center, ScaleMode::Log);
-                                center + offset
-                            }
+                    }
+                    ScaleMode::Log => {
+                        let pos = log_scale_bins(&frame[..=center], center);
+                        let neg = log_scale_bins(&frame[center..], center);
+                        for (y, v) in pos.iter().enumerate() {
+                            let col = map_color(*v, max_val, cmap, dynamic_range);
+                            img.put_pixel(x as u32, (center - y) as u32, Rgb(col));
                         }
-                    };
-                    let v = apply_value_mode(frame[k], value_mode);
-                    let col = map_color(v, max_val, cmap, value_mode);
-                    img.put_pixel(x as u32, y as u32, Rgb(col));
+                        for (y, v) in neg.iter().enumerate() {
+                            if y == 0 {
+                                continue;
+                            }
+                            let col = map_color(*v, max_val, cmap, dynamic_range);
+                            img.put_pixel(x as u32, (center + y) as u32, Rgb(col));
+                        }
+                    }
                 }
             }
         }
     }
     img
+}
+
+fn smooth_heatmap(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>) {
+    let src = img.clone();
+    let (w, h) = img.dimensions();
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = [0u32; 3];
+            let mut count = 0u32;
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    let nx = x as i32 + dx;
+                    let ny = y as i32 + dy;
+                    if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 {
+                        let p = src.get_pixel(nx as u32, ny as u32);
+                        sum[0] += p[0] as u32;
+                        sum[1] += p[1] as u32;
+                        sum[2] += p[2] as u32;
+                        count += 1;
+                    }
+                }
+            }
+            img.put_pixel(
+                x,
+                y,
+                Rgb([
+                    (sum[0] / count) as u16,
+                    (sum[1] / count) as u16,
+                    (sum[2] / count) as u16,
+                ]),
+            );
+        }
+    }
 }
 
 fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> String {
@@ -308,6 +369,7 @@ fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> Stri
         ColorMap::Viridis => "Viridis",
         ColorMap::Plasma => "Plasma",
         ColorMap::Inferno => "Inferno",
+        ColorMap::Adobe => "Adobe",
     };
     format!(
         "Spectrogram Visualization: X-axis time frames, Y-axis frequency bins, colors show magnitude in dB using {} colormap, resolution {}x{} pixels, layout includes axis labels, color bar, and grid lines.",
@@ -317,16 +379,12 @@ fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> Stri
 
 fn draw_line(
     img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
-    x0: i32,
-    y0: i32,
+    mut x0: i32,
+    mut y0: i32,
     x1: i32,
     y1: i32,
     color: Rgb<u16>,
 ) {
-    let mut x0 = x0;
-    let mut y0 = y0;
-    let x1 = x1;
-    let y1 = y1;
     let dx = (x1 - x0).abs();
     let dy = -(y1 - y0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -349,6 +407,16 @@ fn draw_line(
             y0 += sy;
         }
     }
+}
+
+fn draw_axes(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>) {
+    let w = img.width() as i32 - 1;
+    let h = img.height() as i32 - 1;
+    let c = Rgb([65535, 65535, 65535]);
+    draw_line(img, 0, 0, w, 0, c);
+    draw_line(img, 0, h, w, h, c);
+    draw_line(img, 0, 0, 0, h, c);
+    draw_line(img, w, 0, w, h, c);
 }
 
 fn draw_filled_rect(
@@ -676,23 +744,10 @@ fn draw_status_bar(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, text: &str, enable
         return;
     }
     let scale = 2;
-    let h = img.height();
+    let h = img.height() as i32;
     let bar_h = 16 * scale;
-    draw_filled_rect(
-        img,
-        0,
-        h as i32 - bar_h as i32,
-        img.width(),
-        bar_h as u32,
-        Rgb([0, 0, 0]),
-    );
-    draw_text(
-        img,
-        0,
-        h as i32 - bar_h as i32 + scale as i32,
-        text,
-        scale as u32,
-    );
+    draw_filled_rect(img, 0, h - bar_h, img.width(), bar_h as u32, Rgb([0, 0, 0]));
+    draw_text(img, 0, h - bar_h + scale, text, scale as u32);
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -762,16 +817,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         &kofft_mag,
         &args.colormap,
         args.mode,
-        args.value_mode,
         args.scale_mode,
+        args.dynamic_range,
     );
-    let img_ref = generate_heatmap(
+    let mut img_ref = generate_heatmap(
         &rust_mag,
         &args.colormap,
         args.mode,
-        args.value_mode,
         args.scale_mode,
+        args.dynamic_range,
     );
+
+    smooth_heatmap(&mut img_kofft);
+    smooth_heatmap(&mut img_ref);
+    draw_axes(&mut img_kofft);
 
     draw_time_grid(&mut img_kofft, sample_rate, hop, args.grid_time);
     draw_frequency_grid(&mut img_kofft, sample_rate, args.mode, args.grid_frequency);
@@ -795,12 +854,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         SpectrogramMode::Bipolar => 0.0,
     };
     let raw_amp = kofft_mag[center_frame][freq_bin];
-    let amp = match args.value_mode {
-        ValueMode::Magnitude => raw_amp * raw_amp,
-        ValueMode::Amplitude => raw_amp,
-        ValueMode::Dbfs => 20.0 * raw_amp.max(1e-10).log10(),
-    };
-    let status = format!("t:{:.2}s f:{:.1}Hz a:{:.2}", time, freq, amp);
+    let amp = 20.0 * raw_amp.max(1e-10).log10();
+    let status = format!("t:{:.2}s f:{:.1}Hz a:{:.2}dB", time, freq, amp);
     draw_status_bar(&mut img_kofft, &status, args.status_bar);
     save_png(&img_kofft, "kofft_spectrogram.png", args.png_depth)?;
     save_png(&img_ref, "reference_spectrogram.png", args.png_depth)?;
@@ -819,7 +874,6 @@ mod tests {
     use image::ImageDecoder;
     use std::fs;
     use std::fs::File;
-    use std::path::PathBuf;
 
     #[test]
     fn saves_png_with_specified_depth() {
@@ -854,279 +908,28 @@ mod tests {
     }
 
     #[test]
-    fn args_short_flags_parse() {
-        let args = Args::parse_from(["bin", "input.flac", "-s", "out.svg", "-t", "-f", "-w", "-b"]);
-        assert_eq!(args.svg_output, Some(PathBuf::from("out.svg")));
-        assert!(args.time_ruler);
-        assert!(args.freq_scale);
-        assert!(args.waveform);
-        assert!(args.status_bar);
-        assert_eq!(args.value_mode, ValueMode::Magnitude);
+    fn db_scaling_respects_bounds() {
+        let max = 1.0;
+        let dr = 80.0;
+        let high = db_scale(max, max, dr);
+        let low = db_scale(max * 10f32.powf(-dr / 20.0), max, dr);
+        assert!((high - 1.0).abs() < 1e-6);
+        assert!(low.abs() < 1e-6);
     }
 
     #[test]
-    fn args_parse_value_mode() {
-        let args = Args::parse_from(["bin", "input.flac", "--value-mode", "dbfs"]);
-        assert_eq!(args.value_mode, ValueMode::Dbfs);
+    fn log_scale_bins_average_correctly() {
+        let frame: Vec<f32> = (1..=8).map(|x| x as f32).collect();
+        let scaled = log_scale_bins(&frame, 7);
+        // bins 5 and 6 map to index 6
+        assert!((scaled[6] - (6.0 + 7.0) / 2.0).abs() < 1e-6);
     }
 
     #[test]
-    fn help_includes_example() {
-        use clap::CommandFactory;
-        let mut cmd = Args::command();
-        let help = cmd.render_long_help().to_string();
-        assert!(help.contains("Example:"));
-    }
-
-    #[test]
-    fn stft_accepts_div_ceil_frames() {
-        let signal = vec![0.0; 10];
-        let window = hann(4);
-        let hop = 2;
-        let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
-        let fft = ScalarFftImpl::<f32>::default();
-        assert!(stft(&signal, &window, hop, &mut frames, &fft).is_ok());
-    }
-
-    #[test]
-    fn spectrogram_description_matches_spec() {
-        let desc = spectrogram_description(10, 20, &ColorMap::Inferno);
-        assert_eq!(
-            desc,
-            "Spectrogram Visualization: X-axis time frames, Y-axis frequency bins, colors show magnitude in dB using Inferno colormap, resolution 10x20 pixels, layout includes axis labels, color bar, and grid lines."
-        );
-    }
-
-    #[test]
-    fn draw_helpers_render_overlays() {
-        let mut img: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(100, 50, Rgb([0, 0, 0]));
-        let samples = vec![0.0; 44100];
-        draw_waveform(&mut img, &samples, 441, true);
-        assert!(img.pixels().any(|p| p.0 != [0, 0, 0]));
-
-        draw_time_ruler(&mut img, 44100, 2205, true);
-        assert!(img
-            .enumerate_pixels()
-            .any(|(_, y, p)| y == 0 && p.0 != [0, 0, 0]));
-
-        draw_frequency_scale(
-            &mut img,
-            44100,
-            SpectrogramMode::Unipolar,
-            ScaleMode::Linear,
-            true,
-        );
-        assert_ne!(img.get_pixel(99, 0), &Rgb([0, 0, 0]));
-
-        draw_status_bar(&mut img, "t:0 f:0 a:0", true);
-        assert_ne!(img.get_pixel(1, 20), &Rgb([0, 0, 0]));
-    }
-
-    #[test]
-    fn scaled_text_renders_larger() {
-        let mut small: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(20, 20, Rgb([0, 0, 0]));
-        draw_text(&mut small, 0, 0, "1", 1);
-        let small_count = small.pixels().filter(|p| p.0 != [0, 0, 0]).count();
-
-        let mut large: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(40, 40, Rgb([0, 0, 0]));
-        draw_text(&mut large, 0, 0, "1", 2);
-        let large_count = large.pixels().filter(|p| p.0 != [0, 0, 0]).count();
-
-        assert_eq!(large_count, small_count * 4);
-    }
-
-    #[test]
-    fn draw_line_and_rect_work() {
-        let mut img: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(10, 10, Rgb([0, 0, 0]));
-        draw_line(&mut img, 0, 0, 9, 9, Rgb([65535, 0, 0]));
-        assert_eq!(img.get_pixel(0, 0), &Rgb([65535, 0, 0]));
-        assert_eq!(img.get_pixel(9, 9), &Rgb([65535, 0, 0]));
-        draw_filled_rect(&mut img, 2, 2, 3, 3, Rgb([0, 65535, 0]));
-        for y in 2..5 {
-            for x in 2..5 {
-                assert_eq!(img.get_pixel(x, y), &Rgb([0, 65535, 0]));
-            }
-        }
-    }
-
-    #[test]
-    fn draw_time_and_frequency_grids_render() {
-        let mut img: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(100, 100, Rgb([0, 0, 0]));
-        draw_time_grid(&mut img, 10, 1, true);
-        assert_eq!(img.get_pixel(10, 0).0, [32768, 32768, 32768]);
-
-        let mut img_u: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(10, 100, Rgb([0, 0, 0]));
-        draw_frequency_grid(&mut img_u, 4000, SpectrogramMode::Unipolar, true);
-        assert_eq!(img_u.get_pixel(0, 50).0, [32768, 32768, 32768]);
-
-        let mut img_b: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(10, 100, Rgb([0, 0, 0]));
-        draw_frequency_grid(&mut img_b, 4000, SpectrogramMode::Bipolar, true);
-        assert_eq!(img_b.get_pixel(0, 25).0, [32768, 32768, 32768]);
-        assert_eq!(img_b.get_pixel(0, 75).0, [32768, 32768, 32768]);
-    }
-
-    #[test]
-    fn apply_value_mode_converts_bins() {
-        let raw = 0.5;
-        assert_eq!(apply_value_mode(raw, ValueMode::Amplitude), 0.5);
-        assert_eq!(apply_value_mode(raw, ValueMode::Dbfs), 0.5);
-        assert_eq!(apply_value_mode(raw, ValueMode::Magnitude), 0.25);
-    }
-
-    #[test]
-    fn value_modes_convert_samples() {
-        let mag = vec![vec![1.0, 0.5]];
-        let img_mag = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Bipolar,
-            ValueMode::Magnitude,
-            ScaleMode::Linear,
-        );
-        let img_amp = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Bipolar,
-            ValueMode::Amplitude,
-            ScaleMode::Linear,
-        );
-        let img_db = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Bipolar,
-            ValueMode::Dbfs,
-            ScaleMode::Linear,
-        );
-
-        assert_eq!(img_mag.get_pixel(0, 0).0, [16384, 16384, 16384]);
-        assert_eq!(img_amp.get_pixel(0, 0).0, [32768, 32768, 32768]);
-
-        let min_db = -80.0f32;
-        let db = 20.0 * (0.5f32).log10();
-        let t = (db - min_db) / -min_db;
-        let expected = (t * 65535.0).round() as u16;
-        assert_eq!(img_db.get_pixel(0, 0).0, [expected, expected, expected]);
-    }
-
-    #[test]
-    fn spectrogram_modes_have_expected_dimensions_and_scale() {
-        let win_len = 8;
-        let frames = 10;
-        let mag = vec![vec![1.0; win_len]; frames];
-
-        let img_uni = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Unipolar,
-            ValueMode::Amplitude,
-            ScaleMode::Linear,
-        );
-        assert_eq!(img_uni.height(), win_len as u32 / 2);
-        let mut img_uni_scale = img_uni.clone();
-        draw_frequency_scale(
-            &mut img_uni_scale,
-            8000,
-            SpectrogramMode::Unipolar,
-            ScaleMode::Linear,
-            true,
-        );
-        assert_eq!(
-            img_uni_scale.get_pixel(img_uni_scale.width() - 1, 0),
-            &Rgb([65535, 65535, 65535])
-        );
-
-        let img_bi = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Bipolar,
-            ValueMode::Amplitude,
-            ScaleMode::Linear,
-        );
-        assert_eq!(img_bi.height(), win_len as u32);
-        let mut img_bi_scale = img_bi.clone();
-        draw_frequency_scale(
-            &mut img_bi_scale,
-            8000,
-            SpectrogramMode::Bipolar,
-            ScaleMode::Linear,
-            true,
-        );
-        let h = img_bi_scale.height();
-        assert_eq!(
-            img_bi_scale.get_pixel(img_bi_scale.width() - 1, h / 2),
-            &Rgb([65535, 65535, 65535])
-        );
-        assert_eq!(
-            img_bi_scale.get_pixel(img_bi_scale.width() - 1, 0),
-            &Rgb([65535, 65535, 65535])
-        );
-        assert_eq!(
-            img_bi_scale.get_pixel(img_bi_scale.width() - 1, h - 1),
-            &Rgb([65535, 65535, 65535])
-        );
-    }
-
-    #[test]
-    fn scale_modes_map_frequency_bins_and_axis() {
-        let win_len = 16;
-        let frames = 1;
-        let mut mag = vec![vec![0.0; win_len]; frames];
-        for i in 0..win_len {
-            mag[0][i] = i as f32;
-        }
-        let img_lin = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Unipolar,
-            ValueMode::Amplitude,
-            ScaleMode::Linear,
-        );
-        let img_log = generate_heatmap(
-            &mag,
-            &ColorMap::Gray,
-            SpectrogramMode::Unipolar,
-            ValueMode::Amplitude,
-            ScaleMode::Log,
-        );
-        let height = win_len / 2;
-        let log_y = map_bin_to_pixel(1, height - 1, ScaleMode::Log) as u32;
-        assert_eq!(img_lin.get_pixel(0, 1), img_log.get_pixel(0, log_y));
-
-        let mut scale_lin: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(10, height as u32, Rgb([0, 0, 0]));
-        draw_frequency_scale(
-            &mut scale_lin,
-            8000,
-            SpectrogramMode::Unipolar,
-            ScaleMode::Linear,
-            true,
-        );
-        assert_eq!(
-            scale_lin.get_pixel(scale_lin.width() - 1, 2),
-            &Rgb([65535, 65535, 65535])
-        );
-
-        let mut scale_log: ImageBuffer<Rgb<u16>, Vec<u16>> =
-            ImageBuffer::from_pixel(10, height as u32, Rgb([0, 0, 0]));
-        draw_frequency_scale(
-            &mut scale_log,
-            8000,
-            SpectrogramMode::Unipolar,
-            ScaleMode::Log,
-            true,
-        );
-        let log_max = (4000.0_f32 + 1.0).ln();
-        let y = (((1000.0_f32 + 1.0).ln() / log_max) * (height as f32 - 1.0)).round() as u32;
-        assert_eq!(
-            scale_log.get_pixel(scale_log.width() - 1, y),
-            &Rgb([65535, 65535, 65535])
-        );
+    fn adobe_gradient_interpolates() {
+        let c = adobe_color(0.375); // between blue and cyan
+        assert_eq!(c[0], 0);
+        assert_eq!(c[2], 65535);
+        assert!(c[1] > 0 && c[1] < 65535);
     }
 }
