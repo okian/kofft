@@ -82,6 +82,55 @@ test("startRenderLoop shifts left and draws vertical column", () => {
   ]);
 });
 
+test("log scale compresses high-frequency bins", () => {
+  function makeCtx() {
+    let style = "";
+    const fills = [];
+    return {
+      ctx: {
+        getImageData: () => ({ data: new Uint8ClampedArray(16) }),
+        putImageData: () => {},
+        set fillStyle(v) {
+          style = v;
+        },
+        get fillStyle() {
+          return style;
+        },
+        fillRect: (x, y) => fills.push({ y, style }),
+      },
+      fills,
+    };
+  }
+  const analyser = {
+    frequencyBinCount: 4,
+    getByteFrequencyData: (arr) => {
+      for (let i = 0; i < arr.length; i++) arr[i] = i;
+    },
+  };
+  let rafCalled = false;
+  globalThis.requestAnimationFrame = (cb) => {
+    if (rafCalled) return;
+    rafCalled = true;
+    cb();
+  };
+  const { ctx: ctxLinear, fills: fillsLinear } = makeCtx();
+  startRenderLoop(
+    { width: 4, height: 4, getContext: () => ctxLinear },
+    analyser,
+    "linear",
+  );
+  rafCalled = false;
+  const { ctx: ctxLog, fills: fillsLog } = makeCtx();
+  startRenderLoop(
+    { width: 4, height: 4, getContext: () => ctxLog },
+    analyser,
+    "logarithmic",
+  );
+  const extract = (fills) =>
+    Number(fills.find((f) => f.y === 2).style.match(/rgb\((\d+)/)[1]);
+  assert.ok(extract(fillsLog) < extract(fillsLinear));
+});
+
 test("init wires up file input change", async () => {
   const dom = new JSDOM(
     `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram" width="10" height="10"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,

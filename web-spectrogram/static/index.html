@@ -15,7 +15,16 @@
         <option value="dark" selected>Dark</option>
         <option value="light">Light</option>
       </select>
+      <select id="scale">
+        <option value="linear" selected>Linear</option>
+        <option value="logarithmic">Logarithmic</option>
+      </select>
       <canvas id="spectrogram"></canvas>
+      <footer id="controls">
+        <input id="file" type="file" accept="audio/*" />
+        <audio id="player" controls></audio>
+        <input id="seek" type="range" min="0" value="0" step="0.01" />
+      </footer>
       <p><a href="../README.md">Usage &amp; options</a></p>
     </div>
     <script type="module" src="app.js"></script>
