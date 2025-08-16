@@ -142,6 +142,10 @@ pub mod window_more;
 pub use fft::FftPlanner;
 pub use num::{Complex, Complex32, Complex64, Float};
 
+#[cfg(feature = "std")]
+/// Visualisation helpers (requires `std`)
+pub mod visual;
+
 /// Simple addition function for testing purposes
 ///
 /// This function is used in tests to verify basic functionality.
