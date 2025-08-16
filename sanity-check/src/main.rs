@@ -96,6 +96,14 @@ struct Args {
         help = "Draw status bar with time, frequency and amplitude"
     )]
     status_bar: bool,
+
+    /// Draw vertical time grid lines
+    #[arg(long, help = "Draw vertical time grid lines")]
+    grid_time: bool,
+
+    /// Draw horizontal frequency grid lines
+    #[arg(long, help = "Draw horizontal frequency grid lines")]
+    grid_frequency: bool,
 }
 
 fn read_flac(path: &PathBuf) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
@@ -371,6 +379,81 @@ fn draw_text(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, text: &s
     }
 }
 
+fn draw_time_grid(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    sample_rate: u32,
+    hop: usize,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    let width = img.width();
+    let height = img.height();
+    let seconds = width as f32 * hop as f32 / sample_rate as f32;
+    let px_per_sec = width as f32 / seconds.max(1.0);
+    for s in 0..=seconds.ceil() as u32 {
+        let x = (s as f32 * px_per_sec) as i32;
+        if x < width as i32 {
+            draw_line(img, x, 0, x, height as i32 - 1, Rgb([32768, 32768, 32768]));
+        }
+    }
+}
+
+fn draw_frequency_grid(
+    img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
+    sample_rate: u32,
+    mode: SpectrogramMode,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    let height = img.height();
+    let width = img.width();
+    let nyquist = sample_rate as f32 / 2.0;
+    match mode {
+        SpectrogramMode::Unipolar => {
+            let px_per_hz = height as f32 / nyquist.max(1.0);
+            for f in (0..=nyquist as u32).step_by(1000) {
+                let y = (f as f32 * px_per_hz) as i32;
+                if y < height as i32 {
+                    draw_line(img, 0, y, width as i32 - 1, y, Rgb([32768, 32768, 32768]));
+                }
+            }
+        }
+        SpectrogramMode::Bipolar => {
+            let center = height as i32 / 2;
+            let px_per_hz = (height as f32 / 2.0) / nyquist.max(1.0);
+            for f in (0..=nyquist as u32).step_by(1000) {
+                let offset = (f as f32 * px_per_hz) as i32;
+                let y_pos = center - offset;
+                let y_neg = center + offset;
+                if y_pos >= 0 {
+                    draw_line(
+                        img,
+                        0,
+                        y_pos,
+                        width as i32 - 1,
+                        y_pos,
+                        Rgb([32768, 32768, 32768]),
+                    );
+                }
+                if f != 0 && y_neg < height as i32 {
+                    draw_line(
+                        img,
+                        0,
+                        y_neg,
+                        width as i32 - 1,
+                        y_neg,
+                        Rgb([32768, 32768, 32768]),
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn draw_time_ruler(
     img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
     sample_rate: u32,
@@ -574,6 +657,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut img_kofft = generate_heatmap(&kofft_mag, &args.colormap, args.mode, args.value_mode);
     let img_ref = generate_heatmap(&rust_mag, &args.colormap, args.mode, args.value_mode);
 
+    draw_time_grid(&mut img_kofft, sample_rate, hop, args.grid_time);
+    draw_frequency_grid(&mut img_kofft, sample_rate, args.mode, args.grid_frequency);
     draw_time_ruler(&mut img_kofft, sample_rate, hop, args.time_ruler);
     draw_frequency_scale(&mut img_kofft, sample_rate, args.mode, args.freq_scale);
     draw_waveform(&mut img_kofft, &samples, hop, args.waveform);
@@ -738,6 +823,25 @@ mod tests {
                 assert_eq!(img.get_pixel(x, y), &Rgb([0, 65535, 0]));
             }
         }
+    }
+
+    #[test]
+    fn draw_time_and_frequency_grids_render() {
+        let mut img: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(100, 100, Rgb([0, 0, 0]));
+        draw_time_grid(&mut img, 10, 1, true);
+        assert_eq!(img.get_pixel(10, 0).0, [32768, 32768, 32768]);
+
+        let mut img_u: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(10, 100, Rgb([0, 0, 0]));
+        draw_frequency_grid(&mut img_u, 4000, SpectrogramMode::Unipolar, true);
+        assert_eq!(img_u.get_pixel(0, 50).0, [32768, 32768, 32768]);
+
+        let mut img_b: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(10, 100, Rgb([0, 0, 0]));
+        draw_frequency_grid(&mut img_b, 4000, SpectrogramMode::Bipolar, true);
+        assert_eq!(img_b.get_pixel(0, 25).0, [32768, 32768, 32768]);
+        assert_eq!(img_b.get_pixel(0, 75).0, [32768, 32768, 32768]);
     }
 
     #[test]
