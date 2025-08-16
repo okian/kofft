@@ -1,10 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import path from 'path';
 
 export default defineConfig({
   root: 'app',
   publicDir: 'app/public',
+  resolve: {
+    alias: {
+      '@wasm': path.resolve(__dirname, './pkg/web_spectrogram.js')
+    }
+  },
   test: {
     environment: 'jsdom',
     setupFiles: 'tests/setup.ts'
