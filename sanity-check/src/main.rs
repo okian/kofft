@@ -150,6 +150,19 @@ fn save_svg(img: &ImageBuffer<Rgb<u16>, Vec<u16>>, path: &str) -> Result<(), Box
     Ok(())
 }
 
+fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> String {
+    let cmap_name = match cmap {
+        ColorMap::Gray => "Gray",
+        ColorMap::Viridis => "Viridis",
+        ColorMap::Plasma => "Plasma",
+        ColorMap::Inferno => "Inferno",
+    };
+    format!(
+        "Spectrogram Visualization: X-axis time frames, Y-axis frequency bins, colors show magnitude in dB using {} colormap, resolution {}x{} pixels, layout includes axis labels, color bar, and grid lines.",
+        cmap_name, width, height
+    )
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let samples = read_flac(&args.input)?;
@@ -237,6 +250,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         save_svg(&img_kofft, path.to_str().unwrap())?;
     }
     println!("Saved kofft_spectrogram.png and reference_spectrogram.png");
+    println!("{}", spectrogram_description(width, height, &args.colormap));
     Ok(())
 }
 
@@ -288,5 +302,14 @@ mod tests {
         let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
         let fft = ScalarFftImpl::<f32>::default();
         assert!(stft(&signal, &window, hop, &mut frames, &fft).is_ok());
+    }
+
+    #[test]
+    fn spectrogram_description_matches_spec() {
+        let desc = spectrogram_description(10, 20, &ColorMap::Inferno);
+        assert_eq!(
+            desc,
+            "Spectrogram Visualization: X-axis time frames, Y-axis frequency bins, colors show magnitude in dB using Inferno colormap, resolution 10x20 pixels, layout includes axis labels, color bar, and grid lines."
+        );
     }
 }
