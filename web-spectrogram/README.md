@@ -62,4 +62,12 @@ Frequencies can be displayed on a linear or logarithmic scale.
 startRenderLoop(canvas, analyser, "logarithmic"); // or "linear"
 ```
 
+## Microphone Input
+
+The spectrogram can visualise live audio from a microphone in addition to files.
+
+**UI:** Use the **Mic** button to toggle capture and the adjacent list to choose an input device. When a file is playing and the mic is enabled, both sources are combined in the same spectrogram.
+
+**API:** Obtain a `MediaStream` with `getUserMedia`, create a `MediaStreamAudioSourceNode`, and connect it to the analyser used for rendering.
+
 Refer back to this file whenever you need details on the available options and how to use them.

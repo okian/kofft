@@ -31,9 +31,9 @@ export const palettes = {
   },
 };
 
-export async function decodeAndProcess(file, audioEl, wasm = globalThis) {
+export async function decodeAndProcess(file, audioEl, wasm = globalThis, ctx) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AudioCtx();
+  ctx = ctx || new AudioCtx();
   const buf = await file.arrayBuffer();
   const audioBuffer = await ctx.decodeAudioData(buf);
   const metadata = parseID3v1(buf);
@@ -123,6 +123,8 @@ export function init(
   const playBtn = controls.querySelector("#play");
   const muteBtn = controls.querySelector("#mute");
   const volume = controls.querySelector("#volume");
+  const micBtn = controls.querySelector("#mic");
+  const micSelect = controls.querySelector("#mic-select");
   const seekCanvas = controls.querySelector("#seekbar");
   const seek = seekCanvas ? new SeekBar(seekCanvas) : null;
   const canvas = doc.getElementById("spectrogram");
@@ -176,6 +178,67 @@ export function init(
   });
 
   let ctx;
+  let analyser;
+  let renderStarted = false;
+  let micStream;
+
+  async function ensureAnalyser() {
+    if (!ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      ctx = new AudioCtx();
+    }
+    if (!analyser) {
+      analyser = ctx.createAnalyser();
+    }
+    if (!renderStarted) {
+      deps.startRenderLoop(canvas, analyser, scaleSelect, paletteRef);
+      renderStarted = true;
+    }
+  }
+
+  async function populateMics() {
+    if (
+      !micSelect ||
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.enumerateDevices
+    )
+      return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    micSelect.innerHTML = "";
+    devices
+      .filter((d) => d.kind === "audioinput")
+      .forEach((d, i) => {
+        const opt = doc.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Mic ${i + 1}`;
+        micSelect.appendChild(opt);
+      });
+  }
+
+  if (micSelect) {
+    populateMics();
+  }
+
+  if (micBtn && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    micBtn.addEventListener("click", async () => {
+      if (micStream) {
+        micStream.getTracks().forEach((t) => t.stop());
+        micStream = null;
+        micBtn.textContent = "Mic";
+        return;
+      }
+      await ensureAnalyser();
+      await populateMics();
+      const deviceId =
+        micSelect && micSelect.value ? micSelect.value : undefined;
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      });
+      const src = ctx.createMediaStreamSource(micStream);
+      src.connect(analyser);
+      micBtn.textContent = "Stop Mic";
+    });
+  }
 
   doc.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
@@ -215,11 +278,17 @@ export function init(
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (ctx) {
-      await ctx.close();
-    }
     let amplitudes, metadata;
-    ({ ctx, amplitudes, metadata } = await deps.decodeAndProcess(file, audio));
+    ({ ctx, amplitudes, metadata } = await deps.decodeAndProcess(
+      file,
+      audio,
+      undefined,
+      ctx,
+    ));
+    await ensureAnalyser();
+    const source = ctx.createMediaElementSource(audio);
+    source.connect(analyser);
+    source.connect(ctx.destination);
     if (seek) {
       seek.setAmplitudes(amplitudes);
     }
@@ -230,11 +299,6 @@ export function init(
         metadata.duration ? metadata.duration.toFixed(2) + "s" : ""
       }`.trim();
     }
-    const analyser = ctx.createAnalyser();
-    const source = ctx.createMediaElementSource(audio);
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-    deps.startRenderLoop(canvas, analyser, scaleSelect, paletteRef);
   });
 }
 
