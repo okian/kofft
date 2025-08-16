@@ -1,23 +1,31 @@
+import { SeekBar } from "./seekbar.js";
+
 export async function decodeAndProcess(file, audioEl, wasm = globalThis) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   const ctx = new AudioCtx();
   const buf = await file.arrayBuffer();
   const audioBuffer = await ctx.decodeAudioData(buf);
   const pcm = audioBuffer.getChannelData(0);
+  let amplitudes = [];
   if (typeof wasm.process_pcm === "function") {
-    wasm.process_pcm(pcm);
+    const res = wasm.process_pcm(pcm);
+    if (Array.isArray(res) || res instanceof Float32Array) {
+      amplitudes = Array.from(res);
+    }
+  }
+  if (!amplitudes.length) {
+    amplitudes = Array.from(pcm, (v) => Math.abs(v));
   }
   audioEl.src = URL.createObjectURL(file);
-  return { ctx, audioBuffer };
+  return { ctx, audioBuffer, amplitudes };
 }
 
-export function setupPlayback(audioEl, seekInput) {
+export function setupPlayback(audioEl, seek) {
   audioEl.addEventListener("timeupdate", () => {
-    seekInput.max = audioEl.duration || 0;
-    seekInput.value = audioEl.currentTime;
+    seek.setProgress(audioEl.currentTime, audioEl.duration || 0);
   });
-  seekInput.addEventListener("input", () => {
-    audioEl.currentTime = Number(seekInput.value);
+  seek.onSeek((t) => {
+    audioEl.currentTime = t;
   });
 }
 
@@ -62,7 +70,8 @@ export function init(
 ) {
   const fileInput = doc.querySelector("input[type=file]");
   const audio = doc.querySelector("audio");
-  const seek = doc.querySelector("input[type=range]");
+  const seekCanvas = doc.getElementById("seekbar");
+  const seek = new SeekBar(seekCanvas);
   const canvas = doc.getElementById("spectrogram");
   const themeSelect = doc.getElementById("theme");
   const resize = () => {
@@ -92,7 +101,9 @@ export function init(
     if (ctx) {
       await ctx.close();
     }
-    ({ ctx } = await deps.decodeAndProcess(file, audio));
+    let amplitudes;
+    ({ ctx, amplitudes } = await deps.decodeAndProcess(file, audio));
+    seek.setAmplitudes(amplitudes);
     const analyser = ctx.createAnalyser();
     const source = ctx.createMediaElementSource(audio);
     source.connect(analyser);

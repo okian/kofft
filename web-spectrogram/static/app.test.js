@@ -7,6 +7,7 @@ import {
   startRenderLoop,
   init,
 } from "./app.js";
+import { SeekBar } from "./seekbar.js";
 
 test("decodeAndProcess decodes audio and invokes wasm", async () => {
   globalThis.window = {
@@ -24,28 +25,57 @@ test("decodeAndProcess decodes audio and invokes wasm", async () => {
   const wasm = {
     process_pcm: (pcm) => {
       called = pcm.length === 4;
+      return new Float32Array([0.5, 0.25]);
     },
   };
   globalThis.URL = { createObjectURL: () => "blob:url" };
   const audio = { src: "" };
-  await decodeAndProcess(file, audio, wasm);
+  const res = await decodeAndProcess(file, audio, wasm);
   assert.equal(audio.src, "blob:url");
   assert.ok(called);
+  assert.deepEqual(res.amplitudes, [0.5, 0.25]);
+});
+
+test("SeekBar renders amplitudes", () => {
+  const dom = new JSDOM(`<canvas width="4" height="2"></canvas>`);
+  const canvas = dom.window.document.querySelector("canvas");
+  const ops = [];
+  canvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: (...a) => ops.push(a),
+    lineTo: (...a) => ops.push(a),
+    stroke: () => {},
+    strokeStyle: "",
+  });
+  const seek = new SeekBar(canvas);
+  seek.setAmplitudes([0, 1, 0, 1]);
+  seek.setProgress(0, 10);
+  assert.ok(ops.some((v) => v[0] === 1 && v[1] === 0));
 });
 
 test("setupPlayback syncs seek with audio", () => {
-  const dom = new JSDOM(`<audio></audio><input type="range">`);
+  const dom = new JSDOM(`<audio></audio><canvas id="seekbar" width="4" height="2"></canvas>`);
   const audio = dom.window.document.querySelector("audio");
-  const seek = dom.window.document.querySelector("input");
-  audio.currentTime = 0;
+  const canvas = dom.window.document.getElementById("seekbar");
+  const ops = [];
+  canvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => ops.push("b"),
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => ops.push("s"),
+  });
+  const seek = new SeekBar(canvas);
+  seek.setAmplitudes([0, 1, 0, 1]);
   setupPlayback(audio, seek);
   Object.defineProperty(audio, "duration", { value: 10 });
   audio.currentTime = 5;
   audio.dispatchEvent(new dom.window.Event("timeupdate"));
-  assert.equal(seek.value, "5");
-  seek.value = "2";
-  seek.dispatchEvent(new dom.window.Event("input"));
-  assert.equal(audio.currentTime, 2);
+  assert.ok(ops.length > 0); // draw called
+  canvas.getBoundingClientRect = () => ({ left: 0, width: 4 });
+  canvas.dispatchEvent(new dom.window.MouseEvent("click", { clientX: 1 }));
+  assert.equal(audio.currentTime, 2.5);
 });
 
 test("startRenderLoop shifts left and draws vertical column", () => {
@@ -133,7 +163,7 @@ test("log scale compresses high-frequency bins", () => {
 
 test("init wires up file input change", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram" width="10" height="10"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
+    `<input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><canvas id="spectrogram" width="10" height="10"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -153,6 +183,7 @@ test("init wires up file input change", async () => {
         destination: {},
         close: () => {},
       },
+      amplitudes: [0],
     }),
     setupPlayback: () => {
       setupCalled++;
@@ -161,6 +192,14 @@ test("init wires up file input change", async () => {
       renderCalled++;
     },
   };
+  const seekCanvas = dom.window.document.getElementById("seekbar");
+  seekCanvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+  });
   init(dom.window.document, deps);
   assert.equal(setupCalled, 1);
   const input = dom.window.document.querySelector("input[type=file]");
@@ -172,7 +211,7 @@ test("init wires up file input change", async () => {
 
 test("init closes previous context and keeps seek in sync", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram" width="10" height="10"></canvas>`,
+    `<input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><canvas id="spectrogram" width="10" height="10"></canvas>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -200,10 +239,19 @@ test("init closes previous context and keeps seek in sync", async () => {
           closed.push(true);
         },
       },
+      amplitudes: [0],
     }),
     setupPlayback,
     startRenderLoop: () => {},
   };
+  const seekCanvas = dom.window.document.getElementById("seekbar");
+  seekCanvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+  });
   init(dom.window.document, deps);
   const input = dom.window.document.querySelector("input[type=file]");
   Object.defineProperty(input, "files", {
@@ -221,19 +269,18 @@ test("init closes previous context and keeps seek in sync", async () => {
   assert.equal(mediaSources.length, 2);
   assert.equal(closed.length, 1);
   const audio = dom.window.document.querySelector("audio");
-  const seek = dom.window.document.querySelector("input[type=range]");
+  const canvas = dom.window.document.getElementById("seekbar");
   Object.defineProperty(audio, "duration", { value: 10 });
   audio.currentTime = 4;
   audio.dispatchEvent(new dom.window.Event("timeupdate"));
-  assert.equal(seek.value, "4");
-  seek.value = "2";
-  seek.dispatchEvent(new dom.window.Event("input"));
-  assert.equal(audio.currentTime, 2);
+  canvas.getBoundingClientRect = () => ({ left: 0, width: 4 });
+  canvas.dispatchEvent(new dom.window.MouseEvent("click", { clientX: 1 }));
+  assert.equal(audio.currentTime, 2.5);
 });
 
 test("theme selector updates body dataset", () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
+    `<input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><canvas id="spectrogram"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -253,10 +300,19 @@ test("theme selector updates body dataset", () => {
         destination: {},
       },
       audioBuffer: {},
+      amplitudes: [0],
     }),
     setupPlayback: () => {},
     startRenderLoop: () => {},
   };
+  const seekCanvas = dom.window.document.getElementById("seekbar");
+  seekCanvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+  });
   init(dom.window.document, deps);
   const select = dom.window.document.getElementById("theme");
   select.value = "light";
