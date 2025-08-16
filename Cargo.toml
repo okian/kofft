@@ -23,7 +23,7 @@ build = "build.rs"
 
 
 [workspace]
-members = ["kofft-bench", "sanity-check"]
+members = ["kofft-bench", "sanity-check", "xtask"]
 
 [dependencies]
 libm = "0.2"
@@ -59,6 +59,7 @@ optional = true
 [dev-dependencies]
 hound = "3.5"
 image = "0.24"
+xtask = { path = "xtask" }
 
 [[example]]
 name = "basic_usage"
