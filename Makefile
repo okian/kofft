@@ -35,21 +35,21 @@ FEATURES := $(strip $(SIMD_FEATURES) $(PAR_FEATURE))
 .PHONY: build test clippy fmt analyze benchmark bench-libs update-bench-readme sanity
 
 build:
-	cargo build $(if $(FEATURES),--features "$(FEATURES)")
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo build $(if $(FEATURES),--features "$(FEATURES)")
 
 test:
-	cargo test $(if $(FEATURES),--features "$(FEATURES)")
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo test $(if $(FEATURES),--features "$(FEATURES)")
 
 clippy:
-	cargo clippy --all-targets --all-features
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo clippy --all-targets --all-features
 
 fmt:
-	cargo fmt --all
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo fmt --all
 
 analyze: fmt clippy
 
 benchmark:
-        RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --example $(EXAMPLE) $(if $(FEATURES),--features "$(FEATURES)") --release
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --example $(EXAMPLE) $(if $(FEATURES),--features "$(FEATURES)") --release
 
 # Run criterion benchmarks comparing kofft with other FFT libraries
 bench-libs:
@@ -59,4 +59,4 @@ update-bench-readme:
 	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run --manifest-path kofft-bench/Cargo.toml --example update_bench_readme --release $(if $(FEATURES),--features "$(FEATURES)")
 
 sanity:
-	cargo run -r -p sanity-check -- "$(FLAC)"
+	RUSTFLAGS="$(RUSTFLAGS_ADD)" cargo run -r -p sanity-check -- "$(FLAC)"
