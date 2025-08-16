@@ -19,7 +19,7 @@ ifeq ($(findstring x86_64,$(ARCH)),x86_64)
   else ifneq ($(findstring sse4_1,$(CPUFLAGS)),)
     SIMD_FEATURES += sse
   endif
-else ifeq ($(ARCH),aarch64)
+else ifneq ($(filter aarch64 arm64,$(ARCH)),)
   SIMD_FEATURES += aarch64
 endif
 
