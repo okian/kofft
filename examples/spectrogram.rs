@@ -39,8 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut reader = WavReader::open(input)?;
     let samples: Vec<f32> = reader
         .samples::<i16>()
-        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
-        .collect();
+        .map(|s| s.map(|v| v as f32 / i16::MAX as f32))
+        .collect::<Result<_, _>>()?;
 
     // STFT parameters
     let win_len = 1024;
@@ -83,7 +83,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::color_from_magnitude;
+    use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
     use image::Rgb;
+    use std::io::Cursor;
 
     #[test]
     fn low_magnitude_is_dark_purple() {
@@ -101,5 +103,31 @@ mod tests {
     fn midpoint_is_intermediate_color() {
         let Rgb([r, g, b]) = color_from_magnitude(0.5, 1.0);
         assert_eq!((r, g, b), (159, 127, 144));
+    }
+
+    #[test]
+    fn wav_parsing_failure_returns_error() {
+        // Create a minimal valid 16-bit mono WAV then truncate to corrupt it
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let spec = WavSpec {
+                channels: 1,
+                sample_rate: 8_000,
+                bits_per_sample: 16,
+                sample_format: SampleFormat::Int,
+            };
+            let mut writer = WavWriter::new(&mut cursor, spec).unwrap();
+            writer.write_sample(0i16).unwrap();
+            writer.finalize().unwrap();
+        }
+        let mut data = cursor.into_inner();
+        data.truncate(data.len() - 1); // Corrupt the WAV data
+
+        let mut reader = WavReader::new(Cursor::new(data)).unwrap();
+        let result: Result<Vec<f32>, _> = reader
+            .samples::<i16>()
+            .map(|s| s.map(|v| v as f32 / i16::MAX as f32))
+            .collect();
+        assert!(result.is_err());
     }
 }
