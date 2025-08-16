@@ -38,6 +38,13 @@ enum PngDepth {
     Sixteen,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+enum ValueMode {
+    Magnitude,
+    Amplitude,
+    Dbfs,
+}
+
 const EXAMPLE_STR: &str = "Example:\n    sanity-check input.flac -s out.svg\n";
 
 #[derive(Parser)]
@@ -61,6 +68,10 @@ struct Args {
     /// Spectrogram rendering mode
     #[arg(long, value_enum, default_value_t = SpectrogramMode::Unipolar)]
     mode: SpectrogramMode,
+
+    /// FFT bin value interpretation
+    #[arg(long, value_enum, default_value_t = ValueMode::Magnitude)]
+    value_mode: ValueMode,
 
     /// Optional path to save an SVG spectrogram
     #[arg(long, short = 's', help = "Optional path to save an SVG spectrogram")]
@@ -98,11 +109,15 @@ fn read_flac(path: &PathBuf) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     Ok((samples, sr))
 }
 
-fn map_color(value: f32, max: f32, cmap: &ColorMap) -> [u16; 3] {
-    // Scale magnitude to decibels for better visual contrast
-    let min_db = -80.0_f32;
-    let db = 20.0 * (value / max).max(1e-10).log10();
-    let t = ((db - min_db) / -min_db).clamp(0.0, 1.0) as f64;
+fn map_color(value: f32, max: f32, cmap: &ColorMap, mode: ValueMode) -> [u16; 3] {
+    let t = match mode {
+        ValueMode::Magnitude | ValueMode::Amplitude => (value / max).clamp(0.0, 1.0) as f64,
+        ValueMode::Dbfs => {
+            let min_db = -80.0_f32;
+            let db = 20.0 * (value / max).max(1e-10).log10();
+            ((db - min_db) / -min_db).clamp(0.0, 1.0) as f64
+        }
+    };
     match cmap {
         ColorMap::Gray => {
             let g = (t * 65535.0).round() as u16;
@@ -188,6 +203,7 @@ fn generate_heatmap(
     magnitudes: &[Vec<f32>],
     cmap: &ColorMap,
     mode: SpectrogramMode,
+    value_mode: ValueMode,
 ) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
     let win_len = magnitudes[0].len();
     let width = magnitudes.len();
@@ -198,15 +214,23 @@ fn generate_heatmap(
     let mut img: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
     let max_val = magnitudes
         .iter()
-        .flat_map(|v| v.iter())
-        .cloned()
+        .flat_map(|v| {
+            v.iter().map(|&val| match value_mode {
+                ValueMode::Magnitude => val * val,
+                ValueMode::Amplitude | ValueMode::Dbfs => val,
+            })
+        })
         .fold(0.0f32, f32::max)
         .max(1.0);
     for (x, frame) in magnitudes.iter().enumerate() {
         match mode {
             SpectrogramMode::Unipolar => {
                 for y in 0..height {
-                    let col = map_color(frame[y], max_val, cmap);
+                    let v = match value_mode {
+                        ValueMode::Magnitude => frame[y] * frame[y],
+                        ValueMode::Amplitude | ValueMode::Dbfs => frame[y],
+                    };
+                    let col = map_color(v, max_val, cmap, value_mode);
                     img.put_pixel(x as u32, y as u32, Rgb(col));
                 }
             }
@@ -217,7 +241,11 @@ fn generate_heatmap(
                     } else {
                         win_len - (k - win_len / 2)
                     };
-                    let col = map_color(frame[k], max_val, cmap);
+                    let v = match value_mode {
+                        ValueMode::Magnitude => frame[k] * frame[k],
+                        ValueMode::Amplitude | ValueMode::Dbfs => frame[k],
+                    };
+                    let col = map_color(v, max_val, cmap, value_mode);
                     img.put_pixel(x as u32, y as u32, Rgb(col));
                 }
             }
@@ -547,8 +575,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         SpectrogramMode::Unipolar => win_len / 2,
         SpectrogramMode::Bipolar => win_len,
     };
-    let mut img_kofft = generate_heatmap(&kofft_mag, &args.colormap, args.mode);
-    let img_ref = generate_heatmap(&rust_mag, &args.colormap, args.mode);
+    let mut img_kofft = generate_heatmap(&kofft_mag, &args.colormap, args.mode, args.value_mode);
+    let img_ref = generate_heatmap(&rust_mag, &args.colormap, args.mode, args.value_mode);
 
     draw_time_ruler(&mut img_kofft, sample_rate, hop, args.time_ruler);
     draw_frequency_scale(&mut img_kofft, sample_rate, args.mode, args.freq_scale);
@@ -563,7 +591,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         SpectrogramMode::Unipolar => freq_bin as f32 * sample_rate as f32 / win_len as f32,
         SpectrogramMode::Bipolar => 0.0,
     };
-    let amp = kofft_mag[center_frame][freq_bin];
+    let raw_amp = kofft_mag[center_frame][freq_bin];
+    let amp = match args.value_mode {
+        ValueMode::Magnitude => raw_amp * raw_amp,
+        ValueMode::Amplitude => raw_amp,
+        ValueMode::Dbfs => 20.0 * raw_amp.max(1e-10).log10(),
+    };
     let status = format!("t:{:.2}s f:{:.1}Hz a:{:.2}", time, freq, amp);
     draw_status_bar(&mut img_kofft, &status, args.status_bar);
     save_png(&img_kofft, "kofft_spectrogram.png", args.png_depth)?;
@@ -625,6 +658,13 @@ mod tests {
         assert!(args.freq_scale);
         assert!(args.waveform);
         assert!(args.status_bar);
+        assert_eq!(args.value_mode, ValueMode::Magnitude);
+    }
+
+    #[test]
+    fn args_parse_value_mode() {
+        let args = Args::parse_from(["bin", "input.flac", "--value-mode", "dbfs"]);
+        assert_eq!(args.value_mode, ValueMode::Dbfs);
     }
 
     #[test]
@@ -705,12 +745,49 @@ mod tests {
     }
 
     #[test]
+    fn value_modes_convert_samples() {
+        let mag = vec![vec![1.0, 0.5]];
+        let img_mag = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Bipolar,
+            ValueMode::Magnitude,
+        );
+        let img_amp = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Bipolar,
+            ValueMode::Amplitude,
+        );
+        let img_db = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Bipolar,
+            ValueMode::Dbfs,
+        );
+
+        assert_eq!(img_mag.get_pixel(0, 0).0, [16384, 16384, 16384]);
+        assert_eq!(img_amp.get_pixel(0, 0).0, [32768, 32768, 32768]);
+
+        let min_db = -80.0f32;
+        let db = 20.0 * (0.5f32).log10();
+        let t = (db - min_db) / -min_db;
+        let expected = (t * 65535.0).round() as u16;
+        assert_eq!(img_db.get_pixel(0, 0).0, [expected, expected, expected]);
+    }
+
+    #[test]
     fn spectrogram_modes_have_expected_dimensions_and_scale() {
         let win_len = 8;
         let frames = 10;
         let mag = vec![vec![1.0; win_len]; frames];
 
-        let img_uni = generate_heatmap(&mag, &ColorMap::Gray, SpectrogramMode::Unipolar);
+        let img_uni = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Unipolar,
+            ValueMode::Amplitude,
+        );
         assert_eq!(img_uni.height(), win_len as u32 / 2);
         let mut img_uni_scale = img_uni.clone();
         draw_frequency_scale(&mut img_uni_scale, 8000, SpectrogramMode::Unipolar, true);
@@ -719,7 +796,12 @@ mod tests {
             &Rgb([65535, 65535, 65535])
         );
 
-        let img_bi = generate_heatmap(&mag, &ColorMap::Gray, SpectrogramMode::Bipolar);
+        let img_bi = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Bipolar,
+            ValueMode::Amplitude,
+        );
         assert_eq!(img_bi.height(), win_len as u32);
         let mut img_bi_scale = img_bi.clone();
         draw_frequency_scale(&mut img_bi_scale, 8000, SpectrogramMode::Bipolar, true);
