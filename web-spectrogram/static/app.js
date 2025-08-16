@@ -1,5 +1,22 @@
 import { SeekBar } from "./seekbar.js";
 
+export const palettes = {
+  rainbow: (v) => {
+    const ratio = v / 255;
+    const r = Math.round(255 * ratio);
+    const g = Math.round(255 * (1 - Math.abs(ratio * 2 - 1)));
+    const b = Math.round(255 * (1 - ratio));
+    return `rgb(${r},${g},${b})`;
+  },
+  fire: (v) => {
+    const ratio = v / 255;
+    const r = Math.round(255 * ratio);
+    const g = Math.round(255 * Math.min(1, ratio * 1.5));
+    const b = Math.round(255 * Math.max(0, ratio - 0.5) * 2);
+    return `rgb(${r},${g},${b})`;
+  },
+};
+
 export async function decodeAndProcess(file, audioEl, wasm = globalThis) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   const ctx = new AudioCtx();
@@ -29,7 +46,12 @@ export function setupPlayback(audioEl, seek) {
   });
 }
 
-export function startRenderLoop(canvas, analyser, scale = { value: "linear" }) {
+export function startRenderLoop(
+  canvas,
+  analyser,
+  scale = { value: "linear" },
+  paletteRef = { current: (v) => `rgb(${v},${v},${v})` },
+) {
   const ctx = canvas.getContext("2d");
   const data = new Uint8Array(analyser.frequencyBinCount);
   // Ensure the canvas height matches the frequency bin count while
@@ -56,7 +78,7 @@ export function startRenderLoop(canvas, analyser, scale = { value: "linear" }) {
             )
           : y;
       const v = data[idx] || 0;
-      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillStyle = paletteRef.current(v);
       ctx.fillRect(canvas.width - 1, y, 1, 1);
     }
     requestAnimationFrame(render);
@@ -68,12 +90,12 @@ export function init(
   doc = document,
   deps = { decodeAndProcess, setupPlayback, startRenderLoop },
 ) {
-  const fileInput = doc.querySelector("input[type=file]");
-  const audio = doc.querySelector("audio");
-  const seekCanvas = doc.getElementById("seekbar");
+  const controls = doc.getElementById("controls");
+  const fileInput = controls.querySelector("input[type=file]");
+  const audio = controls.querySelector("audio");
+  const seekCanvas = controls.querySelector("#seekbar");
   const seek = seekCanvas ? new SeekBar(seekCanvas) : null;
   const canvas = doc.getElementById("spectrogram");
-  const themeSelect = doc.getElementById("theme");
   const resize = () => {
     const ratio = window.devicePixelRatio || 1;
     canvas.width = canvas.clientWidth * ratio;
@@ -81,7 +103,7 @@ export function init(
   };
   resize();
   window.addEventListener("resize", resize);
-  const scaleSelect = doc.getElementById("scale");
+  const scaleSelect = controls.querySelector("#scale");
   canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
   canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
 
@@ -89,13 +111,16 @@ export function init(
     deps.setupPlayback(audio, seek);
   }
 
-  let ctx;
-  if (themeSelect) {
-    doc.body.dataset.theme = themeSelect.value;
-    themeSelect.addEventListener("change", () => {
-      doc.body.dataset.theme = themeSelect.value;
+  const paletteRef = { current: palettes.rainbow };
+  const themeButtons = controls.querySelectorAll("#themes button");
+  themeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      paletteRef.current = palettes[btn.dataset.theme] || palettes.rainbow;
+      themeButtons.forEach((b) => b.classList.toggle("active", b === btn));
     });
-  }
+  });
+
+  let ctx;
 
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -112,7 +137,7 @@ export function init(
     const source = ctx.createMediaElementSource(audio);
     source.connect(analyser);
     analyser.connect(ctx.destination);
-    deps.startRenderLoop(canvas, analyser, scaleSelect);
+    deps.startRenderLoop(canvas, analyser, scaleSelect, paletteRef);
   });
 }
 

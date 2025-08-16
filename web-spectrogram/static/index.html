@@ -8,22 +8,27 @@
   </head>
   <body>
     <div id="app">
-      <input id="file" type="file" accept="audio/*" />
-      <audio id="player" controls></audio>
-      <canvas id="seekbar" height="40"></canvas>
-      <select id="theme">
-        <option value="dark" selected>Dark</option>
-        <option value="light">Light</option>
-      </select>
-      <select id="scale">
-        <option value="linear" selected>Linear</option>
-        <option value="logarithmic">Logarithmic</option>
-      </select>
       <canvas id="spectrogram"></canvas>
       <footer id="controls">
         <input id="file" type="file" accept="audio/*" />
         <audio id="player" controls></audio>
-        <input id="seek" type="range" min="0" value="0" step="0.01" />
+        <canvas id="seekbar" height="40"></canvas>
+        <select id="scale">
+          <option value="linear" selected>Linear</option>
+          <option value="logarithmic">Logarithmic</option>
+        </select>
+        <div id="themes">
+          <button
+            class="theme-btn active"
+            data-theme="rainbow"
+            aria-label="Rainbow theme"
+          >
+            🌈
+          </button>
+          <button class="theme-btn" data-theme="fire" aria-label="Fire theme">
+            🔥
+          </button>
+        </div>
       </footer>
       <p><a href="../README.md">Usage &amp; options</a></p>
     </div>

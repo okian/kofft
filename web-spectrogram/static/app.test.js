@@ -6,6 +6,7 @@ import {
   setupPlayback,
   startRenderLoop,
   init,
+  palettes,
 } from "./app.js";
 import { SeekBar } from "./seekbar.js";
 
@@ -163,9 +164,36 @@ test("log scale compresses high-frequency bins", () => {
   assert.ok(extract(fillsLog) < extract(fillsLinear));
 });
 
+test("different palettes yield different colors", () => {
+  function run(palette) {
+    const ctx = {
+      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+      putImageData: () => {},
+      fillStyle: "",
+      fillRect: () => {},
+    };
+    const canvas = { width: 1, height: 1, getContext: () => ctx };
+    const analyser = {
+      frequencyBinCount: 1,
+      getByteFrequencyData: (arr) => arr.fill(128),
+    };
+    let rafCalled = false;
+    globalThis.requestAnimationFrame = (cb) => {
+      if (rafCalled) return;
+      rafCalled = true;
+      cb();
+    };
+    startRenderLoop(canvas, analyser, undefined, { current: palette });
+    return ctx.fillStyle;
+  }
+  const colorA = run(() => "rgb(255,0,0)");
+  const colorB = run(() => "rgb(0,255,0)");
+  assert.notEqual(colorA, colorB);
+});
+
 test("init wires up file input change", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><canvas id="spectrogram" width="10" height="10"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
+    `<footer id="controls"><input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas></footer><canvas id="spectrogram" width="10" height="10"></canvas>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -213,7 +241,7 @@ test("init wires up file input change", async () => {
 
 test("init closes previous context and keeps seek in sync", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><canvas id="spectrogram" width="10" height="10"></canvas>`,
+    `<footer id="controls"><input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas></footer><canvas id="spectrogram" width="10" height="10"></canvas>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -280,32 +308,30 @@ test("init closes previous context and keeps seek in sync", async () => {
   assert.equal(audio.currentTime, 2.5);
 });
 
-test("theme selector updates body dataset", () => {
+test("theme buttons change spectrogram palette", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><canvas id="spectrogram"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
+    `<footer id="controls"><input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas><div id="themes"><button data-theme="rainbow"></button><button data-theme="fire"></button></div></footer><canvas id="spectrogram"></canvas>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
+  let usedPalette;
   const deps = {
     decodeAndProcess: async () => ({
       ctx: {
-        createBufferSource: () => ({
-          buffer: null,
-          connect: () => {},
-          start: () => {},
-        }),
+        createMediaElementSource: () => ({ connect: () => {} }),
         createAnalyser: () => ({
           connect: () => {},
-          frequencyBinCount: 2,
+          frequencyBinCount: 1,
           getByteFrequencyData: () => {},
         }),
         destination: {},
       },
-      audioBuffer: {},
       amplitudes: [0],
     }),
     setupPlayback: () => {},
-    startRenderLoop: () => {},
+    startRenderLoop: (_c, _a, _s, palette) => {
+      usedPalette = palette;
+    },
   };
   const seekCanvas = dom.window.document.getElementById("seekbar");
   seekCanvas.getContext = () => ({
@@ -316,15 +342,20 @@ test("theme selector updates body dataset", () => {
     stroke: () => {},
   });
   init(dom.window.document, deps);
-  const select = dom.window.document.getElementById("theme");
-  select.value = "light";
-  select.dispatchEvent(new dom.window.Event("change"));
-  assert.equal(dom.window.document.body.dataset.theme, "light");
+  const fireBtn = dom.window.document.querySelector(
+    '#themes button[data-theme="fire"]',
+  );
+  fireBtn.dispatchEvent(new dom.window.Event("click"));
+  const input = dom.window.document.querySelector("input[type=file]");
+  Object.defineProperty(input, "files", { value: [{}], configurable: true });
+  input.dispatchEvent(new dom.window.Event("change"));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(usedPalette.current(128), palettes.fire(128));
 });
 
 test("canvas resizes with window", () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram"></canvas>`,
+    `<footer id="controls"><input type="file"><audio></audio></footer><canvas id="spectrogram"></canvas>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -360,7 +391,7 @@ test("canvas resizes with window", () => {
 
 test("init handles missing seekbar on file selection", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><canvas id="spectrogram"></canvas>`,
+    `<footer id="controls"><input type="file"><audio></audio></footer><canvas id="spectrogram"></canvas>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
