@@ -17,7 +17,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run coverage
-        run: cargo llvm-cov --features internal-tests ${{ matrix.features }} --lcov --output-path lcov.info
+        run: >
+          cargo llvm-cov --features internal-tests ${{ matrix.features }} \
+            --fail-under-lines 90 --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         if: ${{ secrets.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v4
