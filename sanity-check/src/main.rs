@@ -27,6 +27,12 @@ enum ColorMap {
 }
 
 #[derive(ValueEnum, Clone, Copy)]
+enum SpectrogramMode {
+    Unipolar,
+    Bipolar,
+}
+
+#[derive(ValueEnum, Clone, Copy)]
 enum PngDepth {
     Eight,
     Sixteen,
@@ -48,6 +54,10 @@ struct Args {
     /// Bit depth for the output PNG
     #[arg(long, value_enum, default_value_t = PngDepth::Eight)]
     png_depth: PngDepth,
+
+    /// Spectrogram rendering mode
+    #[arg(long, value_enum, default_value_t = SpectrogramMode::Unipolar)]
+    mode: SpectrogramMode,
 
     /// Optional path to save an SVG spectrogram
     #[arg(long)]
@@ -167,6 +177,48 @@ fn save_svg(img: &ImageBuffer<Rgb<u16>, Vec<u16>>, path: &str) -> Result<(), Box
     Ok(())
 }
 
+fn generate_heatmap(
+    magnitudes: &[Vec<f32>],
+    cmap: &ColorMap,
+    mode: SpectrogramMode,
+) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
+    let win_len = magnitudes[0].len();
+    let width = magnitudes.len();
+    let height = match mode {
+        SpectrogramMode::Unipolar => win_len / 2,
+        SpectrogramMode::Bipolar => win_len,
+    };
+    let mut img: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
+    let max_val = magnitudes
+        .iter()
+        .flat_map(|v| v.iter())
+        .cloned()
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+    for (x, frame) in magnitudes.iter().enumerate() {
+        match mode {
+            SpectrogramMode::Unipolar => {
+                for y in 0..height {
+                    let col = map_color(frame[y], max_val, cmap);
+                    img.put_pixel(x as u32, y as u32, Rgb(col));
+                }
+            }
+            SpectrogramMode::Bipolar => {
+                for k in 0..win_len {
+                    let y = if k <= win_len / 2 {
+                        win_len / 2 - k
+                    } else {
+                        win_len - (k - win_len / 2)
+                    };
+                    let col = map_color(frame[k], max_val, cmap);
+                    img.put_pixel(x as u32, y as u32, Rgb(col));
+                }
+            }
+        }
+    }
+    img
+}
+
 fn spectrogram_description(width: usize, height: usize, cmap: &ColorMap) -> String {
     let cmap_name = match cmap {
         ColorMap::Gray => "Gray",
@@ -190,8 +242,8 @@ fn draw_line(
 ) {
     let mut x0 = x0;
     let mut y0 = y0;
-    let mut x1 = x1;
-    let mut y1 = y1;
+    let x1 = x1;
+    let y1 = y1;
     let dx = (x1 - x0).abs();
     let dy = -(y1 - y0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -304,6 +356,7 @@ fn draw_time_ruler(
 fn draw_frequency_scale(
     img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
     sample_rate: u32,
+    mode: SpectrogramMode,
     enabled: bool,
 ) {
     if !enabled {
@@ -312,21 +365,60 @@ fn draw_frequency_scale(
     let height = img.height();
     let width = img.width();
     let nyquist = sample_rate as f32 / 2.0;
-    let px_per_hz = height as f32 / nyquist.max(1.0);
-    for f in (0..=nyquist as u32).step_by(1000) {
-        let y = (f as f32 * px_per_hz) as i32;
-        if y < height as i32 {
-            draw_line(
-                img,
-                width as i32 - 6,
-                y,
-                width as i32 - 1,
-                y,
-                Rgb([65535, 65535, 65535]),
-            );
-            let text = format!("{}Hz", f);
-            let text_y = (y - 6).max(0);
-            draw_text(img, width as i32 - 60, text_y, &text);
+    match mode {
+        SpectrogramMode::Unipolar => {
+            let px_per_hz = height as f32 / nyquist.max(1.0);
+            for f in (0..=nyquist as u32).step_by(1000) {
+                let y = (f as f32 * px_per_hz) as i32;
+                if y < height as i32 {
+                    draw_line(
+                        img,
+                        width as i32 - 6,
+                        y,
+                        width as i32 - 1,
+                        y,
+                        Rgb([65535, 65535, 65535]),
+                    );
+                    let text = format!("{}Hz", f);
+                    let text_y = (y - 6).max(0);
+                    draw_text(img, width as i32 - 60, text_y, &text);
+                }
+            }
+        }
+        SpectrogramMode::Bipolar => {
+            let center = height as i32 / 2;
+            let px_per_hz = (height as f32 / 2.0) / nyquist.max(1.0);
+            for f in (0..=nyquist as u32).step_by(1000) {
+                let offset = (f as f32 * px_per_hz) as i32;
+                let y_pos = center - offset;
+                let y_neg = center + offset;
+                if y_pos >= 0 {
+                    draw_line(
+                        img,
+                        width as i32 - 6,
+                        y_pos,
+                        width as i32 - 1,
+                        y_pos,
+                        Rgb([65535, 65535, 65535]),
+                    );
+                    let text = format!("{}Hz", f);
+                    let text_y = (y_pos - 6).max(0);
+                    draw_text(img, width as i32 - 60, text_y, &text);
+                }
+                if f != 0 && y_neg < height as i32 {
+                    draw_line(
+                        img,
+                        width as i32 - 6,
+                        y_neg,
+                        width as i32 - 1,
+                        y_neg,
+                        Rgb([65535, 65535, 65535]),
+                    );
+                    let text = format!("-{}Hz", f);
+                    let text_y = (y_neg - 6).max(0);
+                    draw_text(img, width as i32 - 60, text_y, &text);
+                }
+            }
         }
     }
 }
@@ -416,39 +508,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("Max difference between spectrograms: {:.6}", max_diff);
 
-    // save heatmaps for visual inspection (use first half of spectrum)
-    let height = win_len / 2;
+    // save heatmaps for visual inspection
     let width = frames;
-    let mut img_kofft: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
-    let mut img_ref: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
-    let max_val = kofft_mag
-        .iter()
-        .flat_map(|v| v.iter())
-        .chain(rust_mag.iter().flat_map(|v| v.iter()))
-        .cloned()
-        .fold(0.0f32, f32::max);
-    let heatmap_bar = ProgressBar::new(width as u64);
-    let max_val = if max_val > 0.0 { max_val } else { 1.0 };
-
-    for (x, (kf, rf)) in kofft_mag.iter().zip(rust_mag.iter()).enumerate() {
-        for y in 0..height {
-            let col1 = map_color(kf[y], max_val, &args.colormap);
-            let col2 = map_color(rf[y], max_val, &args.colormap);
-            img_kofft.put_pixel(x as u32, y as u32, Rgb(col1));
-            img_ref.put_pixel(x as u32, y as u32, Rgb(col2));
-        }
-        heatmap_bar.inc(1);
-    }
-    heatmap_bar.finish_and_clear();
+    let height = match args.mode {
+        SpectrogramMode::Unipolar => win_len / 2,
+        SpectrogramMode::Bipolar => win_len,
+    };
+    let mut img_kofft = generate_heatmap(&kofft_mag, &args.colormap, args.mode);
+    let img_ref = generate_heatmap(&rust_mag, &args.colormap, args.mode);
 
     draw_time_ruler(&mut img_kofft, sample_rate, hop, args.time_ruler);
-    draw_frequency_scale(&mut img_kofft, sample_rate, args.freq_scale);
+    draw_frequency_scale(&mut img_kofft, sample_rate, args.mode, args.freq_scale);
     draw_waveform(&mut img_kofft, &samples, hop, args.waveform);
     let center_frame = width / 2;
-    let center_bin = height / 2;
+    let freq_bin = match args.mode {
+        SpectrogramMode::Unipolar => height / 2,
+        SpectrogramMode::Bipolar => 0,
+    };
     let time = center_frame as f32 * hop as f32 / sample_rate as f32;
-    let freq = center_bin as f32 * sample_rate as f32 / win_len as f32;
-    let amp = kofft_mag[center_frame][center_bin];
+    let freq = match args.mode {
+        SpectrogramMode::Unipolar => freq_bin as f32 * sample_rate as f32 / win_len as f32,
+        SpectrogramMode::Bipolar => 0.0,
+    };
+    let amp = kofft_mag[center_frame][freq_bin];
     let status = format!("t:{:.2}s f:{:.1}Hz a:{:.2}", time, freq, amp);
     draw_status_bar(&mut img_kofft, &status, args.status_bar);
     save_png(&img_kofft, "kofft_spectrogram.png", args.png_depth)?;
@@ -531,7 +613,7 @@ mod tests {
         draw_time_ruler(&mut img, 44100, 2205, true);
         assert_ne!(img.get_pixel(0, 0), &Rgb([0, 0, 0]));
 
-        draw_frequency_scale(&mut img, 44100, true);
+        draw_frequency_scale(&mut img, 44100, SpectrogramMode::Unipolar, true);
         assert_ne!(img.get_pixel(99, 0), &Rgb([0, 0, 0]));
 
         draw_status_bar(&mut img, "t:0 f:0 a:0", true);
@@ -551,5 +633,39 @@ mod tests {
                 assert_eq!(img.get_pixel(x, y), &Rgb([0, 65535, 0]));
             }
         }
+    }
+
+    #[test]
+    fn spectrogram_modes_have_expected_dimensions_and_scale() {
+        let win_len = 8;
+        let frames = 10;
+        let mag = vec![vec![1.0; win_len]; frames];
+
+        let img_uni = generate_heatmap(&mag, &ColorMap::Gray, SpectrogramMode::Unipolar);
+        assert_eq!(img_uni.height(), win_len as u32 / 2);
+        let mut img_uni_scale = img_uni.clone();
+        draw_frequency_scale(&mut img_uni_scale, 8000, SpectrogramMode::Unipolar, true);
+        assert_eq!(
+            img_uni_scale.get_pixel(img_uni_scale.width() - 1, 0),
+            &Rgb([65535, 65535, 65535])
+        );
+
+        let img_bi = generate_heatmap(&mag, &ColorMap::Gray, SpectrogramMode::Bipolar);
+        assert_eq!(img_bi.height(), win_len as u32);
+        let mut img_bi_scale = img_bi.clone();
+        draw_frequency_scale(&mut img_bi_scale, 8000, SpectrogramMode::Bipolar, true);
+        let h = img_bi_scale.height();
+        assert_eq!(
+            img_bi_scale.get_pixel(img_bi_scale.width() - 1, h / 2),
+            &Rgb([65535, 65535, 65535])
+        );
+        assert_eq!(
+            img_bi_scale.get_pixel(img_bi_scale.width() - 1, 0),
+            &Rgb([65535, 65535, 65535])
+        );
+        assert_eq!(
+            img_bi_scale.get_pixel(img_bi_scale.width() - 1, h - 1),
+            &Rgb([65535, 65535, 65535])
+        );
     }
 }
