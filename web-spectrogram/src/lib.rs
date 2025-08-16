@@ -1,5 +1,13 @@
+use std::cell::RefCell;
+
+use kofft::fft::{new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
+use kofft::window::hann;
 use wasm_bindgen::prelude::*;
+
+const WIN_LEN: usize = 1024;
+const HOP: usize = WIN_LEN / 2;
+const FLOOR_DB: f32 = -80.0;
 
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
@@ -96,6 +104,72 @@ pub fn color_from_magnitude_u8(mag: f32, max_mag: f32, floor_db: f32, cmap: Colo
     spectrogram::color_from_magnitude_u8(mag, max_mag, floor_db, cmap.into()).to_vec()
 }
 
+thread_local! {
+    static STATE: RefCell<State> = RefCell::new(State::new());
+}
+
+struct State {
+    buf: Vec<f32>,
+    fft: Box<dyn FftImpl<f32>>,
+    window: Vec<f32>,
+    cmap: KColormap,
+    max_mag: f32,
+}
+
+impl State {
+    fn new() -> Self {
+        Self {
+            buf: Vec::new(),
+            fft: new_fft_impl(),
+            window: hann(WIN_LEN),
+            cmap: KColormap::Fire,
+            max_mag: 1e-12,
+        }
+    }
+
+    fn compute_frame(&mut self, samples: &[f32]) -> Vec<u8> {
+        self.buf.extend_from_slice(samples);
+        if self.buf.len() < WIN_LEN {
+            return Vec::new();
+        }
+        let mut frame = vec![Complex32::new(0.0, 0.0); WIN_LEN];
+        for i in 0..WIN_LEN {
+            frame[i] = Complex32::new(self.buf[i] * self.window[i], 0.0);
+        }
+        let _ = self.fft.fft(&mut frame);
+        let half = WIN_LEN / 2;
+        let mut row = Vec::with_capacity(half * 4);
+        for c in &frame[..half] {
+            let mag = (c.re * c.re + c.im * c.im).sqrt();
+            if mag > self.max_mag {
+                self.max_mag = mag;
+            }
+            let [r, g, b] =
+                spectrogram::color_from_magnitude_u8(mag, self.max_mag, FLOOR_DB, self.cmap);
+            row.extend_from_slice(&[r, g, b, 255]);
+        }
+        self.buf.drain(0..HOP);
+        row
+    }
+}
+
+#[wasm_bindgen]
+pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
+    STATE.with(|s| s.borrow_mut().compute_frame(samples))
+}
+
+#[wasm_bindgen]
+pub fn set_colormap(name: &str) {
+    STATE.with(|s| {
+        s.borrow_mut().cmap = KColormap::parse(name);
+    });
+}
+
+#[wasm_bindgen]
+pub fn reset_state() {
+    STATE.with(|s| *s.borrow_mut() = State::new());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +232,37 @@ mod tests {
             let c2 = spectrogram::map_color_u8(0.5, cmap.into());
             assert_eq!(w2, c2.to_vec());
         }
+    }
+
+    #[test]
+    fn streaming_compute_frame_and_colormap() {
+        reset_state();
+        let empty = compute_frame(&vec![0.0; HOP]);
+        assert!(empty.is_empty());
+        let frame = compute_frame(&vec![1.0; WIN_LEN]);
+        assert_eq!(frame.len(), (WIN_LEN / 2) * 4);
+        let frame2 = compute_frame(&vec![1.0; HOP]);
+        assert_eq!(frame2.len(), (WIN_LEN / 2) * 4);
+        for chunk in frame.chunks_exact(4) {
+            assert_eq!(chunk[3], 255);
+        }
+        reset_state();
+        set_colormap("gray");
+        let gray_frame = compute_frame(&vec![1.0; WIN_LEN]);
+        reset_state();
+        let fire_frame = {
+            set_colormap("fire");
+            compute_frame(&vec![1.0; WIN_LEN])
+        };
+        assert_ne!(gray_frame, fire_frame);
+    }
+
+    #[test]
+    fn reset_clears_buffer() {
+        reset_state();
+        let _ = compute_frame(&vec![1.0; WIN_LEN]);
+        reset_state();
+        let empty = compute_frame(&vec![0.0; HOP]);
+        assert!(empty.is_empty());
     }
 }

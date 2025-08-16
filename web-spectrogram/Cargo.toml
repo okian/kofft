@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 wasm-bindgen = "0.2"
 web-sys = "0.3"
-kofft = { path = "..", features = ["wasm"], default-features = true }
+kofft = { path = "..", features = ["wasm", "simd"], default-features = true }
 axum = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.5", features = ["fs", "cors"] }
