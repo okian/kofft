@@ -37,6 +37,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use http::{header, Request};
+    use hyper::body::to_bytes;
     use std::fs;
     use tempfile::tempdir;
     use tower::util::ServiceExt;
@@ -84,5 +85,23 @@ mod tests {
                 .unwrap(),
             "*"
         );
+    }
+
+    #[tokio::test]
+    async fn serves_index_for_unknown_path() {
+        let tmp = tempdir().unwrap();
+        let static_dir = tmp.path().join("static");
+        fs::create_dir(&static_dir).unwrap();
+        fs::write(static_dir.join("index.html"), "index").unwrap();
+
+        let router = app(&static_dir);
+
+        let res = router
+            .oneshot(Request::get("/missing").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = to_bytes(res.into_body()).await.unwrap();
+        assert_eq!(&body[..], b"index");
     }
 }
