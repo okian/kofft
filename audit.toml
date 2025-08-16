@@ -1,0 +1,5 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2024-0436", # paste - no longer maintained
+    "RUSTSEC-2021-0140", # rusttype is unmaintained
+]
