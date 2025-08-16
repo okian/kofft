@@ -386,10 +386,10 @@ appropriate `target-feature` flags (e.g., `RUSTFLAGS="-C target-feature=+avx2"`)
 
 To opt into additional optional features for local builds, set the
 `KOFFT_FEATURES` environment variable. Any features listed there are appended
-to those detected by the Makefile:
+to those detected by the `xtask` utility:
 
 ```bash
-KOFFT_FEATURES="simd compile-time-rfft" make test
+KOFFT_FEATURES="simd compile-time-rfft" cargo xtask test
 ```
 
 ### Parallel Processing
@@ -586,6 +586,22 @@ at your option.
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+### Development tasks
+
+Common development commands are exposed via the `xtask` binary:
+
+```bash
+cargo xtask build        # Build the project with auto-detected features
+cargo xtask test         # Run tests with matching features
+cargo xtask clippy       # Run clippy lints
+cargo xtask fmt          # Format the codebase
+cargo xtask analyze      # Run fmt and clippy together
+cargo xtask benchmark    # Execute benchmarks
+cargo xtask bench-libs   # Run criterion benches across libraries
+cargo xtask update-bench-readme  # Refresh benchmark README data
+cargo xtask sanity -- <path-to-flac>  # Run the sanity check example
+```
 
 ## Documentation
 

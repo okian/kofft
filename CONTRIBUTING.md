@@ -29,6 +29,15 @@ This project is committed to providing a welcoming and inclusive environment for
 
 ### Building and Testing
 
+Common development tasks are also available through the `xtask` utility:
+
+```bash
+cargo xtask build
+cargo xtask test
+cargo xtask clippy
+cargo xtask fmt
+```
+
 ```bash
 # Build the project
 cargo build
@@ -57,7 +66,7 @@ cargo fmt
 Refresh the benchmark data in the repository:
 
 ```bash
-make update-bench-readme
+cargo xtask update-bench-readme
 ```
 
 ## Development Guidelines
