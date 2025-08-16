@@ -38,7 +38,10 @@ enum PngDepth {
     Sixteen,
 }
 
+const EXAMPLE_STR: &str = "Example:\n    sanity-check input.flac -s out.svg\n";
+
 #[derive(Parser)]
+#[command(about, long_about, after_help = EXAMPLE_STR)]
 struct Args {
     /// Path to input FLAC file
     input: PathBuf,
@@ -60,23 +63,27 @@ struct Args {
     mode: SpectrogramMode,
 
     /// Optional path to save an SVG spectrogram
-    #[arg(long)]
+    #[arg(long, short = 's', help = "Optional path to save an SVG spectrogram")]
     svg_output: Option<PathBuf>,
 
     /// Draw a top time ruler
-    #[arg(long)]
+    #[arg(long, short = 't', help = "Draw a top time ruler")]
     time_ruler: bool,
 
     /// Draw a right-side frequency scale
-    #[arg(long)]
+    #[arg(long, short = 'f', help = "Draw a right-side frequency scale")]
     freq_scale: bool,
 
     /// Overlay waveform centered vertically
-    #[arg(long)]
+    #[arg(long, short = 'w', help = "Overlay waveform centered vertically")]
     waveform: bool,
 
     /// Draw status bar with time, frequency and amplitude
-    #[arg(long)]
+    #[arg(
+        long,
+        short = 'b',
+        help = "Draw status bar with time, frequency and amplitude"
+    )]
     status_bar: bool,
 }
 
@@ -576,6 +583,7 @@ mod tests {
     use image::ImageDecoder;
     use std::fs;
     use std::fs::File;
+    use std::path::PathBuf;
 
     #[test]
     fn saves_png_with_specified_depth() {
@@ -607,6 +615,24 @@ mod tests {
         let content = fs::read_to_string(&tmp).unwrap();
         assert!(content.contains("<svg"));
         fs::remove_file(tmp).unwrap();
+    }
+
+    #[test]
+    fn args_short_flags_parse() {
+        let args = Args::parse_from(["bin", "input.flac", "-s", "out.svg", "-t", "-f", "-w", "-b"]);
+        assert_eq!(args.svg_output, Some(PathBuf::from("out.svg")));
+        assert!(args.time_ruler);
+        assert!(args.freq_scale);
+        assert!(args.waveform);
+        assert!(args.status_bar);
+    }
+
+    #[test]
+    fn help_includes_example() {
+        use clap::CommandFactory;
+        let mut cmd = Args::command();
+        let help = cmd.render_long_help().to_string();
+        assert!(help.contains("Example:"));
     }
 
     #[test]
