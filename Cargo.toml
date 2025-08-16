@@ -59,6 +59,7 @@ optional = true
 [dev-dependencies]
 hound = "3.5"
 image = "0.24"
+xtask = { path = "xtask" }
 
 [[example]]
 name = "basic_usage"

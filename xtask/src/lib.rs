@@ -31,6 +31,11 @@ pub fn detect_config() -> BuildConfig {
 }
 
 fn detect_arch() -> String {
+    if let Ok(arch) = env::var("ARCH") {
+        if !arch.trim().is_empty() {
+            return arch;
+        }
+    }
     Command::new("uname")
         .arg("-m")
         .output()
@@ -190,6 +195,7 @@ pub fn sanity_command(flac: Option<&str>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     #[test]
     fn test_compute_x86_avx512() {
@@ -294,5 +300,12 @@ mod tests {
         assert!(nproc >= 1);
         // ensure config uses detected values
         assert!(!cfg.features.is_empty());
+    }
+
+    #[test]
+    fn test_detect_arch_override() {
+        env::set_var("ARCH", "arm64");
+        assert_eq!(super::detect_arch(), "arm64");
+        env::remove_var("ARCH");
     }
 }
