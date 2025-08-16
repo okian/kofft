@@ -143,6 +143,44 @@ impl<T: Float> Complex<T> {
     #[allow(clippy::should_implement_trait)]
     #[inline(always)]
     pub fn mul(self, other: Self) -> Self {
+        #[cfg(all(
+            target_feature = "fma",
+            any(target_arch = "x86", target_arch = "x86_64")
+        ))]
+        {
+            unsafe { self.mul_fma_x86(other) }
+        }
+        #[cfg(all(target_feature = "fma", target_arch = "aarch64"))]
+        {
+            unsafe { self.mul_fma_aarch64(other) }
+        }
+        #[cfg(not(all(
+            target_feature = "fma",
+            any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")
+        )))]
+        {
+            Self {
+                re: self.re * other.re - self.im * other.im,
+                im: self.re * other.im + self.im * other.re,
+            }
+        }
+    }
+
+    #[cfg(all(
+        target_feature = "fma",
+        any(target_arch = "x86", target_arch = "x86_64")
+    ))]
+    #[target_feature(enable = "fma")]
+    unsafe fn mul_fma_x86(self, other: Self) -> Self {
+        Self {
+            re: self.re.mul_add(other.re, -(self.im * other.im)),
+            im: self.re.mul_add(other.im, self.im * other.re),
+        }
+    }
+
+    #[cfg(all(target_feature = "fma", target_arch = "aarch64"))]
+    #[target_feature(enable = "fma")]
+    unsafe fn mul_fma_aarch64(self, other: Self) -> Self {
         Self {
             re: self.re.mul_add(other.re, -(self.im * other.im)),
             im: self.re.mul_add(other.im, self.im * other.re),
@@ -187,10 +225,7 @@ impl<T: Float> core::ops::Mul for Complex<T> {
     type Output = Self;
     #[inline(always)]
     fn mul(self, other: Self) -> Self {
-        Self {
-            re: self.re.mul_add(other.re, -(self.im * other.im)),
-            im: self.re.mul_add(other.im, self.im * other.re),
-        }
+        Complex::<T>::mul(self, other)
     }
 }
 
