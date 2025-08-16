@@ -82,7 +82,7 @@ test("startRenderLoop draws to canvas", () => {
 
 test("init wires up file input change", async () => {
   const dom = new JSDOM(
-    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram" width="10" height="10"></canvas>`,
+    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram" width="10" height="10"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -120,4 +120,37 @@ test("init wires up file input change", async () => {
   input.dispatchEvent(new dom.window.Event("change"));
   await new Promise((r) => setTimeout(r, 0));
   assert.ok(setupCalled && renderCalled);
+});
+
+test("theme selector updates body dataset", () => {
+  const dom = new JSDOM(
+    `<input type="file"><audio></audio><input type="range"><canvas id="spectrogram"></canvas><select id="theme"><option value="dark">dark</option><option value="light">light</option></select>`,
+  );
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  const deps = {
+    decodeAndProcess: async () => ({
+      ctx: {
+        createBufferSource: () => ({
+          buffer: null,
+          connect: () => {},
+          start: () => {},
+        }),
+        createAnalyser: () => ({
+          connect: () => {},
+          frequencyBinCount: 2,
+          getByteFrequencyData: () => {},
+        }),
+        destination: {},
+      },
+      audioBuffer: {},
+    }),
+    setupPlayback: () => {},
+    startRenderLoop: () => {},
+  };
+  init(dom.window.document, deps);
+  const select = dom.window.document.getElementById("theme");
+  select.value = "light";
+  select.dispatchEvent(new dom.window.Event("change"));
+  assert.equal(dom.window.document.body.dataset.theme, "light");
 });

@@ -46,8 +46,16 @@ export function init(
   const audio = doc.querySelector("audio");
   const seek = doc.querySelector("input[type=range]");
   const canvas = doc.getElementById("spectrogram");
+  const themeSelect = doc.getElementById("theme");
   canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
   canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
+
+  if (themeSelect) {
+    doc.body.dataset.theme = themeSelect.value;
+    themeSelect.addEventListener("change", () => {
+      doc.body.dataset.theme = themeSelect.value;
+    });
+  }
 
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
