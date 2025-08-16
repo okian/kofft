@@ -8,8 +8,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::fft::{FftError, ScalarFftImpl};
-use crate::stft::stft;
 use crate::window::hann;
+use crate::Complex32;
 
 /// Supported colour palettes for spectrogram rendering.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -57,7 +57,7 @@ pub fn stft_magnitudes(
     let window = hann(win_len);
     let fft = ScalarFftImpl::<f32>::default();
     let mut frames = vec![vec![]; samples.len().div_ceil(hop)];
-    stft(samples, &window, hop, &mut frames, &fft)?;
+    compute_stft(samples, &window, hop, &mut frames, &fft)?;
 
     let height = win_len / 2;
     let width = frames.len();
@@ -73,6 +73,23 @@ pub fn stft_magnitudes(
         }
     }
     Ok((mags, max_mag))
+}
+
+fn compute_stft<Fft: crate::fft::FftImpl<f32>>(
+    signal: &[f32],
+    window: &[f32],
+    hop: usize,
+    frames: &mut [Vec<Complex32>],
+    fft: &Fft,
+) -> Result<(), FftError> {
+    #[cfg(feature = "parallel")]
+    {
+        crate::stft::parallel(signal, window, hop, frames, fft)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        crate::stft::stft(signal, window, hop, frames, fft)
+    }
 }
 
 /// Convert a magnitude to decibels relative to `max_mag` with the given floor.
@@ -259,5 +276,23 @@ mod tests {
         assert_eq!(c[0], 0);
         assert_eq!(c[2], 65535);
         assert!(c[1] > 0 && c[1] < 65535);
+    }
+
+    #[test]
+    fn compute_stft_matches_sequential() {
+        use crate::fft::ScalarFftImpl;
+        use crate::stft::stft;
+        use crate::window::hann;
+
+        let signal: Vec<f32> = (0..16).map(|i| i as f32).collect();
+        let win_len = 4;
+        let hop = 2;
+        let window = hann(win_len);
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut seq = vec![vec![]; signal.len().div_ceil(hop)];
+        stft(&signal, &window, hop, &mut seq, &fft).unwrap();
+        let mut helper = vec![vec![]; signal.len().div_ceil(hop)];
+        compute_stft(&signal, &window, hop, &mut helper, &fft).unwrap();
+        assert_eq!(seq, helper);
     }
 }
