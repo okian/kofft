@@ -21,7 +21,7 @@ export function setupPlayback(audioEl, seekInput) {
   });
 }
 
-export function startRenderLoop(canvas, analyser) {
+export function startRenderLoop(canvas, analyser, scale = { value: "linear" }) {
   const ctx = canvas.getContext("2d");
   const data = new Uint8Array(analyser.frequencyBinCount);
   // Ensure the canvas height matches the frequency bin count while
@@ -35,8 +35,19 @@ export function startRenderLoop(canvas, analyser) {
     analyser.getByteFrequencyData(data);
     const img = ctx.getImageData(1, 0, canvas.width - 1, canvas.height);
     ctx.putImageData(img, 0, 0);
+    const mode =
+      typeof scale === "string" ? scale : (scale && scale.value) || "linear";
     for (let y = 0; y < Math.min(canvas.height, data.length); y++) {
-      const v = data[y];
+      const idx =
+        mode === "logarithmic"
+          ? Math.min(
+              data.length - 1,
+              Math.floor(
+                Math.pow(data.length, y / Math.max(canvas.height - 1, 1)) - 1,
+              ),
+            )
+          : y;
+      const v = data[idx] || 0;
       ctx.fillStyle = `rgb(${v},${v},${v})`;
       ctx.fillRect(canvas.width - 1, y, 1, 1);
     }
@@ -54,6 +65,7 @@ export function init(
   const seek = doc.querySelector("input[type=range]");
   const canvas = doc.getElementById("spectrogram");
   const themeSelect = doc.getElementById("theme");
+  const scaleSelect = doc.getElementById("scale");
   canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
   canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
 
@@ -78,7 +90,7 @@ export function init(
     const source = ctx.createMediaElementSource(audio);
     source.connect(analyser);
     analyser.connect(ctx.destination);
-    deps.startRenderLoop(canvas, analyser);
+    deps.startRenderLoop(canvas, analyser, scaleSelect);
   });
 }
 
