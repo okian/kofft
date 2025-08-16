@@ -71,7 +71,7 @@ export function init(
   const fileInput = doc.querySelector("input[type=file]");
   const audio = doc.querySelector("audio");
   const seekCanvas = doc.getElementById("seekbar");
-  const seek = new SeekBar(seekCanvas);
+  const seek = seekCanvas ? new SeekBar(seekCanvas) : null;
   const canvas = doc.getElementById("spectrogram");
   const themeSelect = doc.getElementById("theme");
   const resize = () => {
@@ -85,7 +85,9 @@ export function init(
   canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
   canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
 
-  deps.setupPlayback(audio, seek);
+  if (seek) {
+    deps.setupPlayback(audio, seek);
+  }
 
   let ctx;
   if (themeSelect) {
@@ -103,7 +105,9 @@ export function init(
     }
     let amplitudes;
     ({ ctx, amplitudes } = await deps.decodeAndProcess(file, audio));
-    seek.setAmplitudes(amplitudes);
+    if (seek) {
+      seek.setAmplitudes(amplitudes);
+    }
     const analyser = ctx.createAnalyser();
     const source = ctx.createMediaElementSource(audio);
     source.connect(analyser);
