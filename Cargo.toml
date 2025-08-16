@@ -23,7 +23,7 @@ build = "build.rs"
 
 
 [workspace]
-members = ["kofft-bench", "sanity-check", "xtask"]
+members = ["kofft-bench", "sanity-check", "xtask", "web-spectrogram"]
 
 [dependencies]
 libm = "0.2"
