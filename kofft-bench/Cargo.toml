@@ -16,9 +16,15 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [features]
 default = []
 parallel = ["kofft/parallel"]
-sse = ["kofft/sse"]
+x86_64 = ["kofft/x86_64"]
 aarch64 = ["kofft/aarch64"]
+sse = ["kofft/sse"]
 avx2 = ["kofft/avx2"]
+avx512 = ["kofft/avx512"]
+wasm = ["kofft/wasm"]
+simd = ["kofft/simd"]
+soa = ["kofft/soa"]
+precomputed-twiddles = ["kofft/precomputed-twiddles"]
 
 [[bench]]
 name = "bench_fft"
