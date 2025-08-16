@@ -13,7 +13,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 - **🚀 Zero-allocation stack-only APIs** for MCU/embedded systems
 - **⚡ SIMD acceleration** (x86_64 AVX2 & SSE, AArch64 NEON, WebAssembly SIMD)
 - **🧮 Split-radix FFTs** for power-of-two sizes, with radix-2/4 and mixed-radix support
-- **🔧 Multiple transform types**: FFT, DCT (Types I-IV), DST (Types I-IV), Hartley, Wavelet, STFT, CZT, Goertzel
+- **🔧 Multiple transform types and modules**: FFT, NDFFT (n-dimensional), DCT (Types I-IV), DST (Types I-IV), Hartley, Hilbert transform, Cepstrum, Wavelet, STFT, CZT, Goertzel
 - **📊 Window functions**: Hann, Hamming, Blackman, Kaiser
 - **🔄 Batch and multi-channel processing**
 - **🌐 WebAssembly support**
@@ -35,12 +35,20 @@ See [benchmarks/latest.json](benchmarks/latest.json) for full results.
 
 ```toml
 [dependencies]
-kofft = { version = "0.1.4", features = [
-    # "x86_64",   # enable AVX2 on x86_64
-    # "sse",      # enable SSE on x86_64 without AVX2
-    # "aarch64",  # enable NEON on AArch64
-    # "wasm",     # enable WebAssembly SIMD
-    # "parallel", # enable Rayon-based parallel helpers
+kofft = { version = "0.1.5", features = [
+    # "x86_64",             # AVX/SSE on x86_64
+    # "sse",                # force SSE2-only backend
+    # "aarch64",            # NEON on 64-bit ARM
+    # "wasm",               # WebAssembly SIMD128
+    # "avx2",               # AVX2-specific code paths
+    # "avx512",             # AVX-512 code paths
+    # "parallel",           # Rayon-based parallel helpers
+    # "simd",               # portable SIMD FFT implementations
+    # "soa",                # structure-of-arrays complex vectors
+    # "precomputed-twiddles", # embed precomputed twiddle factors (requires std)
+    # "compile-time-rfft",  # precompute real FFT tables at compile time
+    # "slow",               # include naive reference algorithms
+    # "internal-tests",     # enable proptest/rand for internal tests
 ] }
 ```
 
@@ -95,6 +103,27 @@ let mut data = vec![Complex32::new(1.0, 0.0); 1 << 14];
 fft_parallel(&mut data)?;
 ifft_parallel(&mut data)?;
 ```
+
+## Cargo Feature Flags
+
+The crate exposes several Cargo features. Refer to [`Cargo.toml`](Cargo.toml) for the canonical list and definitions.
+
+- `std` – enable the Rust standard library (default)
+- `parallel` – Rayon-based parallel helpers
+- Architecture backends:
+  - `x86_64` – AVX/SSE on x86_64 CPUs
+  - `sse` – force SSE2-only backend
+  - `aarch64` – NEON on 64-bit ARM
+  - `wasm` – WebAssembly SIMD128
+  - `avx2` – AVX2-specific code paths
+  - `avx512` – AVX-512 code paths
+- Miscellaneous:
+  - `simd` – portable SIMD FFT implementations
+  - `soa` – structure-of-arrays complex vectors for SIMD
+  - `precomputed-twiddles` – embed precomputed FFT twiddle factors (requires `std`)
+  - `compile-time-rfft` – generate real FFT tables at compile time
+  - `slow` – include naive reference algorithms
+  - `internal-tests` – enable proptest and rand for internal testing
 
 ## Embedded/MCU Usage (No Heap)
 
