@@ -109,6 +109,13 @@ fn read_flac(path: &PathBuf) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     Ok((samples, sr))
 }
 
+fn apply_value_mode(raw: f32, mode: ValueMode) -> f32 {
+    match mode {
+        ValueMode::Magnitude => raw * raw,
+        ValueMode::Amplitude | ValueMode::Dbfs => raw,
+    }
+}
+
 fn map_color(value: f32, max: f32, cmap: &ColorMap, mode: ValueMode) -> [u16; 3] {
     let t = match mode {
         ValueMode::Magnitude | ValueMode::Amplitude => (value / max).clamp(0.0, 1.0) as f64,
@@ -214,22 +221,14 @@ fn generate_heatmap(
     let mut img: ImageBuffer<Rgb<u16>, _> = ImageBuffer::new(width as u32, height as u32);
     let max_val = magnitudes
         .iter()
-        .flat_map(|v| {
-            v.iter().map(|&val| match value_mode {
-                ValueMode::Magnitude => val * val,
-                ValueMode::Amplitude | ValueMode::Dbfs => val,
-            })
-        })
+        .flat_map(|v| v.iter().map(|&val| apply_value_mode(val, value_mode)))
         .fold(0.0f32, f32::max)
         .max(1.0);
     for (x, frame) in magnitudes.iter().enumerate() {
         match mode {
             SpectrogramMode::Unipolar => {
                 for y in 0..height {
-                    let v = match value_mode {
-                        ValueMode::Magnitude => frame[y] * frame[y],
-                        ValueMode::Amplitude | ValueMode::Dbfs => frame[y],
-                    };
+                    let v = apply_value_mode(frame[y], value_mode);
                     let col = map_color(v, max_val, cmap, value_mode);
                     img.put_pixel(x as u32, y as u32, Rgb(col));
                 }
@@ -241,10 +240,7 @@ fn generate_heatmap(
                     } else {
                         win_len - (k - win_len / 2)
                     };
-                    let v = match value_mode {
-                        ValueMode::Magnitude => frame[k] * frame[k],
-                        ValueMode::Amplitude | ValueMode::Dbfs => frame[k],
-                    };
+                    let v = apply_value_mode(frame[k], value_mode);
                     let col = map_color(v, max_val, cmap, value_mode);
                     img.put_pixel(x as u32, y as u32, Rgb(col));
                 }
@@ -742,6 +738,14 @@ mod tests {
                 assert_eq!(img.get_pixel(x, y), &Rgb([0, 65535, 0]));
             }
         }
+    }
+
+    #[test]
+    fn apply_value_mode_converts_bins() {
+        let raw = 0.5;
+        assert_eq!(apply_value_mode(raw, ValueMode::Amplitude), 0.5);
+        assert_eq!(apply_value_mode(raw, ValueMode::Dbfs), 0.5);
+        assert_eq!(apply_value_mode(raw, ValueMode::Magnitude), 0.25);
     }
 
     #[test]
