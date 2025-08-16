@@ -338,6 +338,10 @@ pub struct FftPlanner<T: Float> {
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
     bluestein_scratch: Vec<Complex<T>>,
+    split_re: Vec<T>,
+    split_im: Vec<T>,
+    split_scratch_re: Vec<T>,
+    split_scratch_im: Vec<T>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -353,6 +357,10 @@ impl<T: Float> FftPlanner<T> {
             bluestein_cache: HashMap::new(),
             scratch: Vec::new(),
             bluestein_scratch: Vec::new(),
+            split_re: Vec::new(),
+            split_im: Vec::new(),
+            split_scratch_re: Vec::new(),
+            split_scratch_im: Vec::new(),
         }
     }
     /// Retrieve a contiguous table of twiddle factors for a given stage size
@@ -653,17 +661,69 @@ impl<T: Float> ScalarFftImpl<T> {
             }
             return Ok(());
         }
-
         // Stockham auto-sort FFT using a double-buffered approach.
-        let (twiddles, mut scratch) = {
+        let (twiddles, mut scratch, mut split_re, mut split_im) = {
             let planner = unsafe { self.planner_mut() };
             let twiddles = planner.get_twiddles(n);
             let scratch = core::mem::take(&mut planner.scratch);
-            (twiddles, scratch)
+            let split_re = core::mem::take(&mut planner.split_re);
+            let split_im = core::mem::take(&mut planner.split_im);
+            (twiddles, scratch, split_re, split_im)
         };
 
         if scratch.len() < n {
             scratch.resize(n, Complex::zero());
+        }
+        if split_re.len() < n {
+            split_re.resize(n, T::zero());
+        }
+        if split_im.len() < n {
+            split_im.resize(n, T::zero());
+        }
+
+        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
+            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f32>) };
+            let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
+            let re32 = unsafe { &mut *(split_re.as_mut_slice() as *mut [T] as *mut [f32]) };
+            let im32 = unsafe { &mut *(split_im.as_mut_slice() as *mut [T] as *mut [f32]) };
+            for (c, (r, i)) in input32.iter().zip(re32.iter_mut().zip(im32.iter_mut())) {
+                *r = c.re;
+                *i = c.im;
+            }
+            this.fft_split_simd(re32, im32)?;
+            for (c, (r, i)) in input32.iter_mut().zip(re32.iter().zip(im32.iter())) {
+                c.re = *r;
+                c.im = *i;
+            }
+            {
+                let planner = unsafe { self.planner_mut() };
+                planner.scratch = scratch;
+                planner.split_re = split_re;
+                planner.split_im = split_im;
+            }
+            return Ok(());
+        }
+        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f64>() {
+            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f64>) };
+            let input64 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex64]) };
+            let re64 = unsafe { &mut *(split_re.as_mut_slice() as *mut [T] as *mut [f64]) };
+            let im64 = unsafe { &mut *(split_im.as_mut_slice() as *mut [T] as *mut [f64]) };
+            for (c, (r, i)) in input64.iter().zip(re64.iter_mut().zip(im64.iter_mut())) {
+                *r = c.re;
+                *i = c.im;
+            }
+            this.fft_split_simd(re64, im64)?;
+            for (c, (r, i)) in input64.iter_mut().zip(re64.iter().zip(im64.iter())) {
+                c.re = *r;
+                c.im = *i;
+            }
+            {
+                let planner = unsafe { self.planner_mut() };
+                planner.scratch = scratch;
+                planner.split_re = split_re;
+                planner.split_im = split_im;
+            }
+            return Ok(());
         }
 
         // Keep raw ptr so we can copy back if the final output ends up in scratch.
@@ -717,6 +777,8 @@ impl<T: Float> ScalarFftImpl<T> {
         {
             let planner = unsafe { self.planner_mut() };
             planner.scratch = scratch;
+            planner.split_re = split_re;
+            planner.split_im = split_im;
         }
 
         Ok(())
@@ -751,8 +813,18 @@ impl ScalarFftImpl<f32> {
         };
         let twiddles = twiddles.as_ref();
 
-        let mut scratch_re = vec![0.0f32; n];
-        let mut scratch_im = vec![0.0f32; n];
+        let (mut scratch_re, mut scratch_im) = {
+            let planner = unsafe { self.planner_mut() };
+            let sr = core::mem::take(&mut planner.split_scratch_re);
+            let si = core::mem::take(&mut planner.split_scratch_im);
+            (sr, si)
+        };
+        if scratch_re.len() < n {
+            scratch_re.resize(n, 0.0);
+        }
+        if scratch_im.len() < n {
+            scratch_im.resize(n, 0.0);
+        }
         let mut src_re: &mut [f32] = re;
         let mut src_im: &mut [f32] = im;
         let mut dst_re: &mut [f32] = &mut scratch_re[..];
@@ -828,6 +900,150 @@ impl ScalarFftImpl<f32> {
                 core::ptr::copy_nonoverlapping(src_re.as_ptr(), out_re_ptr, n);
                 core::ptr::copy_nonoverlapping(src_im.as_ptr(), out_im_ptr, n);
             }
+        }
+        {
+            let planner = unsafe { self.planner_mut() };
+            planner.split_scratch_re = scratch_re;
+            planner.split_scratch_im = scratch_im;
+        }
+        Ok(())
+    }
+}
+
+impl ScalarFftImpl<f64> {
+    fn fft_split_simd(&self, re: &mut [f64], im: &mut [f64]) -> Result<(), FftError> {
+        let n = re.len();
+        let out_re_ptr = re.as_mut_ptr();
+        let out_im_ptr = im.as_mut_ptr();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if !n.is_power_of_two() || n <= 16 {
+            let mut buf: Vec<Complex64> = re
+                .iter()
+                .zip(im.iter())
+                .map(|(&r, &i)| Complex64::new(r, i))
+                .collect();
+            self.fft(&mut buf)?;
+            for i in 0..n {
+                re[i] = buf[i].re;
+                im[i] = buf[i].im;
+            }
+            return Ok(());
+        }
+
+        let twiddles = {
+            let planner = unsafe { self.planner_mut() };
+            planner.get_twiddles(n)
+        };
+        let twiddles = twiddles.as_ref();
+
+        let (mut scratch_re, mut scratch_im) = {
+            let planner = unsafe { self.planner_mut() };
+            let sr = core::mem::take(&mut planner.split_scratch_re);
+            let si = core::mem::take(&mut planner.split_scratch_im);
+            (sr, si)
+        };
+        if scratch_re.len() < n {
+            scratch_re.resize(n, 0.0);
+        }
+        if scratch_im.len() < n {
+            scratch_im.resize(n, 0.0);
+        }
+        let mut src_re: &mut [f64] = re;
+        let mut src_im: &mut [f64] = im;
+        let mut dst_re: &mut [f64] = &mut scratch_re[..];
+        let mut dst_im: &mut [f64] = &mut scratch_im[..];
+
+        let mut n1 = 1usize;
+        let mut n2 = n;
+        while n1 < n {
+            n2 >>= 1;
+            for k in 0..n1 {
+                let tw = twiddles[k * n2];
+                let even_base = 2 * k * n2;
+                let odd_base = even_base + n2;
+                let dst0 = k * n2;
+                let dst1 = (k + n1) * n2;
+                let mut j = 0usize;
+                #[cfg(all(target_arch = "x86_64", target_feature = "avx"))]
+                unsafe {
+                    let w_re = _mm256_set1_pd(tw.re);
+                    let w_im = _mm256_set1_pd(tw.im);
+                    while j + 4 <= n2 {
+                        let even_re = _mm256_loadu_pd(src_re.as_ptr().add(even_base + j));
+                        let even_im = _mm256_loadu_pd(src_im.as_ptr().add(even_base + j));
+                        let odd_re = _mm256_loadu_pd(src_re.as_ptr().add(odd_base + j));
+                        let odd_im = _mm256_loadu_pd(src_im.as_ptr().add(odd_base + j));
+                        let t_re =
+                            _mm256_sub_pd(_mm256_mul_pd(odd_re, w_re), _mm256_mul_pd(odd_im, w_im));
+                        let t_im =
+                            _mm256_add_pd(_mm256_mul_pd(odd_re, w_im), _mm256_mul_pd(odd_im, w_re));
+                        _mm256_storeu_pd(
+                            dst_re.as_mut_ptr().add(dst0 + j),
+                            _mm256_add_pd(even_re, t_re),
+                        );
+                        _mm256_storeu_pd(
+                            dst_im.as_mut_ptr().add(dst0 + j),
+                            _mm256_add_pd(even_im, t_im),
+                        );
+                        _mm256_storeu_pd(
+                            dst_re.as_mut_ptr().add(dst1 + j),
+                            _mm256_sub_pd(even_re, t_re),
+                        );
+                        _mm256_storeu_pd(
+                            dst_im.as_mut_ptr().add(dst1 + j),
+                            _mm256_sub_pd(even_im, t_im),
+                        );
+                        j += 4;
+                    }
+                }
+                #[cfg(target_arch = "aarch64")]
+                unsafe {
+                    let w_re = vdupq_n_f64(tw.re);
+                    let w_im = vdupq_n_f64(tw.im);
+                    while j + 2 <= n2 {
+                        let even_re = vld1q_f64(src_re.as_ptr().add(even_base + j));
+                        let even_im = vld1q_f64(src_im.as_ptr().add(even_base + j));
+                        let odd_re = vld1q_f64(src_re.as_ptr().add(odd_base + j));
+                        let odd_im = vld1q_f64(src_im.as_ptr().add(odd_base + j));
+                        let t_re = vsubq_f64(vmulq_f64(odd_re, w_re), vmulq_f64(odd_im, w_im));
+                        let t_im = vaddq_f64(vmulq_f64(odd_re, w_im), vmulq_f64(odd_im, w_re));
+                        vst1q_f64(dst_re.as_mut_ptr().add(dst0 + j), vaddq_f64(even_re, t_re));
+                        vst1q_f64(dst_im.as_mut_ptr().add(dst0 + j), vaddq_f64(even_im, t_im));
+                        vst1q_f64(dst_re.as_mut_ptr().add(dst1 + j), vsubq_f64(even_re, t_re));
+                        vst1q_f64(dst_im.as_mut_ptr().add(dst1 + j), vsubq_f64(even_im, t_im));
+                        j += 2;
+                    }
+                }
+                while j < n2 {
+                    let even_re = src_re[even_base + j];
+                    let even_im = src_im[even_base + j];
+                    let odd_re = src_re[odd_base + j];
+                    let odd_im = src_im[odd_base + j];
+                    let t_re = odd_re * tw.re - odd_im * tw.im;
+                    let t_im = odd_re * tw.im + odd_im * tw.re;
+                    dst_re[dst0 + j] = even_re + t_re;
+                    dst_im[dst0 + j] = even_im + t_im;
+                    dst_re[dst1 + j] = even_re - t_re;
+                    dst_im[dst1 + j] = even_im - t_im;
+                    j += 1;
+                }
+            }
+            core::mem::swap(&mut src_re, &mut dst_re);
+            core::mem::swap(&mut src_im, &mut dst_im);
+            n1 <<= 1;
+        }
+        if src_re.as_ptr() != out_re_ptr {
+            unsafe {
+                core::ptr::copy_nonoverlapping(src_re.as_ptr(), out_re_ptr, n);
+                core::ptr::copy_nonoverlapping(src_im.as_ptr(), out_im_ptr, n);
+            }
+        }
+        {
+            let planner = unsafe { self.planner_mut() };
+            planner.split_scratch_re = scratch_re;
+            planner.split_scratch_im = scratch_im;
         }
         Ok(())
     }
@@ -1155,6 +1371,12 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             let im32 = unsafe { &mut *(im as *mut [T] as *mut [f32]) };
             return this.fft_split_simd(re32, im32);
         }
+        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f64>() {
+            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f64>) };
+            let re64 = unsafe { &mut *(re as *mut [T] as *mut [f64]) };
+            let im64 = unsafe { &mut *(im as *mut [T] as *mut [f64]) };
+            return this.fft_split_simd(re64, im64);
+        }
         let mut buf: Vec<Complex<T>> = Vec::with_capacity(re.len());
         for i in 0..re.len() {
             buf.push(Complex::new(re[i], im[i]));
@@ -1181,6 +1403,22 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             this.fft_split_simd(re32, im32)?;
             let scale = 1.0 / re32.len() as f32;
             for (r, i) in re32.iter_mut().zip(im32.iter_mut()) {
+                *i = -*i;
+                *r *= scale;
+                *i *= scale;
+            }
+            return Ok(());
+        }
+        if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f64>() {
+            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f64>) };
+            let re64 = unsafe { &mut *(re as *mut [T] as *mut [f64]) };
+            let im64 = unsafe { &mut *(im as *mut [T] as *mut [f64]) };
+            for x in im64.iter_mut() {
+                *x = -*x;
+            }
+            this.fft_split_simd(re64, im64)?;
+            let scale = 1.0 / re64.len() as f64;
+            for (r, i) in re64.iter_mut().zip(im64.iter_mut()) {
                 *i = -*i;
                 *r *= scale;
                 *i *= scale;
