@@ -57,6 +57,7 @@ optional = true
 [dev-dependencies]
 hound = "3.5"
 image = "0.24"
+tempfile = "3.10"
 
 [[example]]
 name = "basic_usage"

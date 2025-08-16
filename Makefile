@@ -1,7 +1,7 @@
 # Simple Makefile for kofft development
 ARCH := $(shell uname -m)
 # Detect CPU feature flags across platforms
-CPUFLAGS := $(shell lscpu 2>/dev/null | grep -i flags \
+CPUFLAGS := $(shell lscpu 2>/dev/null | grep -iE 'flags|features' \
         || sysctl -n machdep.cpu.features 2>/dev/null \
         || echo)
 # Detect number of processors on both Linux and macOS
