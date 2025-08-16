@@ -122,7 +122,7 @@ impl State {
             buf: Vec::new(),
             fft: new_fft_impl(),
             window: hann(WIN_LEN),
-            cmap: KColormap::Fire,
+            cmap: KColormap::Rainbow,
             max_mag: 1e-12,
         }
     }
@@ -133,8 +133,8 @@ impl State {
             return Vec::new();
         }
         let mut frame = vec![Complex32::new(0.0, 0.0); WIN_LEN];
-        for i in 0..WIN_LEN {
-            frame[i] = Complex32::new(self.buf[i] * self.window[i], 0.0);
+        for (f, (&s, &w)) in frame.iter_mut().zip(self.buf.iter().zip(&self.window)) {
+            *f = Complex32::new(s * w, 0.0);
         }
         let _ = self.fft.fft(&mut frame);
         let half = WIN_LEN / 2;
@@ -246,15 +246,17 @@ mod tests {
         for chunk in frame.chunks_exact(4) {
             assert_eq!(chunk[3], 255);
         }
+        // default colormap should be rainbow
         reset_state();
-        set_colormap("gray");
-        let gray_frame = compute_frame(&vec![1.0; WIN_LEN]);
+        let default_frame = compute_frame(&vec![1.0; WIN_LEN]);
         reset_state();
-        let fire_frame = {
-            set_colormap("fire");
-            compute_frame(&vec![1.0; WIN_LEN])
-        };
-        assert_ne!(gray_frame, fire_frame);
+        set_colormap("rainbow");
+        let rainbow_frame = compute_frame(&vec![1.0; WIN_LEN]);
+        reset_state();
+        set_colormap("fire");
+        let fire_frame = compute_frame(&vec![1.0; WIN_LEN]);
+        assert_eq!(default_frame, rainbow_frame);
+        assert_ne!(default_frame, fire_frame);
     }
 
     #[test]
