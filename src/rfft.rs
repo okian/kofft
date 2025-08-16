@@ -9,6 +9,7 @@ use alloc::{sync::Arc, vec::Vec};
 
 use hashbrown::HashMap;
 
+#[allow(unused_imports)]
 use core::any::TypeId;
 use core::mem::MaybeUninit;
 

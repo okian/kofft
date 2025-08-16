@@ -87,3 +87,8 @@ path = "examples/spectrogram.rs"
 name = "parallel_benchmark"
 path = "examples/parallel_benchmark.rs"
 required-features = ["parallel"]
+
+[[example]]
+name = "print_threshold"
+path = "examples/print_threshold.rs"
+required-features = ["parallel", "internal-tests"]
