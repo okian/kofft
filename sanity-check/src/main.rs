@@ -287,7 +287,7 @@ fn draw_filled_rect(
     }
 }
 
-fn draw_char(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, ch: char) {
+fn draw_char(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, ch: char, scale: u32) {
     let pattern = match ch {
         '0' => ["###", "# #", "# #", "# #", "###"],
         '1' => ["  #", "  #", "  #", "  #", "  #"],
@@ -310,24 +310,33 @@ fn draw_char(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, ch: char
         ' ' => ["   ", "   ", "   ", "   ", "   "],
         _ => ["???", "???", "???", "???", "???"],
     };
+    let scale = scale as i32;
     for (dy, row) in pattern.iter().enumerate() {
         for (dx, c) in row.chars().enumerate() {
             if c == '#' {
-                let px = x + dx as i32;
-                let py = y + dy as i32;
-                if px >= 0 && py >= 0 && px < img.width() as i32 && py < img.height() as i32 {
-                    img.put_pixel(px as u32, py as u32, Rgb([65535, 65535, 65535]));
+                let px0 = x + dx as i32 * scale;
+                let py0 = y + dy as i32 * scale;
+                for sy in 0..scale {
+                    for sx in 0..scale {
+                        let px = px0 + sx;
+                        let py = py0 + sy;
+                        if px >= 0 && py >= 0 && px < img.width() as i32 && py < img.height() as i32
+                        {
+                            img.put_pixel(px as u32, py as u32, Rgb([65535, 65535, 65535]));
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-fn draw_text(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, text: &str) {
+fn draw_text(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, x: i32, y: i32, text: &str, scale: u32) {
     let mut cx = x;
+    let adv = 4 * scale as i32;
     for ch in text.chars() {
-        draw_char(img, cx, y, ch);
-        cx += 4;
+        draw_char(img, cx, y, ch, scale);
+        cx += adv;
     }
 }
 
@@ -340,15 +349,16 @@ fn draw_time_ruler(
     if !enabled {
         return;
     }
+    let scale = 2;
     let width = img.width();
     let seconds = width as f32 * hop as f32 / sample_rate as f32;
     let px_per_sec = width as f32 / seconds.max(1.0);
     for s in 0..=seconds.ceil() as u32 {
         let x = (s as f32 * px_per_sec) as i32;
         if x < width as i32 {
-            draw_line(img, x, 0, x, 5, Rgb([65535, 65535, 65535]));
+            draw_line(img, x, 0, x, 5 * scale, Rgb([65535, 65535, 65535]));
             let text = format!("{}s", s);
-            draw_text(img, x, 6, &text);
+            draw_text(img, x, 6 * scale + 1, &text, scale as u32);
         }
     }
 }
@@ -362,6 +372,7 @@ fn draw_frequency_scale(
     if !enabled {
         return;
     }
+    let scale = 2;
     let height = img.height();
     let width = img.width();
     let nyquist = sample_rate as f32 / 2.0;
@@ -373,15 +384,15 @@ fn draw_frequency_scale(
                 if y < height as i32 {
                     draw_line(
                         img,
-                        width as i32 - 6,
+                        width as i32 - 1 - 5 * scale,
                         y,
                         width as i32 - 1,
                         y,
                         Rgb([65535, 65535, 65535]),
                     );
                     let text = format!("{}Hz", f);
-                    let text_y = (y - 6).max(0);
-                    draw_text(img, width as i32 - 60, text_y, &text);
+                    let text_y = (y - 6 * scale).max(0);
+                    draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
                 }
             }
         }
@@ -395,28 +406,28 @@ fn draw_frequency_scale(
                 if y_pos >= 0 {
                     draw_line(
                         img,
-                        width as i32 - 6,
+                        width as i32 - 1 - 5 * scale,
                         y_pos,
                         width as i32 - 1,
                         y_pos,
                         Rgb([65535, 65535, 65535]),
                     );
                     let text = format!("{}Hz", f);
-                    let text_y = (y_pos - 6).max(0);
-                    draw_text(img, width as i32 - 60, text_y, &text);
+                    let text_y = (y_pos - 6 * scale).max(0);
+                    draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
                 }
                 if f != 0 && y_neg < height as i32 {
                     draw_line(
                         img,
-                        width as i32 - 6,
+                        width as i32 - 1 - 5 * scale,
                         y_neg,
                         width as i32 - 1,
                         y_neg,
                         Rgb([65535, 65535, 65535]),
                     );
                     let text = format!("-{}Hz", f);
-                    let text_y = (y_neg - 6).max(0);
-                    draw_text(img, width as i32 - 60, text_y, &text);
+                    let text_y = (y_neg - 6 * scale).max(0);
+                    draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
                 }
             }
         }
@@ -446,9 +457,24 @@ fn draw_status_bar(img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>, text: &str, enable
     if !enabled {
         return;
     }
+    let scale = 2;
     let h = img.height();
-    draw_filled_rect(img, 0, h as i32 - 16, img.width(), 16, Rgb([0, 0, 0]));
-    draw_text(img, 0, h as i32 - 15, text);
+    let bar_h = 16 * scale;
+    draw_filled_rect(
+        img,
+        0,
+        h as i32 - bar_h as i32,
+        img.width(),
+        bar_h as u32,
+        Rgb([0, 0, 0]),
+    );
+    draw_text(
+        img,
+        0,
+        h as i32 - bar_h as i32 + scale as i32,
+        text,
+        scale as u32,
+    );
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -611,13 +637,30 @@ mod tests {
         assert!(img.pixels().any(|p| p.0 != [0, 0, 0]));
 
         draw_time_ruler(&mut img, 44100, 2205, true);
-        assert_ne!(img.get_pixel(0, 0), &Rgb([0, 0, 0]));
+        assert!(img
+            .enumerate_pixels()
+            .any(|(_, y, p)| y == 0 && p.0 != [0, 0, 0]));
 
         draw_frequency_scale(&mut img, 44100, SpectrogramMode::Unipolar, true);
         assert_ne!(img.get_pixel(99, 0), &Rgb([0, 0, 0]));
 
         draw_status_bar(&mut img, "t:0 f:0 a:0", true);
-        assert_ne!(img.get_pixel(1, 35), &Rgb([0, 0, 0]));
+        assert_ne!(img.get_pixel(1, 20), &Rgb([0, 0, 0]));
+    }
+
+    #[test]
+    fn scaled_text_renders_larger() {
+        let mut small: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(20, 20, Rgb([0, 0, 0]));
+        draw_text(&mut small, 0, 0, "1", 1);
+        let small_count = small.pixels().filter(|p| p.0 != [0, 0, 0]).count();
+
+        let mut large: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(40, 40, Rgb([0, 0, 0]));
+        draw_text(&mut large, 0, 0, "1", 2);
+        let large_count = large.pixels().filter(|p| p.0 != [0, 0, 0]).count();
+
+        assert_eq!(large_count, small_count * 4);
     }
 
     #[test]
