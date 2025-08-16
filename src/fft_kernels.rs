@@ -1,3 +1,4 @@
+use crate::num::Complex32;
 use crate::num::{Complex, Float};
 
 #[inline(always)]
@@ -221,4 +222,120 @@ pub fn fft16<T: Float>(input: &mut [Complex<T>]) {
     input[14] = e6.sub(o6);
     input[7] = e7.add(o7);
     input[15] = e7.sub(o7);
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "nightly"))]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn fft8_avx512f(input: &mut [Complex32]) {
+    fft8::<f32>(input);
+}
+
+#[cfg(all(target_arch = "x86_64", not(feature = "nightly")))]
+pub unsafe fn fft8_avx512f(input: &mut [Complex32]) {
+    fft8::<f32>(input);
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "nightly"))]
+#[target_feature(enable = "avx512dq")]
+pub unsafe fn fft8_avx512dq(input: &mut [Complex32]) {
+    fft8::<f32>(input);
+}
+
+#[cfg(all(target_arch = "x86_64", not(feature = "nightly")))]
+pub unsafe fn fft8_avx512dq(input: &mut [Complex32]) {
+    fft8::<f32>(input);
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "sve", feature = "nightly"))]
+#[target_feature(enable = "sve")]
+pub unsafe fn fft8_sve(input: &mut [Complex32]) {
+    fft8::<f32>(input);
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "sve", not(feature = "nightly")))]
+pub unsafe fn fft8_sve(input: &mut [Complex32]) {
+    fft8::<f32>(input);
+}
+
+#[inline]
+pub fn fft8_simd(input: &mut [Complex32]) {
+    #[cfg(all(feature = "std", feature = "avx512", target_arch = "x86_64"))]
+    {
+        if std::arch::is_x86_feature_detected!("avx512dq") {
+            unsafe {
+                fft8_avx512dq(input);
+            }
+            return;
+        }
+        if std::arch::is_x86_feature_detected!("avx512f") {
+            unsafe {
+                fft8_avx512f(input);
+            }
+            return;
+        }
+    }
+    #[cfg(all(feature = "std", feature = "sve", target_arch = "aarch64"))]
+    {
+        if std::arch::is_aarch64_feature_detected!("sve") {
+            unsafe {
+                fft8_sve(input);
+            }
+            return;
+        }
+    }
+    fft8::<f32>(input);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    fn dft(input: &[Complex32]) -> Vec<Complex32> {
+        let n = input.len();
+        let mut output = vec![Complex32::zero(); n];
+        for (k, out) in output.iter_mut().enumerate() {
+            let mut sum = Complex32::zero();
+            for (n_idx, x) in input.iter().enumerate() {
+                let angle = -2.0 * core::f32::consts::PI * (k * n_idx) as f32 / n as f32;
+                let tw = Complex32::new(angle.cos(), angle.sin());
+                sum = sum.add(x.mul(tw));
+            }
+            *out = sum;
+        }
+        output
+    }
+
+    #[test]
+    fn simd_kernels_match_scalar() {
+        let mut data: Vec<Complex32> = (0..8)
+            .map(|i| Complex32::new((i as f32).sin(), (i as f32).cos()))
+            .collect();
+        let mut expected = data.clone();
+        fft8::<f32>(&mut expected);
+
+        let mut tmp = data.clone();
+        fft8_simd(&mut tmp);
+        for (a, b) in tmp.iter().zip(expected.iter()) {
+            assert!((a.re - b.re).abs() < 1e-2);
+            assert!((a.im - b.im).abs() < 1e-2);
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            let mut t1 = data.clone();
+            fft8_avx512f(&mut t1);
+            for (a, b) in t1.iter().zip(expected.iter()) {
+                assert!((a.re - b.re).abs() < 1e-2);
+                assert!((a.im - b.im).abs() < 1e-2);
+            }
+            let mut t2 = data;
+            fft8_avx512dq(&mut t2);
+            for (a, b) in t2.iter().zip(expected.iter()) {
+                assert!((a.re - b.re).abs() < 1e-2);
+                assert!((a.im - b.im).abs() < 1e-2);
+            }
+        }
+    }
 }

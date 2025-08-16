@@ -1,4 +1,4 @@
-use kofft::fft::{fft16, fft8, Complex32, ScalarFftImpl};
+use kofft::fft::{fft16, fft8, Complex32, Complex64, ScalarFftImpl};
 
 fn dft(input: &[Complex32]) -> Vec<Complex32> {
     let n = input.len();
@@ -8,6 +8,21 @@ fn dft(input: &[Complex32]) -> Vec<Complex32> {
         for (n_idx, x) in input.iter().enumerate() {
             let angle = -2.0 * core::f32::consts::PI * (k * n_idx) as f32 / n as f32;
             let tw = Complex32::new(angle.cos(), angle.sin());
+            sum = sum.add(x.mul(tw));
+        }
+        *out = sum;
+    }
+    output
+}
+
+fn dft64(input: &[Complex64]) -> Vec<Complex64> {
+    let n = input.len();
+    let mut output = vec![Complex64::zero(); n];
+    for (k, out) in output.iter_mut().enumerate() {
+        let mut sum = Complex64::zero();
+        for (n_idx, x) in input.iter().enumerate() {
+            let angle = -2.0 * core::f64::consts::PI * (k * n_idx) as f64 / n as f64;
+            let tw = Complex64::new(angle.cos(), angle.sin());
             sum = sum.add(x.mul(tw));
         }
         *out = sum;
@@ -28,6 +43,20 @@ fn stockham_small_kernels() {
             assert!((a.re - b.re).abs() < 1e-2);
             assert!((a.im - b.im).abs() < 1e-2);
         }
+    }
+}
+
+#[test]
+fn stockham_small_kernels_f64() {
+    let fft = ScalarFftImpl::<f64>::default();
+    let mut data: Vec<Complex64> = (0..8)
+        .map(|i| Complex64::new(i as f64, -(i as f64) * 0.5))
+        .collect();
+    let expected = dft64(&data);
+    fft.stockham_fft(&mut data).unwrap();
+    for (a, b) in data.iter().zip(expected.iter()) {
+        assert!((a.re - b.re).abs() < 1e-6);
+        assert!((a.im - b.im).abs() < 1e-6);
     }
 }
 

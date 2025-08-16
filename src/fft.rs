@@ -12,7 +12,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::any::Any;
+use core::any::{Any, TypeId};
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
@@ -294,7 +294,11 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     }
 }
 
-pub use crate::fft_kernels::{fft16, fft8};
+#[cfg(all(target_arch = "aarch64", feature = "sve"))]
+pub use crate::fft_kernels::fft8_sve;
+pub use crate::fft_kernels::{fft16, fft8, fft8_simd};
+#[cfg(target_arch = "x86_64")]
+pub use crate::fft_kernels::{fft8_avx512dq, fft8_avx512f};
 pub use crate::num::{
     copy_from_complex, copy_to_complex, Complex, Complex32, Complex64, Float, SplitComplex,
     SplitComplex32, SplitComplex64,
@@ -590,7 +594,19 @@ impl<T: Float> ScalarFftImpl<T> {
             match n {
                 2 => fft2(input),
                 4 => fft4(input),
-                8 => fft8(input),
+                8 => {
+                    if TypeId::of::<T>() == TypeId::of::<f32>() {
+                        let data: &mut [crate::num::Complex32] = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                input.as_mut_ptr() as *mut crate::num::Complex32,
+                                8,
+                            )
+                        };
+                        fft8_simd(data);
+                    } else {
+                        fft8(input);
+                    }
+                }
                 16 => fft16(input),
                 _ => unreachable!(),
             }
@@ -789,7 +805,19 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             match n {
                 2 => fft2(input),
                 4 => fft4(input),
-                8 => fft8(input),
+                8 => {
+                    if TypeId::of::<T>() == TypeId::of::<f32>() {
+                        let data: &mut [crate::num::Complex32] = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                input.as_mut_ptr() as *mut crate::num::Complex32,
+                                8,
+                            )
+                        };
+                        fft8_simd(data);
+                    } else {
+                        fft8(input);
+                    }
+                }
                 16 => fft16(input),
                 _ => unreachable!(),
             }
@@ -1405,7 +1433,11 @@ pub struct SimdFftX86_64Impl;
 
 #[cfg(target_arch = "x86_64")]
 impl SimdFftX86_64Impl {
-    #[cfg(any(target_feature = "avx2", target_feature = "avx512f"))]
+    #[cfg(any(
+        target_feature = "avx2",
+        target_feature = "avx512f",
+        target_feature = "avx512dq",
+    ))]
     fn fft_simd(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         // Placeholder SIMD implementation: delegate to the Stockham FFT which
         // now pulls twiddle factors from contiguous, precomputed tables. This
@@ -1418,7 +1450,11 @@ impl SimdFftX86_64Impl {
 #[cfg(target_arch = "x86_64")]
 impl FftImpl<f32> for SimdFftX86_64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        #[cfg(any(target_feature = "avx2", target_feature = "avx512f"))]
+        #[cfg(any(
+            target_feature = "avx2",
+            target_feature = "avx512f",
+            target_feature = "avx512dq",
+        ))]
         {
             return self.fft_simd(input);
         }
@@ -1483,7 +1519,7 @@ pub struct SimdFftAarch64Impl;
 
 #[cfg(target_arch = "aarch64")]
 impl SimdFftAarch64Impl {
-    #[cfg(target_feature = "neon")]
+    #[cfg(any(target_feature = "neon", target_feature = "sve"))]
     fn fft_simd(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         // Placeholder SIMD implementation using the Stockham FFT with cached
         // twiddle factors to enable future vectorization without recomputation.
@@ -1494,7 +1530,7 @@ impl SimdFftAarch64Impl {
 #[cfg(target_arch = "aarch64")]
 impl FftImpl<f32> for SimdFftAarch64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        #[cfg(target_feature = "neon")]
+        #[cfg(any(target_feature = "neon", target_feature = "sve"))]
         {
             return self.fft_simd(input);
         }
@@ -1633,9 +1669,18 @@ impl FftImpl<f32> for SimdFftWasmImpl {
 pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     #[cfg(all(target_arch = "x86_64", feature = "std"))]
     {
-        #[cfg(any(feature = "avx512", target_feature = "avx512f"))]
-        if std::arch::is_x86_feature_detected!("avx512f") {
-            return Box::new(SimdFftX86_64Impl);
+        #[cfg(any(
+            feature = "avx512",
+            target_feature = "avx512f",
+            target_feature = "avx512dq",
+        ))]
+        {
+            if std::arch::is_x86_feature_detected!("avx512dq") {
+                return Box::new(SimdFftX86_64Impl);
+            }
+            if std::arch::is_x86_feature_detected!("avx512f") {
+                return Box::new(SimdFftX86_64Impl);
+            }
         }
         if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
         {
@@ -1647,11 +1692,19 @@ pub fn new_fft_impl() -> Box<dyn FftImpl<f32>> {
     }
     #[cfg(all(target_arch = "aarch64", feature = "std"))]
     {
+        #[cfg(feature = "sve")]
+        if std::arch::is_aarch64_feature_detected!("sve") {
+            return Box::new(SimdFftAarch64Impl);
+        }
         if std::arch::is_aarch64_feature_detected!("neon") {
             return Box::new(SimdFftAarch64Impl);
         }
     }
-    #[cfg(all(target_arch = "aarch64", not(feature = "std"), target_feature = "neon"))]
+    #[cfg(all(
+        target_arch = "aarch64",
+        not(feature = "std"),
+        any(target_feature = "neon", target_feature = "sve")
+    ))]
     {
         return Box::new(SimdFftAarch64Impl);
     }

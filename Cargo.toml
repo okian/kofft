@@ -42,6 +42,8 @@ aarch64 = []     # NEON on 64-bit ARM
 wasm = []        # WebAssembly SIMD128
 avx2 = []        # Enable AVX2-specific code paths
 avx512 = []      # Enable AVX-512 code paths
+sve = []         # Enable ARM SVE-specific code paths
+nightly = []     # Enable nightly-only target features
 
 # Miscellaneous features
 slow = []
