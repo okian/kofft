@@ -327,6 +327,8 @@ pub struct FftPlanner<T: Float> {
     bluestein_cache: HashMap<usize, BluesteinPair<T>>,
     scratch: Vec<Complex<T>>,
     bluestein_scratch: Vec<Complex<T>>,
+    split_scratch_re: Vec<f32>,
+    split_scratch_im: Vec<f32>,
 }
 
 impl<T: Float> Default for FftPlanner<T> {
@@ -342,6 +344,8 @@ impl<T: Float> FftPlanner<T> {
             bluestein_cache: HashMap::new(),
             scratch: Vec::new(),
             bluestein_scratch: Vec::new(),
+            split_scratch_re: Vec::new(),
+            split_scratch_im: Vec::new(),
         }
     }
     /// Retrieve a contiguous table of twiddle factors for a given stage size
@@ -688,18 +692,25 @@ impl ScalarFftImpl<f32> {
             return Ok(());
         }
 
-        let twiddles = {
+        let (twiddles, mut scratch_re, mut scratch_im) = {
             let mut planner = self.planner.borrow_mut();
-            planner.get_twiddles(n)
+            let twiddles = planner.get_twiddles(n);
+            let scratch_re = core::mem::take(&mut planner.split_scratch_re);
+            let scratch_im = core::mem::take(&mut planner.split_scratch_im);
+            (twiddles, scratch_re, scratch_im)
         };
         let twiddles = twiddles.as_ref();
 
-        let mut scratch_re = vec![0.0f32; n];
-        let mut scratch_im = vec![0.0f32; n];
+        if scratch_re.len() < n {
+            scratch_re.resize(n, 0.0);
+        }
+        if scratch_im.len() < n {
+            scratch_im.resize(n, 0.0);
+        }
         let mut src_re: &mut [f32] = re;
         let mut src_im: &mut [f32] = im;
-        let mut dst_re: &mut [f32] = &mut scratch_re[..];
-        let mut dst_im: &mut [f32] = &mut scratch_im[..];
+        let mut dst_re: &mut [f32] = &mut scratch_re[..n];
+        let mut dst_im: &mut [f32] = &mut scratch_im[..n];
 
         let mut n1 = 1usize;
         let mut n2 = n;
@@ -771,6 +782,11 @@ impl ScalarFftImpl<f32> {
                 core::ptr::copy_nonoverlapping(src_re.as_ptr(), out_re_ptr, n);
                 core::ptr::copy_nonoverlapping(src_im.as_ptr(), out_im_ptr, n);
             }
+        }
+        {
+            let mut planner = self.planner.borrow_mut();
+            planner.split_scratch_re = scratch_re;
+            planner.split_scratch_im = scratch_im;
         }
         Ok(())
     }
@@ -1946,6 +1962,22 @@ pub fn ifft_inplace_stack<const N: usize>(buf: &mut [Complex<f32>; N]) -> Result
         c.im *= scale;
     }
     Ok(())
+}
+
+#[test]
+fn split_fft_reuses_planner_scratch() {
+    let planner = FftPlanner::<f32>::new();
+    let fft = ScalarFftImpl::with_planner(planner);
+    let mut re = vec![0.0f32; 32];
+    let mut im = vec![0.0f32; 32];
+    fft.fft_split(&mut re, &mut im).unwrap();
+    let cap_re = fft.planner.borrow().split_scratch_re.capacity();
+    let cap_im = fft.planner.borrow().split_scratch_im.capacity();
+    assert!(cap_re >= 32);
+    assert!(cap_im >= 32);
+    fft.fft_split(&mut re, &mut im).unwrap();
+    assert_eq!(cap_re, fft.planner.borrow().split_scratch_re.capacity());
+    assert_eq!(cap_im, fft.planner.borrow().split_scratch_im.capacity());
 }
 
 // Reference DFT/IDFT is now in dft.rs
