@@ -8,10 +8,17 @@
   </head>
   <body>
     <div id="app">
-      <canvas id="spectrogram"></canvas>
+      <div id="spectro-wrapper">
+        <canvas id="spectrogram"></canvas>
+        <canvas id="legend" width="20"></canvas>
+      </div>
       <footer id="controls">
-        <input id="file" type="file" accept="audio/*" />
-        <audio id="player" controls></audio>
+        <input id="file" type="file" accept="audio/*" hidden />
+        <label id="file-btn" for="file" class="btn">Select File</label>
+        <button id="play" class="btn">Play</button>
+        <button id="mute" class="btn">Mute</button>
+        <input id="volume" type="range" min="0" max="1" step="0.01" value="1" />
+        <audio id="player"></audio>
         <canvas id="seekbar" height="40"></canvas>
         <select id="scale">
           <option value="linear" selected>Linear</option>
@@ -30,6 +37,7 @@
           </button>
         </div>
       </footer>
+      <section id="metadata"></section>
       <p><a href="../README.md">Usage &amp; options</a></p>
     </div>
     <script type="module" src="app.js"></script>

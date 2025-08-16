@@ -26,6 +26,32 @@ body {
   background: #000;
 }
 
+#spectro-wrapper {
+  display: flex;
+  flex: 1;
+}
+
+#legend {
+  width: 20px;
+}
+
+#player {
+  display: none;
+}
+
+.btn {
+  background: #444;
+  border: none;
+  color: #eee;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+#metadata {
+  text-align: center;
+  margin: 0.5rem 0;
+}
+
 #controls {
   position: fixed;
   bottom: 0;

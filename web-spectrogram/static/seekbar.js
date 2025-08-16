@@ -9,6 +9,7 @@ export class SeekBar {
     this.seekHandlers = [];
     this.dragging = false;
     this._bind();
+    this.resize();
   }
 
   _bind() {
@@ -31,6 +32,7 @@ export class SeekBar {
     this.canvas.addEventListener("click", (e) => {
       this._seekEvent(e);
     });
+    this.window.addEventListener("resize", () => this.resize());
   }
 
   _eventTime(e) {
@@ -64,6 +66,16 @@ export class SeekBar {
   setProgress(time, duration) {
     this.progress = duration ? time / duration : 0;
     this.duration = duration;
+    this.draw();
+  }
+
+  resize() {
+    const ratio = this.window?.devicePixelRatio || 1;
+    const width = this.canvas.clientWidth || this.canvas.width;
+    const height = this.canvas.clientHeight || this.canvas.height;
+    this.canvas.width = Math.round(width * ratio);
+    this.canvas.height = Math.round(height * ratio);
+    this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     this.draw();
   }
 
@@ -103,4 +115,3 @@ export class SeekBar {
     }
   }
 }
-
