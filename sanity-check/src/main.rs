@@ -45,6 +45,12 @@ enum ValueMode {
     Dbfs,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+enum ScaleMode {
+    Log,
+    Linear,
+}
+
 const EXAMPLE_STR: &str = "Example:\n    sanity-check input.flac -s out.svg\n";
 
 #[derive(Parser)]
@@ -72,6 +78,10 @@ struct Args {
     /// FFT bin value interpretation
     #[arg(long, value_enum, default_value_t = ValueMode::Magnitude)]
     value_mode: ValueMode,
+
+    /// Frequency scaling mode
+    #[arg(long, value_enum, default_value_t = ScaleMode::Log)]
+    scale_mode: ScaleMode,
 
     /// Optional path to save an SVG spectrogram
     #[arg(long, short = 's', help = "Optional path to save an SVG spectrogram")]
@@ -214,11 +224,27 @@ fn save_svg(img: &ImageBuffer<Rgb<u16>, Vec<u16>>, path: &str) -> Result<(), Box
     Ok(())
 }
 
+fn map_bin_to_pixel(bin: usize, max_bin: usize, scale: ScaleMode) -> usize {
+    match scale {
+        ScaleMode::Linear => bin,
+        ScaleMode::Log => {
+            if max_bin == 0 {
+                0
+            } else {
+                let log_max = (max_bin as f32 + 1.0).ln();
+                let pos = (bin as f32 + 1.0).ln();
+                (max_bin as f32 * pos / log_max).floor() as usize
+            }
+        }
+    }
+}
+
 fn generate_heatmap(
     magnitudes: &[Vec<f32>],
     cmap: &ColorMap,
     mode: SpectrogramMode,
     value_mode: ValueMode,
+    scale: ScaleMode,
 ) -> ImageBuffer<Rgb<u16>, Vec<u16>> {
     let win_len = magnitudes[0].len();
     let width = magnitudes.len();
@@ -235,18 +261,36 @@ fn generate_heatmap(
     for (x, frame) in magnitudes.iter().enumerate() {
         match mode {
             SpectrogramMode::Unipolar => {
-                for y in 0..height {
-                    let v = apply_value_mode(frame[y], value_mode);
+                for k in 0..height {
+                    let y = map_bin_to_pixel(k, height - 1, scale);
+                    let v = apply_value_mode(frame[k], value_mode);
                     let col = map_color(v, max_val, cmap, value_mode);
                     img.put_pixel(x as u32, y as u32, Rgb(col));
                 }
             }
             SpectrogramMode::Bipolar => {
                 for k in 0..win_len {
-                    let y = if k <= win_len / 2 {
-                        win_len / 2 - k
-                    } else {
-                        win_len - (k - win_len / 2)
+                    let y = match scale {
+                        ScaleMode::Linear => {
+                            if k <= win_len / 2 {
+                                win_len / 2 - k
+                            } else {
+                                win_len - (k - win_len / 2)
+                            }
+                        }
+                        ScaleMode::Log => {
+                            let center = win_len / 2;
+                            if k == 0 {
+                                center
+                            } else if k <= center {
+                                let offset = map_bin_to_pixel(k, center, ScaleMode::Log);
+                                center - offset
+                            } else {
+                                let neg = win_len - k;
+                                let offset = map_bin_to_pixel(neg, center, ScaleMode::Log);
+                                center + offset
+                            }
+                        }
                     };
                     let v = apply_value_mode(frame[k], value_mode);
                     let col = map_color(v, max_val, cmap, value_mode);
@@ -481,6 +525,7 @@ fn draw_frequency_scale(
     img: &mut ImageBuffer<Rgb<u16>, Vec<u16>>,
     sample_rate: u32,
     mode: SpectrogramMode,
+    scale_mode: ScaleMode,
     enabled: bool,
 ) {
     if !enabled {
@@ -491,60 +536,119 @@ fn draw_frequency_scale(
     let width = img.width();
     let nyquist = sample_rate as f32 / 2.0;
     match mode {
-        SpectrogramMode::Unipolar => {
-            let px_per_hz = height as f32 / nyquist.max(1.0);
-            for f in (0..=nyquist as u32).step_by(1000) {
-                let y = (f as f32 * px_per_hz) as i32;
-                if y < height as i32 {
-                    draw_line(
-                        img,
-                        width as i32 - 1 - 5 * scale,
-                        y,
-                        width as i32 - 1,
-                        y,
-                        Rgb([65535, 65535, 65535]),
-                    );
-                    let text = format!("{}Hz", f);
-                    let text_y = (y - 6 * scale).max(0);
-                    draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+        SpectrogramMode::Unipolar => match scale_mode {
+            ScaleMode::Linear => {
+                let px_per_hz = height as f32 / nyquist.max(1.0);
+                for f in (0..=nyquist as u32).step_by(1000) {
+                    let y = (f as f32 * px_per_hz) as i32;
+                    if y < height as i32 {
+                        draw_line(
+                            img,
+                            width as i32 - 1 - 5 * scale,
+                            y,
+                            width as i32 - 1,
+                            y,
+                            Rgb([65535, 65535, 65535]),
+                        );
+                        let text = format!("{}Hz", f);
+                        let text_y = (y - 6 * scale).max(0);
+                        draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+                    }
                 }
             }
-        }
-        SpectrogramMode::Bipolar => {
-            let center = height as i32 / 2;
-            let px_per_hz = (height as f32 / 2.0) / nyquist.max(1.0);
-            for f in (0..=nyquist as u32).step_by(1000) {
-                let offset = (f as f32 * px_per_hz) as i32;
-                let y_pos = center - offset;
-                let y_neg = center + offset;
-                if y_pos >= 0 {
-                    draw_line(
-                        img,
-                        width as i32 - 1 - 5 * scale,
-                        y_pos,
-                        width as i32 - 1,
-                        y_pos,
-                        Rgb([65535, 65535, 65535]),
-                    );
-                    let text = format!("{}Hz", f);
-                    let text_y = (y_pos - 6 * scale).max(0);
-                    draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
-                }
-                if f != 0 && y_neg < height as i32 {
-                    draw_line(
-                        img,
-                        width as i32 - 1 - 5 * scale,
-                        y_neg,
-                        width as i32 - 1,
-                        y_neg,
-                        Rgb([65535, 65535, 65535]),
-                    );
-                    let text = format!("-{}Hz", f);
-                    let text_y = (y_neg - 6 * scale).max(0);
-                    draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+            ScaleMode::Log => {
+                let log_max = (nyquist + 1.0).ln();
+                for f in (0..=nyquist as u32).step_by(1000) {
+                    let y =
+                        (((f as f32 + 1.0).ln() / log_max) * (height as f32 - 1.0)).round() as i32;
+                    if y < height as i32 {
+                        draw_line(
+                            img,
+                            width as i32 - 1 - 5 * scale,
+                            y,
+                            width as i32 - 1,
+                            y,
+                            Rgb([65535, 65535, 65535]),
+                        );
+                        let text = format!("{}Hz", f);
+                        let text_y = (y - 6 * scale).max(0);
+                        draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+                    }
                 }
             }
-        }
+        },
+        SpectrogramMode::Bipolar => match scale_mode {
+            ScaleMode::Linear => {
+                let center = height as i32 / 2;
+                let px_per_hz = (height as f32 / 2.0) / nyquist.max(1.0);
+                for f in (0..=nyquist as u32).step_by(1000) {
+                    let offset = (f as f32 * px_per_hz) as i32;
+                    let y_pos = center - offset;
+                    let y_neg = center + offset;
+                    if y_pos >= 0 {
+                        draw_line(
+                            img,
+                            width as i32 - 1 - 5 * scale,
+                            y_pos,
+                            width as i32 - 1,
+                            y_pos,
+                            Rgb([65535, 65535, 65535]),
+                        );
+                        let text = format!("{}Hz", f);
+                        let text_y = (y_pos - 6 * scale).max(0);
+                        draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+                    }
+                    if f != 0 && y_neg < height as i32 {
+                        draw_line(
+                            img,
+                            width as i32 - 1 - 5 * scale,
+                            y_neg,
+                            width as i32 - 1,
+                            y_neg,
+                            Rgb([65535, 65535, 65535]),
+                        );
+                        let text = format!("-{}Hz", f);
+                        let text_y = (y_neg - 6 * scale).max(0);
+                        draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+                    }
+                }
+            }
+            ScaleMode::Log => {
+                let center = height as i32 / 2;
+                let log_max = (nyquist + 1.0).ln();
+                for f in (0..=nyquist as u32).step_by(1000) {
+                    let offset = (((f as f32 + 1.0).ln() / log_max) * center as f32).round() as i32;
+                    let y_pos = center - offset;
+                    let y_neg = center + offset;
+                    if y_pos >= 0 {
+                        draw_line(
+                            img,
+                            width as i32 - 1 - 5 * scale,
+                            y_pos,
+                            width as i32 - 1,
+                            y_pos,
+                            Rgb([65535, 65535, 65535]),
+                        );
+                        let text = format!("{}Hz", f);
+                        let text_y = (y_pos - 6 * scale).max(0);
+                        draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+                    }
+                    if f != 0 && y_neg < height as i32 {
+                        draw_line(
+                            img,
+                            width as i32 - 1 - 5 * scale,
+                            y_neg,
+                            width as i32 - 1,
+                            y_neg,
+                            Rgb([65535, 65535, 65535]),
+                        );
+                        let text = format!("-{}Hz", f);
+                        let text_y = (y_neg - 6 * scale).max(0);
+                        draw_text(img, width as i32 - 60 * scale, text_y, &text, scale as u32);
+                    }
+                }
+            }
+        },
     }
 }
 
@@ -654,13 +758,31 @@ fn main() -> Result<(), Box<dyn Error>> {
         SpectrogramMode::Unipolar => win_len / 2,
         SpectrogramMode::Bipolar => win_len,
     };
-    let mut img_kofft = generate_heatmap(&kofft_mag, &args.colormap, args.mode, args.value_mode);
-    let img_ref = generate_heatmap(&rust_mag, &args.colormap, args.mode, args.value_mode);
+    let mut img_kofft = generate_heatmap(
+        &kofft_mag,
+        &args.colormap,
+        args.mode,
+        args.value_mode,
+        args.scale_mode,
+    );
+    let img_ref = generate_heatmap(
+        &rust_mag,
+        &args.colormap,
+        args.mode,
+        args.value_mode,
+        args.scale_mode,
+    );
 
     draw_time_grid(&mut img_kofft, sample_rate, hop, args.grid_time);
     draw_frequency_grid(&mut img_kofft, sample_rate, args.mode, args.grid_frequency);
     draw_time_ruler(&mut img_kofft, sample_rate, hop, args.time_ruler);
-    draw_frequency_scale(&mut img_kofft, sample_rate, args.mode, args.freq_scale);
+    draw_frequency_scale(
+        &mut img_kofft,
+        sample_rate,
+        args.mode,
+        args.scale_mode,
+        args.freq_scale,
+    );
     draw_waveform(&mut img_kofft, &samples, hop, args.waveform);
     let center_frame = width / 2;
     let freq_bin = match args.mode {
@@ -788,7 +910,13 @@ mod tests {
             .enumerate_pixels()
             .any(|(_, y, p)| y == 0 && p.0 != [0, 0, 0]));
 
-        draw_frequency_scale(&mut img, 44100, SpectrogramMode::Unipolar, true);
+        draw_frequency_scale(
+            &mut img,
+            44100,
+            SpectrogramMode::Unipolar,
+            ScaleMode::Linear,
+            true,
+        );
         assert_ne!(img.get_pixel(99, 0), &Rgb([0, 0, 0]));
 
         draw_status_bar(&mut img, "t:0 f:0 a:0", true);
@@ -860,18 +988,21 @@ mod tests {
             &ColorMap::Gray,
             SpectrogramMode::Bipolar,
             ValueMode::Magnitude,
+            ScaleMode::Linear,
         );
         let img_amp = generate_heatmap(
             &mag,
             &ColorMap::Gray,
             SpectrogramMode::Bipolar,
             ValueMode::Amplitude,
+            ScaleMode::Linear,
         );
         let img_db = generate_heatmap(
             &mag,
             &ColorMap::Gray,
             SpectrogramMode::Bipolar,
             ValueMode::Dbfs,
+            ScaleMode::Linear,
         );
 
         assert_eq!(img_mag.get_pixel(0, 0).0, [16384, 16384, 16384]);
@@ -895,10 +1026,17 @@ mod tests {
             &ColorMap::Gray,
             SpectrogramMode::Unipolar,
             ValueMode::Amplitude,
+            ScaleMode::Linear,
         );
         assert_eq!(img_uni.height(), win_len as u32 / 2);
         let mut img_uni_scale = img_uni.clone();
-        draw_frequency_scale(&mut img_uni_scale, 8000, SpectrogramMode::Unipolar, true);
+        draw_frequency_scale(
+            &mut img_uni_scale,
+            8000,
+            SpectrogramMode::Unipolar,
+            ScaleMode::Linear,
+            true,
+        );
         assert_eq!(
             img_uni_scale.get_pixel(img_uni_scale.width() - 1, 0),
             &Rgb([65535, 65535, 65535])
@@ -909,10 +1047,17 @@ mod tests {
             &ColorMap::Gray,
             SpectrogramMode::Bipolar,
             ValueMode::Amplitude,
+            ScaleMode::Linear,
         );
         assert_eq!(img_bi.height(), win_len as u32);
         let mut img_bi_scale = img_bi.clone();
-        draw_frequency_scale(&mut img_bi_scale, 8000, SpectrogramMode::Bipolar, true);
+        draw_frequency_scale(
+            &mut img_bi_scale,
+            8000,
+            SpectrogramMode::Bipolar,
+            ScaleMode::Linear,
+            true,
+        );
         let h = img_bi_scale.height();
         assert_eq!(
             img_bi_scale.get_pixel(img_bi_scale.width() - 1, h / 2),
@@ -924,6 +1069,63 @@ mod tests {
         );
         assert_eq!(
             img_bi_scale.get_pixel(img_bi_scale.width() - 1, h - 1),
+            &Rgb([65535, 65535, 65535])
+        );
+    }
+
+    #[test]
+    fn scale_modes_map_frequency_bins_and_axis() {
+        let win_len = 16;
+        let frames = 1;
+        let mut mag = vec![vec![0.0; win_len]; frames];
+        for i in 0..win_len {
+            mag[0][i] = i as f32;
+        }
+        let img_lin = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Unipolar,
+            ValueMode::Amplitude,
+            ScaleMode::Linear,
+        );
+        let img_log = generate_heatmap(
+            &mag,
+            &ColorMap::Gray,
+            SpectrogramMode::Unipolar,
+            ValueMode::Amplitude,
+            ScaleMode::Log,
+        );
+        let height = win_len / 2;
+        let log_y = map_bin_to_pixel(1, height - 1, ScaleMode::Log) as u32;
+        assert_eq!(img_lin.get_pixel(0, 1), img_log.get_pixel(0, log_y));
+
+        let mut scale_lin: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(10, height as u32, Rgb([0, 0, 0]));
+        draw_frequency_scale(
+            &mut scale_lin,
+            8000,
+            SpectrogramMode::Unipolar,
+            ScaleMode::Linear,
+            true,
+        );
+        assert_eq!(
+            scale_lin.get_pixel(scale_lin.width() - 1, 2),
+            &Rgb([65535, 65535, 65535])
+        );
+
+        let mut scale_log: ImageBuffer<Rgb<u16>, Vec<u16>> =
+            ImageBuffer::from_pixel(10, height as u32, Rgb([0, 0, 0]));
+        draw_frequency_scale(
+            &mut scale_log,
+            8000,
+            SpectrogramMode::Unipolar,
+            ScaleMode::Log,
+            true,
+        );
+        let log_max = (4000.0_f32 + 1.0).ln();
+        let y = (((1000.0_f32 + 1.0).ln() / log_max) * (height as f32 - 1.0)).round() as u32;
+        assert_eq!(
+            scale_log.get_pixel(scale_log.width() - 1, y),
             &Rgb([65535, 65535, 65535])
         );
     }
