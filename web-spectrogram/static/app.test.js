@@ -39,6 +39,20 @@ test("decodeAndProcess decodes audio and invokes wasm", async () => {
   assert.deepEqual(res.amplitudes, [0.5, 0.25]);
 });
 
+test("decodeAndProcess reuses provided context", async () => {
+  const ctx = {
+    async decodeAudioData() {
+      return { getChannelData: () => new Float32Array([0, 1]) };
+    },
+  };
+  globalThis.window = { AudioContext: function () {}, devicePixelRatio: 1 };
+  const file = { arrayBuffer: async () => new ArrayBuffer(8) };
+  globalThis.URL = { createObjectURL: () => "blob:url" };
+  const audio = { src: "" };
+  const res = await decodeAndProcess(file, audio, undefined, ctx);
+  assert.equal(res.ctx, ctx);
+});
+
 test("SeekBar renders amplitudes", () => {
   const dom = new JSDOM(`<canvas width="4" height="2"></canvas>`);
   const canvas = dom.window.document.querySelector("canvas");
@@ -197,10 +211,14 @@ test("different palettes yield different colors", () => {
 
 test("init wires up file input change", async () => {
   const dom = new JSDOM(
-    `<footer id="controls"><input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas></footer><canvas id="spectrogram" width="10" height="10"></canvas>`,
+    `<footer id="controls"><input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas></footer><canvas id="spectrogram" width="10" height="10"></canvas><section id="metadata"></section>`,
   );
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
+  Object.defineProperty(globalThis, "navigator", {
+    value: dom.window.navigator,
+    configurable: true,
+  });
   dom.window.URL.createObjectURL = () => "blob:url";
   const file = { arrayBuffer: async () => new ArrayBuffer(8) };
   let setupCalled = 0;
@@ -218,6 +236,13 @@ test("init wires up file input change", async () => {
         close: () => {},
       },
       amplitudes: [0],
+      metadata: {
+        title: "t",
+        artist: "a",
+        album: "b",
+        year: "y",
+        duration: 1,
+      },
     }),
     setupPlayback: () => {
       setupCalled++;
@@ -244,7 +269,7 @@ test("init wires up file input change", async () => {
   assert.equal(renderCalled, 1);
 });
 
-test("init closes previous context and keeps seek in sync", async () => {
+test("init reuses context and keeps seek in sync", async () => {
   const dom = new JSDOM(
     `<footer id="controls"><input type="file"><audio></audio><canvas id="seekbar" width="4" height="2"></canvas></footer><canvas id="spectrogram" width="10" height="10"></canvas>`,
   );
@@ -255,27 +280,21 @@ test("init closes previous context and keeps seek in sync", async () => {
     { arrayBuffer: async () => new ArrayBuffer(8) },
     { arrayBuffer: async () => new ArrayBuffer(8) },
   ];
-  const closed = [];
   const mediaSources = [];
-  const deps = {
-    decodeAndProcess: async () => ({
-      ctx: {
-        createMediaElementSource: () => {
-          mediaSources.push(true);
-          return { connect: () => {} };
-        },
-        createAnalyser: () => ({
-          connect: () => {},
-          frequencyBinCount: 2,
-          getByteFrequencyData: () => {},
-        }),
-        destination: {},
-        close: () => {
-          closed.push(true);
-        },
-      },
-      amplitudes: [0],
+  const ctx = {
+    createMediaElementSource: () => {
+      mediaSources.push(true);
+      return { connect: () => {} };
+    },
+    createAnalyser: () => ({
+      connect: () => {},
+      frequencyBinCount: 2,
+      getByteFrequencyData: () => {},
     }),
+    destination: {},
+  };
+  const deps = {
+    decodeAndProcess: async () => ({ ctx, amplitudes: [0] }),
     setupPlayback,
     startRenderLoop: () => {},
   };
@@ -303,7 +322,6 @@ test("init closes previous context and keeps seek in sync", async () => {
   input.dispatchEvent(new dom.window.Event("change"));
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(mediaSources.length, 2);
-  assert.equal(closed.length, 1);
   const audio = dom.window.document.querySelector("audio");
   const canvas = dom.window.document.getElementById("seekbar");
   Object.defineProperty(audio, "duration", { value: 10 });
@@ -427,6 +445,84 @@ test("init handles missing seekbar on file selection", async () => {
   assert.deepEqual(events, ["render"]);
 });
 
+test("microphone mixes with file audio", async () => {
+  const dom = new JSDOM(
+    `<footer id="controls"><input type="file"><audio></audio><button id="mic"></button><select id="mic-select"></select><canvas id="seekbar" width="4" height="2"></canvas></footer><canvas id="spectrogram"></canvas>`,
+  );
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  Object.defineProperty(globalThis, "navigator", {
+    value: dom.window.navigator,
+    configurable: true,
+  });
+  dom.window.URL.createObjectURL = () => "blob:url";
+  let streamConnected = false;
+  const fileConnections = [];
+  const fakeStream = { getTracks: () => [{ stop: () => {} }] };
+  let getUserMediaCalled = 0;
+  Object.defineProperty(dom.window.navigator, "mediaDevices", {
+    value: {
+      getUserMedia: async () => {
+        getUserMediaCalled++;
+        return fakeStream;
+      },
+      enumerateDevices: async () => [
+        { kind: "audioinput", deviceId: "a", label: "Mic" },
+      ],
+    },
+    configurable: true,
+  });
+  const analyser = {
+    connect: () => {},
+    frequencyBinCount: 1,
+    getByteFrequencyData: () => {},
+  };
+  const ctx = {
+    createMediaElementSource: () => ({
+      connect: (n) => fileConnections.push(n),
+    }),
+    createMediaStreamSource: () => ({
+      connect: (n) => {
+        streamConnected = n === analyser;
+      },
+    }),
+    createAnalyser: () => analyser,
+    destination: {},
+  };
+  dom.window.AudioContext = class {
+    constructor() {
+      return ctx;
+    }
+  };
+  const deps = {
+    decodeAndProcess: async () => ({ ctx, amplitudes: [0] }),
+    setupPlayback: () => {},
+    startRenderLoop: () => {},
+  };
+  const seekCanvas = dom.window.document.getElementById("seekbar");
+  seekCanvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+    setTransform: () => {},
+  });
+  init(dom.window.document, deps);
+  const input = dom.window.document.querySelector("input[type=file]");
+  Object.defineProperty(input, "files", { value: [{}], configurable: true });
+  input.dispatchEvent(new dom.window.Event("change"));
+  await new Promise((r) => setTimeout(r, 0));
+  const micBtn = dom.window.document.getElementById("mic");
+  micBtn.dispatchEvent(new dom.window.Event("click"));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(fileConnections[0], analyser);
+  assert.equal(getUserMediaCalled, 1);
+  assert.ok(streamConnected);
+  micBtn.dispatchEvent(new dom.window.Event("click"));
+  await new Promise((r) => setTimeout(r, 0));
+});
+
 test("parseID3v1 extracts metadata", () => {
   const buf = new ArrayBuffer(128);
   const view = new Uint8Array(buf);
@@ -548,11 +644,19 @@ test("keyboard shortcuts control audio", () => {
     new dom.window.KeyboardEvent("keydown", { key: "ArrowUp" }),
   );
   assert.ok(audio.volume > 0.5);
+  document.dispatchEvent(
+    new dom.window.KeyboardEvent("keydown", { key: "ArrowDown" }),
+  );
+  assert.ok(audio.volume < 1);
   audio.currentTime = 50;
   document.dispatchEvent(
     new dom.window.KeyboardEvent("keydown", { key: "ArrowLeft" }),
   );
   assert.equal(audio.currentTime, 40);
+  document.dispatchEvent(
+    new dom.window.KeyboardEvent("keydown", { key: "ArrowRight" }),
+  );
+  assert.equal(audio.currentTime, 50);
   audio.muted = false;
   document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "m" }));
   assert.equal(audio.muted, true);
