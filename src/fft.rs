@@ -10,7 +10,6 @@ use core::f32::consts::PI;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::any::Any;
 #[cfg(feature = "precomputed-twiddles")]
@@ -1731,13 +1730,16 @@ impl FftImpl<f32> for SimdFftX86_64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         #[cfg(any(target_feature = "avx2", target_feature = "avx512f"))]
         {
-            return self.fft_simd(input);
+            self.fft_simd(input)
         }
-        let scalar = ScalarFftImpl::<f32>::default();
-        if input.len().is_power_of_two() {
-            scalar.stockham_fft(input)
-        } else {
-            scalar.fft(input)
+        #[cfg(not(any(target_feature = "avx2", target_feature = "avx512f")))]
+        {
+            let scalar = ScalarFftImpl::<f32>::default();
+            if input.len().is_power_of_two() {
+                scalar.stockham_fft(input)
+            } else {
+                scalar.fft(input)
+            }
         }
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
@@ -1807,13 +1809,16 @@ impl FftImpl<f32> for SimdFftAarch64Impl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         #[cfg(target_feature = "neon")]
         {
-            return self.fft_simd(input);
+            self.fft_simd(input)
         }
-        let scalar = ScalarFftImpl::<f32>::default();
-        if input.len().is_power_of_two() {
-            scalar.stockham_fft(input)
-        } else {
-            scalar.fft(input)
+        #[cfg(not(target_feature = "neon"))]
+        {
+            let scalar = ScalarFftImpl::<f32>::default();
+            if input.len().is_power_of_two() {
+                scalar.stockham_fft(input)
+            } else {
+                scalar.fft(input)
+            }
         }
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
@@ -1883,13 +1888,16 @@ impl FftImpl<f32> for SimdFftWasmImpl {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         #[cfg(target_feature = "simd128")]
         {
-            return self.fft_simd(input);
+            self.fft_simd(input)
         }
-        let scalar = ScalarFftImpl::<f32>::default();
-        if input.len().is_power_of_two() {
-            scalar.stockham_fft(input)
-        } else {
-            scalar.fft(input)
+        #[cfg(not(target_feature = "simd128"))]
+        {
+            let scalar = ScalarFftImpl::<f32>::default();
+            if input.len().is_power_of_two() {
+                scalar.stockham_fft(input)
+            } else {
+                scalar.fft(input)
+            }
         }
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
