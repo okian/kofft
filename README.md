@@ -354,6 +354,8 @@ extensions are available (e.g., AVX2, NEON, or `simd128`), `kofft` will
 automatically select the best implementation.
 SIMD backends are also enabled automatically when compiling with the
 appropriate `target-feature` flags (e.g., `RUSTFLAGS="-C target-feature=+avx2"`).
+When using the included Makefile, AArch64/ARM64 builds automatically enable
+NEON by adding `-C target-feature=+neon` to `RUSTFLAGS`.
 
 ### Parallel Processing
 

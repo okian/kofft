@@ -20,7 +20,9 @@ ifeq ($(findstring x86_64,$(ARCH)),x86_64)
     SIMD_FEATURES += sse
   endif
 else ifneq ($(filter aarch64 arm64,$(ARCH)),)
-  SIMD_FEATURES += aarch64
+  # Enable NEON on AArch64/ARM64
+  SIMD_FEATURES += aarch64 neon
+  RUSTFLAGS_ADD += -C target-feature=+neon
 endif
 
 PAR_FEATURE :=
