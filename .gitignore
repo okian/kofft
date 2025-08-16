@@ -24,3 +24,4 @@ proptest-regressions/
 # Byproducts
 *.profraw
 *.profdata
+node_modules/
