@@ -1,0 +1,21 @@
+{
+  "name": "kofft",
+  "version": "1.0.0",
+  "description": "[![Crates.io](https://img.shields.io/crates/v/kofft)](https://crates.io/crates/kofft) [![Documentation](https://docs.rs/kofft/badge.svg)](https://docs.rs/kofft) [![License](https://img.shields.io/crates/l/kofft)](https://github.com/kianostad/kofft/blob/main/LICENSE) [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org) [![codecov](https://codecov.io/github/okian/kofft/graph/badge.svg?token=51ZZSPJFB9)](https://codecov.io/github/okian/kofft)",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "c8": "^10.1.3",
+    "jsdom": "^26.1.0"
+  }
+}
