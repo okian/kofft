@@ -189,6 +189,15 @@ pub fn sanity_command(input: &str, output: &str) -> Command {
     cmd
 }
 
+pub fn web_spectrogram_command() -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.args([
+        "-c",
+        "cd web-spectrogram && ./build.sh && cargo run -p web-spectrogram",
+    ]);
+    cmd
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,6 +295,16 @@ mod tests {
         assert!(args.contains(&"sanity-check".to_string()));
         assert!(args.contains(&"in.flac".to_string()));
         assert!(args.contains(&"out.png".to_string()));
+        let wcmd = web_spectrogram_command();
+        assert_eq!(wcmd.get_program(), "sh");
+        let wargs: Vec<_> = wcmd
+            .get_args()
+            .map(|a| a.to_str().unwrap().to_string())
+            .collect();
+        assert!(wargs.contains(&"-c".to_string()));
+        assert!(wargs
+            .iter()
+            .any(|a| a.contains("cd web-spectrogram && ./build.sh && cargo run")));
     }
 
     #[test]
