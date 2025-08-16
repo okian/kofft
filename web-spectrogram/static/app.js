@@ -1,5 +1,19 @@
 import { SeekBar } from "./seekbar.js";
 
+export function parseID3v1(buf) {
+  if (buf.byteLength < 128) return {};
+  const view = new Uint8Array(buf.slice(-128));
+  const dec = new TextDecoder("latin1");
+  if (dec.decode(view.slice(0, 3)) !== "TAG") return {};
+  const clean = (arr) => dec.decode(arr).replace(/\0/g, "").trim();
+  return {
+    title: clean(view.slice(3, 33)),
+    artist: clean(view.slice(33, 63)),
+    album: clean(view.slice(63, 93)),
+    year: clean(view.slice(93, 97)),
+  };
+}
+
 export const palettes = {
   rainbow: (v) => {
     const ratio = v / 255;
@@ -22,6 +36,7 @@ export async function decodeAndProcess(file, audioEl, wasm = globalThis) {
   const ctx = new AudioCtx();
   const buf = await file.arrayBuffer();
   const audioBuffer = await ctx.decodeAudioData(buf);
+  const metadata = parseID3v1(buf);
   const pcm = audioBuffer.getChannelData(0);
   let amplitudes = [];
   if (typeof wasm.process_pcm === "function") {
@@ -34,7 +49,8 @@ export async function decodeAndProcess(file, audioEl, wasm = globalThis) {
     amplitudes = Array.from(pcm, (v) => Math.abs(v));
   }
   audioEl.src = URL.createObjectURL(file);
-  return { ctx, audioBuffer, amplitudes };
+  metadata.duration = audioBuffer.duration;
+  return { ctx, audioBuffer, amplitudes, metadata };
 }
 
 export function setupPlayback(audioEl, seek) {
@@ -86,6 +102,17 @@ export function startRenderLoop(
   requestAnimationFrame(render);
 }
 
+export function renderLegend(canvas, palette) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const h = canvas.height;
+  for (let y = 0; y < h; y++) {
+    const v = Math.round(((h - 1 - y) / Math.max(h - 1, 1)) * 255);
+    ctx.fillStyle = palette(v);
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+}
+
 export function init(
   doc = document,
   deps = { decodeAndProcess, setupPlayback, startRenderLoop },
@@ -93,34 +120,97 @@ export function init(
   const controls = doc.getElementById("controls");
   const fileInput = controls.querySelector("input[type=file]");
   const audio = controls.querySelector("audio");
+  const playBtn = controls.querySelector("#play");
+  const muteBtn = controls.querySelector("#mute");
+  const volume = controls.querySelector("#volume");
   const seekCanvas = controls.querySelector("#seekbar");
   const seek = seekCanvas ? new SeekBar(seekCanvas) : null;
   const canvas = doc.getElementById("spectrogram");
+  const legend = doc.getElementById("legend");
+  const metadataEl = doc.getElementById("metadata");
+  const paletteRef = { current: palettes.rainbow };
   const resize = () => {
     const ratio = window.devicePixelRatio || 1;
     canvas.width = canvas.clientWidth * ratio;
     canvas.height = canvas.clientHeight * ratio;
+    if (legend) {
+      legend.height = canvas.height;
+      legend.width = 20 * ratio;
+      renderLegend(legend, paletteRef.current);
+    }
+    if (seek) seek.resize();
   };
   resize();
   window.addEventListener("resize", resize);
   const scaleSelect = controls.querySelector("#scale");
-  canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
-  canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
 
   if (seek) {
     deps.setupPlayback(audio, seek);
   }
-
-  const paletteRef = { current: palettes.rainbow };
+  if (volume) {
+    volume.addEventListener("input", () => {
+      audio.volume = parseFloat(volume.value);
+    });
+  }
+  if (playBtn) {
+    playBtn.addEventListener("click", () => {
+      if (audio.paused) audio.play();
+      else audio.pause();
+    });
+    audio.addEventListener("play", () => (playBtn.textContent = "Pause"));
+    audio.addEventListener("pause", () => (playBtn.textContent = "Play"));
+  }
+  if (muteBtn) {
+    muteBtn.addEventListener("click", () => {
+      audio.muted = !audio.muted;
+      muteBtn.textContent = audio.muted ? "Unmute" : "Mute";
+    });
+  }
   const themeButtons = controls.querySelectorAll("#themes button");
   themeButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       paletteRef.current = palettes[btn.dataset.theme] || palettes.rainbow;
       themeButtons.forEach((b) => b.classList.toggle("active", b === btn));
+      renderLegend(legend, paletteRef.current);
     });
   });
 
   let ctx;
+
+  doc.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+    switch (e.key) {
+      case " ":
+      case "k":
+        e.preventDefault();
+        if (audio.paused) audio.play();
+        else audio.pause();
+        break;
+      case "ArrowUp":
+        audio.volume = Math.min(1, audio.volume + 0.05);
+        if (volume) volume.value = audio.volume.toString();
+        break;
+      case "ArrowDown":
+        audio.volume = Math.max(0, audio.volume - 0.05);
+        if (volume) volume.value = audio.volume.toString();
+        break;
+      case "ArrowLeft":
+        audio.currentTime = Math.max(0, audio.currentTime - 10);
+        break;
+      case "ArrowRight":
+        audio.currentTime = Math.min(
+          audio.duration || audio.currentTime + 10,
+          audio.currentTime + 10,
+        );
+        break;
+      case "m":
+        audio.muted = !audio.muted;
+        if (muteBtn) {
+          muteBtn.textContent = audio.muted ? "Unmute" : "Mute";
+        }
+        break;
+    }
+  });
 
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -128,10 +218,17 @@ export function init(
     if (ctx) {
       await ctx.close();
     }
-    let amplitudes;
-    ({ ctx, amplitudes } = await deps.decodeAndProcess(file, audio));
+    let amplitudes, metadata;
+    ({ ctx, amplitudes, metadata } = await deps.decodeAndProcess(file, audio));
     if (seek) {
       seek.setAmplitudes(amplitudes);
+    }
+    if (metadataEl) {
+      metadataEl.textContent = `${metadata.title || ""} ${
+        metadata.artist || ""
+      } ${metadata.album || ""} ${metadata.year || ""} ${
+        metadata.duration ? metadata.duration.toFixed(2) + "s" : ""
+      }`.trim();
     }
     const analyser = ctx.createAnalyser();
     const source = ctx.createMediaElementSource(audio);

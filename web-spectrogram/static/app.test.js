@@ -7,6 +7,8 @@ import {
   startRenderLoop,
   init,
   palettes,
+  parseID3v1,
+  renderLegend,
 } from "./app.js";
 import { SeekBar } from "./seekbar.js";
 
@@ -48,6 +50,7 @@ test("SeekBar renders amplitudes", () => {
     lineTo: (...a) => ops.push(a),
     stroke: () => {},
     strokeStyle: "",
+    setTransform: () => {},
   });
   const seek = new SeekBar(canvas);
   seek.setAmplitudes([0, 1, 0, 1]);
@@ -68,6 +71,7 @@ test("setupPlayback syncs seek with audio", () => {
     moveTo: () => {},
     lineTo: () => {},
     stroke: () => ops.push("s"),
+    setTransform: () => {},
   });
   const seek = new SeekBar(canvas);
   seek.setAmplitudes([0, 1, 0, 1]);
@@ -229,6 +233,7 @@ test("init wires up file input change", async () => {
     moveTo: () => {},
     lineTo: () => {},
     stroke: () => {},
+    setTransform: () => {},
   });
   init(dom.window.document, deps);
   assert.equal(setupCalled, 1);
@@ -281,6 +286,7 @@ test("init closes previous context and keeps seek in sync", async () => {
     moveTo: () => {},
     lineTo: () => {},
     stroke: () => {},
+    setTransform: () => {},
   });
   init(dom.window.document, deps);
   const input = dom.window.document.querySelector("input[type=file]");
@@ -340,6 +346,7 @@ test("theme buttons change spectrogram palette", async () => {
     moveTo: () => {},
     lineTo: () => {},
     stroke: () => {},
+    setTransform: () => {},
   });
   init(dom.window.document, deps);
   const fireBtn = dom.window.document.querySelector(
@@ -418,4 +425,135 @@ test("init handles missing seekbar on file selection", async () => {
   input.dispatchEvent(new dom.window.Event("change"));
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(events, ["render"]);
+});
+
+test("parseID3v1 extracts metadata", () => {
+  const buf = new ArrayBuffer(128);
+  const view = new Uint8Array(buf);
+  const enc = new TextEncoder();
+  view.set(enc.encode("TAG"), 0);
+  view.set(enc.encode("Title"), 3);
+  view.set(enc.encode("Artist"), 33);
+  view.set(enc.encode("Album"), 63);
+  view.set(enc.encode("1999"), 93);
+  const meta = parseID3v1(buf);
+  assert.equal(meta.title, "Title");
+  assert.equal(meta.artist, "Artist");
+  assert.equal(meta.album, "Album");
+  assert.equal(meta.year, "1999");
+});
+
+test("renderLegend uses palette values", () => {
+  const calls = [];
+  const canvas = {
+    width: 1,
+    height: 2,
+    getContext: () => ({ fillStyle: "", fillRect: () => {} }),
+  };
+  renderLegend(canvas, (v) => {
+    calls.push(v);
+    return "#000";
+  });
+  assert.deepEqual(calls, [255, 0]);
+});
+
+test("SeekBar resize adjusts canvas", () => {
+  const dom = new JSDOM(`<canvas width="1" height="1"></canvas>`);
+  dom.window.devicePixelRatio = 2;
+  const canvas = dom.window.document.querySelector("canvas");
+  Object.defineProperty(canvas, "clientWidth", {
+    value: 10,
+    configurable: true,
+  });
+  Object.defineProperty(canvas, "clientHeight", {
+    value: 5,
+    configurable: true,
+  });
+  canvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+    setTransform: () => {},
+  });
+  const seek = new SeekBar(canvas);
+  seek.resize();
+  assert.equal(canvas.width, 20);
+  assert.equal(canvas.height, 10);
+});
+
+test("keyboard shortcuts control audio", () => {
+  const dom = new JSDOM(
+    `<footer id="controls"><input type="file"><audio></audio><button id="play"></button><button id="mute"></button><input id="volume" type="range"><canvas id="seekbar" width="4" height="2"></canvas><select id="scale"></select><div id="themes"><button data-theme="rainbow"></button></div></footer><div id="spectro-wrapper"><canvas id="spectrogram"></canvas><canvas id="legend" width="1" height="2"></canvas></div><section id="metadata"></section>`,
+  );
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  dom.window.devicePixelRatio = 1;
+  const spectro = dom.window.document.getElementById("spectrogram");
+  Object.defineProperty(spectro, "clientWidth", {
+    value: 10,
+    configurable: true,
+  });
+  Object.defineProperty(spectro, "clientHeight", {
+    value: 10,
+    configurable: true,
+  });
+  const legend = dom.window.document.getElementById("legend");
+  legend.getContext = () => ({ fillStyle: "", fillRect: () => {} });
+  const seekCanvas = dom.window.document.getElementById("seekbar");
+  seekCanvas.getContext = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+    setTransform: () => {},
+  });
+  const audio = dom.window.document.querySelector("audio");
+  Object.defineProperty(audio, "paused", { value: true, writable: true });
+  audio.play = () => {
+    audio.paused = false;
+    audio.dispatchEvent(new dom.window.Event("play"));
+  };
+  audio.pause = () => {
+    audio.paused = true;
+    audio.dispatchEvent(new dom.window.Event("pause"));
+  };
+  audio.currentTime = 0;
+  Object.defineProperty(audio, "duration", { value: 100 });
+  init(dom.window.document, {
+    decodeAndProcess: async () => ({
+      ctx: {
+        createMediaElementSource: () => ({ connect: () => {} }),
+        createAnalyser: () => ({
+          connect: () => {},
+          frequencyBinCount: 1,
+          getByteFrequencyData: () => {},
+        }),
+        destination: {},
+      },
+      amplitudes: [0],
+      metadata: {},
+    }),
+    setupPlayback: () => {},
+    startRenderLoop: () => {},
+  });
+  document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: " " }));
+  assert.equal(audio.paused, false);
+  document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: " " }));
+  assert.equal(audio.paused, true);
+  audio.volume = 0.5;
+  document.dispatchEvent(
+    new dom.window.KeyboardEvent("keydown", { key: "ArrowUp" }),
+  );
+  assert.ok(audio.volume > 0.5);
+  audio.currentTime = 50;
+  document.dispatchEvent(
+    new dom.window.KeyboardEvent("keydown", { key: "ArrowLeft" }),
+  );
+  assert.equal(audio.currentTime, 40);
+  audio.muted = false;
+  document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "m" }));
+  assert.equal(audio.muted, true);
 });
