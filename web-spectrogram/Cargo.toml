@@ -26,3 +26,9 @@ http = "1"
 tower = { version = "0.5", features = ["util"] }
 hyper = { version = "1", features = ["client", "http1", "http2"] }
 http-body-util = "0.1"
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
