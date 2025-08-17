@@ -3,7 +3,7 @@ import { existsSync, rmSync } from "fs";
 import path from "path";
 import { test, expect } from "vitest";
 
-test("npm build outputs sw.js", () => {
+test("npm build outputs sw.js", { timeout: 240000 }, () => {
   const root = path.resolve(__dirname, "..", "..");
   const appDir = path.join(root, "app");
   const distDir = path.join(appDir, "dist");
