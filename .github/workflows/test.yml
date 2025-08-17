@@ -5,28 +5,42 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit-tests:
     name: Unit tests
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        features:
-          - ''
-          - '--no-default-features'
-          - '--features "sse std internal-tests"'
-          - '--features "parallel internal-tests"'
-          - '--features "simd soa internal-tests"'
-          - '--all-features'
+        include:
+          - os: ubuntu-latest
+            features: ''
+          - os: ubuntu-latest
+            features: '--no-default-features'
+          - os: ubuntu-latest
+            features: '--features "sse std internal-tests"'
+          - os: ubuntu-latest
+            features: '--features "parallel internal-tests"'
+          - os: ubuntu-latest
+            features: '--features "simd soa internal-tests"'
+          - os: ubuntu-latest
+            features: '--all-features'
+          - os: macos-latest
+            features: ''
+          - os: macos-latest
+            features: '--all-features'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
+      - uses: taiki-e/install-action@nextest
       - name: Run tests
         shell: bash
-        run: cargo test --all --verbose ${{ matrix.features }}
+        run: cargo nextest run --all ${{ matrix.features }}
   feature-checks:
     name: Feature checks
     runs-on: ubuntu-latest

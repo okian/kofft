@@ -5,13 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
+      - uses: taiki-e/install-action@cargo-audit
       - name: Run cargo audit
         run: cargo audit --deny warnings
