@@ -1,3 +1,18 @@
+export function ensureBuffer() {
+  if (typeof globalThis.Buffer === "undefined") {
+    globalThis.Buffer = class Buffer extends Uint8Array {
+      static from(data) {
+        if (data instanceof ArrayBuffer) {
+          return new Uint8Array(data);
+        }
+        return new Uint8Array(data);
+      }
+    };
+  }
+}
+
+ensureBuffer();
+
 let wasm;
 /* c8 ignore start */
 async function loadWasm() {
@@ -18,7 +33,12 @@ export function magnitudeToDb(mag, maxMag) {
   return 20 * Math.log10(Math.max(ratio, 1e-12));
 }
 
-export function drawSpectrogram(canvas, res, colorFn, colormap = wasm?.Colormap.Rainbow) {
+export function drawSpectrogram(
+  canvas,
+  res,
+  colorFn,
+  colormap = wasm?.Colormap.Rainbow,
+) {
   const ctx = canvas.getContext("2d");
   const { mags, width, height, max_mag } = res;
   canvas.width = width;
