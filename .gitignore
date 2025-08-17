@@ -25,6 +25,3 @@ proptest-regressions/
 *.profraw
 *.profdata
 node_modules/
-web-spectrogram/static/
-web-spectrogram/pkg/
-web-spectrogram/app/dist/
