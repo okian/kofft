@@ -7,6 +7,7 @@ on:
 
 jobs:
   build:
+    name: Build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -27,18 +28,18 @@ jobs:
             target: wasm32-unknown-unknown
           - os: macos-latest
             target: ""
-          - os: windows-latest
-            target: ""
         exclude:
           - os: ubuntu-latest
             target: wasm32-unknown-unknown
             features: "--all-features"
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-rust
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
           targets: ${{ matrix.target }}
-      - name: Build all targets
+      - name: Build
         shell: bash
         run: |
           TARGET_ARG=""
