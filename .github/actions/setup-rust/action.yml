@@ -22,3 +22,5 @@ runs:
         components: ${{ inputs.components }}
         targets: ${{ inputs.targets }}
     - uses: swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
