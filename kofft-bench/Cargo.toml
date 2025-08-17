@@ -30,22 +30,6 @@ precomputed-twiddles = ["kofft/precomputed-twiddles"]
 name = "bench_fft"
 harness = false
 
-[[bench]]
-name = "bench_dct"
-harness = false
-
-[[bench]]
-name = "aos_vs_soa"
-harness = false
-
-[[bench]]
-name = "bench_rfft"
-harness = false
-
-[[bench]]
-name = "small_fft"
-harness = false
-
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"

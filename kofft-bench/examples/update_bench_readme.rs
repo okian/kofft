@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn update_readme(table: &str) -> Result<(), Box<dyn Error>> {
-    let path = "README.md";
+    let path = "../benchmarks/README.md";
     let content = fs::read_to_string(path)?;
     let start = "<!-- BENCH_START -->";
     let end = "<!-- BENCH_END -->";
