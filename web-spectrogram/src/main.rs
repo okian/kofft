@@ -104,4 +104,21 @@ mod tests {
         let body = res.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(body.as_ref(), b"index");
     }
+
+    #[tokio::test]
+    async fn serves_service_worker() {
+        let tmp = tempdir().unwrap();
+        let static_dir = tmp.path().join("static");
+        fs::create_dir(&static_dir).unwrap();
+        fs::write(static_dir.join("index.html"), "index").unwrap();
+        fs::write(static_dir.join("sw.js"), "sw").unwrap();
+
+        let router = app(&static_dir);
+
+        let res = router
+            .oneshot(Request::get("/sw.js").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
 }

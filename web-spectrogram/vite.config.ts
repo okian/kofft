@@ -3,12 +3,16 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
+const wasmPath = process.env.VITEST
+  ? path.resolve(__dirname, 'tests/wasm-stub.ts')
+  : path.resolve(__dirname, './pkg/web_spectrogram.js');
+
 export default defineConfig({
   root: 'app',
-  publicDir: 'app/public',
+  publicDir: 'public',
   resolve: {
     alias: {
-      '@wasm': path.resolve(__dirname, './pkg/web_spectrogram.js')
+      '@wasm': wasmPath
     }
   },
   test: {
