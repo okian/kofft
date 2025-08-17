@@ -27,7 +27,7 @@ pub fn read_audio(path: &Path) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     if path
         .extension()
         .and_then(|e| e.to_str())
-        .map_or(false, |e| e.eq_ignore_ascii_case("wav"))
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
     {
         return read_wav(path);
     }

@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
+use kofft::fft::{Complex32, ScalarFftImpl};
 
 fn bench_stockham(c: &mut Criterion) {
     let fft = ScalarFftImpl::<f32>::default();

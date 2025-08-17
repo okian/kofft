@@ -1,30 +1,30 @@
 # Web Spectrogram PWA
 
-A React-powered Progressive Web App for visualising audio as a spectrogram. It extracts album art and metadata from audio files and displays them alongside a real-time spectrogram view.
+A lightweight Progressive Web App for visualising audio as a spectrogram using plain JavaScript and WebAssembly. No React or build tooling is required.
 
-## Features
+## Usage
 
-- **React UI** with responsive layout that works across desktop and mobile browsers.
-- **PWA support** with offline caching via Service Worker.
-- **Album art extraction** using `music-metadata-browser`. Falls back to a generic vinyl image when no art is embedded.
-- **Sidebar metadata** showing title, artist, album, year and track length.
-- **Playback controls** pinned to the bottom of the screen.
-- Placeholder **spectrogram canvas** ready for integration with the WASM renderer.
-
-## Development
+From the repository root, build the WebAssembly package and serve the PWA:
 
 ```bash
-cd web-spectrogram
-npm install
-npm run dev
+cargo xtask web-spectrogram
 ```
 
-The application will be served at <http://localhost:5173> by default.
+This compiles the WebAssembly with `wasm-pack` and hosts the app at `http://localhost:3000`.
+
+## Rebuilding WebAssembly
+
+To regenerate the WebAssembly package without starting the server:
+
+```bash
+wasm-pack build web-spectrogram --target web
+```
 
 ## Testing
 
-```bash
-npm test
-```
+Generate the WebAssembly package and run Node's built-in test runner with coverage (minimum 90% line coverage for `spectrogram.mjs`):
 
-Vitest runs unit tests and reports coverage. All new code must maintain at least 90% coverage.
+```bash
+wasm-pack build web-spectrogram --target web
+node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-include='web-spectrogram/spectrogram.mjs' web-spectrogram/tests/main.test.mjs
+```

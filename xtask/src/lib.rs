@@ -193,7 +193,7 @@ pub fn web_spectrogram_command() -> Command {
     let mut cmd = Command::new("sh");
     cmd.args([
         "-c",
-        "cd web-spectrogram && wasm-pack build --target web && npm ci && npm run build && rm -rf static && mkdir -p static && cp -r app/dist/* static/ && cargo run -p web-spectrogram",
+        "cd web-spectrogram && wasm-pack build --target web && rm -rf static && mkdir -p static && cp index.html main.mjs manifest.json spectrogram.mjs sw.js static/ && cp -r pkg static/ && cargo run -p web-spectrogram",
     ]);
     cmd
 }
@@ -305,6 +305,8 @@ mod tests {
         assert!(wargs
             .iter()
             .any(|a| a.contains("wasm-pack build --target web")));
+        assert!(wargs.iter().any(|a| a.contains("cp index.html")));
+        assert!(!wargs.iter().any(|a| a.contains("npm")));
     }
 
     #[test]
