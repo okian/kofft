@@ -2,6 +2,11 @@ import { X, Music, User, Disc, Calendar, FileAudio } from 'lucide-react'
 import { AudioTrack } from '@/types'
 import { formatDuration, formatFileSize } from '@/utils/audio'
 
+// Helper function to format sample rate in kHz
+const formatSampleRate = (sampleRate: number): string => {
+  return `${(sampleRate / 1000).toFixed(1)} kHz`
+}
+
 interface MetadataPanelProps {
   track: AudioTrack | null
   isOpen: boolean
@@ -10,28 +15,34 @@ interface MetadataPanelProps {
 
 export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
   if (!isOpen) return null
+
+  const renderFallbackAlbumArt = () => (
+    <div className="w-full h-48 bg-neutral-800 rounded-lg flex items-center justify-center">
+      <FileAudio size={48} className="text-neutral-500" />
+    </div>
+  )
   
   return (
     <div className="h-full flex flex-col" data-testid="metadata-panel">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-neutral-800">
-        <h3 className="text-base font-semibold text-neutral-100">Track Info</h3>
+      <div className="flex items-center justify-between py-0.5 px-1 border-b border-neutral-800">
+        <h3 className="text-sm font-medium text-neutral-100">Track Info</h3>
         <button
           onClick={onClose}
           className="icon-btn"
           title="Close metadata panel"
         >
-          <X size={20} />
+          <X size={16} />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-3">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-1">
         {track ? (
-          <div className="space-y-4">
-                         {/* Album Art */}
+          <div className="space-y-2">
+            {/* Album Art - Much larger with minimal spacing */}
             {(track.artwork?.data && track.artwork.data.length > 0) || (track.metadata.album_art && track.metadata.album_art.length > 0) ? (
-              <div className="flex justify-center">
+              <div className="w-full">
                 {(() => {
                   try {
                     // Use new artwork system first
@@ -39,26 +50,24 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
                       const artworkData = track.artwork.data
                       const mimeType = track.artwork.mimeType || 'image/jpeg'
                       
+                      // Validate the data before creating blob
+                      if (artworkData.length < 100) {
+                        return renderFallbackAlbumArt()
+                      }
+                      
                       const blob = new Blob([artworkData], { type: mimeType })
                       const url = URL.createObjectURL(blob)
                       
                       return (
-                        <div className="text-center">
-                          <img
-                            src={url}
-                            alt="Album Art"
-                            className="w-32 h-32 object-cover rounded-lg shadow-lg mx-auto"
-                            onLoad={() => setTimeout(() => URL.revokeObjectURL(url), 1000)}
-                            onError={(e) => {
-                              console.warn('Failed to load album art image:', e)
-                              URL.revokeObjectURL(url)
-                            }}
-                          />
-                          <div className="mt-2 text-xs text-neutral-400">
-                            Source: {track.artwork.type} 
-                            {track.artwork.confidence && ` (${Math.round(track.artwork.confidence * 100)}% confidence)`}
-                          </div>
-                        </div>
+                        <img
+                          src={url}
+                          alt="Album Art"
+                          className="w-full h-auto object-cover rounded-lg shadow-lg"
+                          onLoad={() => setTimeout(() => URL.revokeObjectURL(url), 1000)}
+                          onError={(e) => {
+                            URL.revokeObjectURL(url)
+                          }}
+                        />
                       )
                     }
                     
@@ -67,157 +76,140 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
                       const albumArtData = track.metadata.album_art
                       const mimeType = track.metadata.album_art_mime || 'image/jpeg'
                       
+                      // Validate the data before creating blob
+                      if (albumArtData.length < 100) {
+                        return renderFallbackAlbumArt()
+                      }
+                      
                       const blob = new Blob([albumArtData], { type: mimeType })
                       const url = URL.createObjectURL(blob)
                       
                       return (
-                        <div className="text-center">
-                          <img
-                            src={url}
-                            alt="Album Art"
-                            className="w-32 h-32 object-cover rounded-lg shadow-lg mx-auto"
-                            onLoad={() => setTimeout(() => URL.revokeObjectURL(url), 1000)}
-                            onError={(e) => {
-                              console.warn('Failed to load album art image:', e)
-                              URL.revokeObjectURL(url)
-                            }}
-                          />
-                          <div className="mt-2 text-xs text-neutral-400">
-                            Source: Embedded metadata
-                          </div>
-                        </div>
+                        <img
+                          src={url}
+                          alt="Album Art"
+                          className="w-full h-auto object-cover rounded-lg shadow-lg"
+                          onLoad={() => setTimeout(() => URL.revokeObjectURL(url), 1000)}
+                          onError={(e) => {
+                            URL.revokeObjectURL(url)
+                          }}
+                        />
                       )
                     }
                     
                     return null
                   } catch (error) {
-                    console.warn('Failed to create album art URL:', error)
-                    return null
+                    return renderFallbackAlbumArt()
                   }
                 })()}
               </div>
             ) : null}
 
-            {/* Track Info */}
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-lg font-semibold text-neutral-100 mb-2">
-                  {track.metadata.title || track.file.name}
-                </h4>
-                <p className="text-neutral-400">
-                  {track.metadata.artist || 'Unknown Artist'}
-                </p>
-              </div>
+            {/* Track Title - Most important */}
+            <div className="px-1">
+              <h4 className="text-lg font-semibold text-neutral-100 mb-1">
+                {track.metadata.title || track.file.name}
+              </h4>
+            </div>
 
-                             {/* Metadata Grid */}
-               <div className="grid grid-cols-1 gap-2">
-                                  {track.metadata.album && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <Disc size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Album</p>
-                      <p className="text-neutral-100">{track.metadata.album}</p>
-                    </div>
+            {/* Compact Metadata Grid - Reordered by importance */}
+            <div className="space-y-1 px-1">
+              {/* Artist - Second most important */}
+              {track.metadata.artist && (
+                <div className="flex items-center gap-2 py-1">
+                  <User size={14} className="text-neutral-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-neutral-400">Artist</p>
+                    <p className="text-sm text-neutral-100 truncate">{track.metadata.artist}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Album - Third most important */}
+              {track.metadata.album && (
+                <div className="flex items-center gap-2 py-1">
+                  <Disc size={14} className="text-neutral-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-neutral-400">Album</p>
+                    <p className="text-sm text-neutral-100 truncate">{track.metadata.album}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Year - Fourth most important */}
+              {track.metadata.year && (
+                <div className="flex items-center gap-2 py-1">
+                  <Calendar size={14} className="text-neutral-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-neutral-400">Year</p>
+                    <p className="text-sm text-neutral-100">{track.metadata.year}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Genre - Fifth most important */}
+              {track.metadata.genre && (
+                <div className="flex items-center gap-2 py-1">
+                  <Music size={14} className="text-neutral-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-neutral-400">Genre</p>
+                    <p className="text-sm text-neutral-100 truncate">{track.metadata.genre}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Duration - Technical info */}
+              {track.duration && (
+                <div className="flex items-center gap-2 py-1">
+                  <FileAudio size={14} className="text-neutral-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-neutral-400">Duration</p>
+                    <p className="text-sm text-neutral-100">{formatDuration(track.duration)}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Technical metadata - Less important, more compact */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-800">
+                {track.metadata.bitrate && (
+                  <div className="text-xs">
+                    <p className="text-neutral-400">Bitrate</p>
+                    <p className="text-neutral-100">{track.metadata.bitrate} kbps</p>
                   </div>
                 )}
 
-                                 {track.metadata.artist && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <User size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Artist</p>
-                      <p className="text-neutral-100">{track.metadata.artist}</p>
-                    </div>
+                {track.metadata.sample_rate && (
+                  <div className="text-xs">
+                    <p className="text-neutral-400">Sample Rate</p>
+                    <p className="text-neutral-100">{formatSampleRate(track.metadata.sample_rate)}</p>
                   </div>
                 )}
 
-                                 {track.metadata.year && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <Calendar size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Year</p>
-                      <p className="text-neutral-100">{track.metadata.year}</p>
-                    </div>
+                {track.metadata.bit_depth && (
+                  <div className="text-xs">
+                    <p className="text-neutral-400">Bit Depth</p>
+                    <p className="text-neutral-100">{track.metadata.bit_depth} bit</p>
                   </div>
                 )}
 
-                                 {track.metadata.genre && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <Music size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Genre</p>
-                      <p className="text-neutral-100">{track.metadata.genre}</p>
-                    </div>
+                {track.metadata.channels && (
+                  <div className="text-xs">
+                    <p className="text-neutral-400">Channels</p>
+                    <p className="text-neutral-100">{track.metadata.channels}</p>
                   </div>
                 )}
 
-                                 {track.duration && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Duration</p>
-                      <p className="text-neutral-100">{formatDuration(track.duration)}</p>
-                    </div>
+                {track.metadata.format && (
+                  <div className="text-xs">
+                    <p className="text-neutral-400">Format</p>
+                    <p className="text-neutral-100">{track.metadata.format.toUpperCase()}</p>
                   </div>
                 )}
 
-                                 {track.file.size && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">File Size</p>
-                      <p className="text-neutral-100">{formatFileSize(track.file.size)}</p>
-                    </div>
-                  </div>
-                )}
-
-                                 {track.metadata.bitrate && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Bitrate</p>
-                      <p className="text-neutral-100">{track.metadata.bitrate} kbps</p>
-                    </div>
-                  </div>
-                )}
-
-                                                  {track.metadata.sample_rate && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                     <div>
-                       <p className="text-sm text-neutral-400">Sample Rate</p>
-                       <p className="text-neutral-100">{track.metadata.sample_rate} Hz</p>
-                     </div>
-                   </div>
-                 )}
-
-                 {track.metadata.bit_depth && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                     <div>
-                       <p className="text-sm text-neutral-400">Bit Depth</p>
-                       <p className="text-neutral-100">{track.metadata.bit_depth} bit</p>
-                     </div>
-                   </div>
-                 )}
-
-                 {track.metadata.channels && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Channels</p>
-                      <p className="text-neutral-100">{track.metadata.channels}</p>
-                    </div>
-                  </div>
-                )}
-
-                                 {track.metadata.format && (
-                   <div className="flex items-center gap-2 p-2 bg-neutral-800 rounded-lg">
-                     <FileAudio size={18} className="text-neutral-400" />
-                    <div>
-                      <p className="text-sm text-neutral-400">Format</p>
-                      <p className="text-neutral-100">{track.metadata.format}</p>
-                    </div>
+                {track.file.size && (
+                  <div className="text-xs">
+                    <p className="text-neutral-400">File Size</p>
+                    <p className="text-neutral-100">{formatFileSize(track.file.size)}</p>
                   </div>
                 )}
               </div>

@@ -96,7 +96,6 @@ async function searchMusicBrainz(artist: string, album: string): Promise<Artwork
     )
 
     if (!response.ok) {
-      console.warn('MusicBrainz search failed:', response.status)
       return null
     }
 
@@ -120,7 +119,6 @@ async function searchMusicBrainz(artist: string, album: string): Promise<Artwork
     )
 
     if (!artworkResponse.ok) {
-      console.warn('Cover Art Archive fetch failed:', artworkResponse.status)
       return null
     }
 
@@ -140,7 +138,6 @@ async function searchMusicBrainz(artist: string, album: string): Promise<Artwork
       }
     }
   } catch (error) {
-    console.warn('MusicBrainz search error:', error)
     return null
   }
 }
@@ -160,7 +157,6 @@ async function searchAcoustID(fingerprint: string, duration: number, metadata: A
     )
 
     if (!response.ok) {
-      console.warn('AcoustID lookup failed:', response.status)
       return null
     }
 
@@ -237,7 +233,6 @@ async function searchAcoustID(fingerprint: string, duration: number, metadata: A
       }
     }
   } catch (error) {
-    console.warn('AcoustID lookup error:', error)
     return null
   }
 }
@@ -246,7 +241,6 @@ async function searchAcoustID(fingerprint: string, duration: number, metadata: A
 async function generateFingerprint(audioData: ArrayBuffer): Promise<string | null> {
   // This is a placeholder - in a real implementation, you'd use Chromaprint WASM
   // For now, we'll return null to skip AcoustID fingerprinting
-  console.warn('Chromaprint fingerprinting not implemented - skipping AcoustID lookup')
   return null
 }
 
@@ -260,27 +254,14 @@ export async function extractArtwork(
   const sources: ArtworkSource[] = []
   let bestArtwork: ArtworkSource | null = null
 
-  console.log('🎨 Starting multi-step artwork extraction for:', filename)
-  console.log('📋 Metadata for artwork extraction:', {
-    title: metadata.title,
-    artist: metadata.artist,
-    album: metadata.album,
-    hasEmbeddedArt: metadata.album_art ? metadata.album_art.length > 0 : false,
-    embeddedArtSize: metadata.album_art?.length || 0
-  })
-  console.log('⚙️ Artwork settings:', {
-    enableExternalArtwork: settings.enableExternalArtwork,
-    enableMusicBrainz: settings.enableMusicBrainz,
-    enableAcoustID: settings.enableAcoustID,
-    enablePlaceholderArtwork: settings.enablePlaceholderArtwork
-  })
-
   // Step 1: Embedded Artwork (first priority)
   if (metadata.album_art && metadata.album_art.length > 0) {
-    console.log('🎨 Step 1: Found embedded artwork')
+    // Ensure we have a Uint8Array
+    const artworkData = metadata.album_art instanceof Uint8Array ? metadata.album_art : new Uint8Array(metadata.album_art)
+    
     const embeddedArtwork: ArtworkSource = {
       type: 'embedded',
-      data: metadata.album_art,
+      data: artworkData,
       mimeType: metadata.album_art_mime || 'image/jpeg',
       confidence: 1.0,
       metadata: {
@@ -291,111 +272,64 @@ export async function extractArtwork(
     }
     sources.push(embeddedArtwork)
     bestArtwork = embeddedArtwork
-    console.log('✅ Found embedded artwork - size:', metadata.album_art.length, 'bytes')
-  } else {
-    console.log('❌ Step 1: No embedded artwork found')
   }
 
   // Step 2: MusicBrainz lookup (if external artwork is enabled and we have artist/album)
   if (settings.enableExternalArtwork && settings.enableMusicBrainz && metadata.artist && metadata.album) {
-    console.log('🎨 Step 2: Trying MusicBrainz lookup for:', metadata.artist, '-', metadata.album)
     try {
       const mbArtwork = await searchMusicBrainz(metadata.artist, metadata.album)
       if (mbArtwork) {
         sources.push(mbArtwork)
-        if (!bestArtwork || mbArtwork.confidence > bestArtwork.confidence) {
+        if (!bestArtwork || mbArtwork.confidence > (bestArtwork as ArtworkSource).confidence) {
           bestArtwork = mbArtwork
         }
-        console.log('✅ Found MusicBrainz artwork - confidence:', mbArtwork.confidence)
-      } else {
-        console.log('❌ MusicBrainz lookup returned no results')
       }
     } catch (error) {
-      console.warn('❌ MusicBrainz lookup failed:', error)
+      // MusicBrainz lookup failed
     }
-  } else {
-    console.log('⏭️ Step 2: Skipping MusicBrainz lookup -', {
-      externalEnabled: settings.enableExternalArtwork,
-      musicbrainzEnabled: settings.enableMusicBrainz,
-      hasArtist: !!metadata.artist,
-      hasAlbum: !!metadata.album
-    })
   }
 
   // Step 3: AcoustID fingerprinting (if enabled and we have audio data)
   if (settings.enableExternalArtwork && settings.enableAcoustID && audioData && metadata.duration) {
-    console.log('🎨 Step 3: Trying AcoustID fingerprinting')
     try {
       const fingerprint = await generateFingerprint(audioData)
       if (fingerprint) {
         const acoustidArtwork = await searchAcoustID(fingerprint, metadata.duration, metadata)
         if (acoustidArtwork) {
           sources.push(acoustidArtwork)
-          if (!bestArtwork || acoustidArtwork.confidence > bestArtwork.confidence) {
+          if (!bestArtwork || acoustidArtwork.confidence > (bestArtwork as ArtworkSource).confidence) {
             bestArtwork = acoustidArtwork
           }
-          console.log('✅ Found AcoustID artwork - confidence:', acoustidArtwork.confidence)
-        } else {
-          console.log('❌ AcoustID lookup returned no results')
         }
-      } else {
-        console.log('❌ Could not generate fingerprint for AcoustID')
       }
     } catch (error) {
-      console.warn('❌ AcoustID lookup failed:', error)
+      // AcoustID lookup failed
     }
-  } else {
-    console.log('⏭️ Step 3: Skipping AcoustID fingerprinting -', {
-      externalEnabled: settings.enableExternalArtwork,
-      acoustidEnabled: settings.enableAcoustID,
-      hasAudioData: !!audioData,
-      hasDuration: !!metadata.duration
-    })
   }
 
   // Step 4: Filename heuristic → MusicBrainz
   if (settings.enableExternalArtwork && settings.enableMusicBrainz && !bestArtwork) {
-    console.log('🎨 Step 4: Trying filename-based MusicBrainz lookup')
     try {
       const parsed = parseFilename(filename)
-      console.log('📝 Parsed filename:', parsed)
       if (parsed.artist && parsed.album) {
         const filenameArtwork = await searchMusicBrainz(parsed.artist, parsed.album)
         if (filenameArtwork) {
           sources.push(filenameArtwork)
-          if (!bestArtwork || filenameArtwork.confidence > bestArtwork.confidence) {
+          if (!bestArtwork || filenameArtwork.confidence > (bestArtwork as ArtworkSource).confidence) {
             bestArtwork = filenameArtwork
           }
-          console.log('✅ Found artwork via filename parsing - confidence:', filenameArtwork.confidence)
-        } else {
-          console.log('❌ Filename-based MusicBrainz lookup returned no results')
         }
-      } else {
-        console.log('❌ Could not parse artist/album from filename')
       }
     } catch (error) {
-      console.warn('❌ Filename-based lookup failed:', error)
+      // Filename-based lookup failed
     }
-  } else {
-    console.log('⏭️ Step 4: Skipping filename-based lookup -', {
-      externalEnabled: settings.enableExternalArtwork,
-      musicbrainzEnabled: settings.enableMusicBrainz,
-      hasBestArtwork: !!bestArtwork
-    })
   }
 
   // Step 5: Placeholder (last resort)
   if (settings.enablePlaceholderArtwork && !bestArtwork) {
-    console.log('🎨 Step 5: Generating placeholder artwork')
     const placeholder = generatePlaceholderArtwork(metadata, filename)
     sources.push(placeholder)
     bestArtwork = placeholder
-    console.log('✅ Generated placeholder artwork')
-  } else {
-    console.log('⏭️ Step 5: Skipping placeholder generation -', {
-      placeholderEnabled: settings.enablePlaceholderArtwork,
-      hasBestArtwork: !!bestArtwork
-    })
   }
 
   const result: ArtworkResult = {
@@ -405,11 +339,7 @@ export async function extractArtwork(
     error: bestArtwork ? undefined : 'No artwork found'
   }
 
-  console.log(`🎨 Artwork extraction complete: ${result.success ? 'SUCCESS' : 'FAILED'}`)
-  console.log(`   Sources found: ${sources.length}`)
-  console.log(`   Best confidence: ${bestArtwork?.confidence || 0}`)
-  console.log(`   Best artwork type: ${bestArtwork?.type || 'none'}`)
-  console.log(`   Best artwork size: ${bestArtwork?.data?.length || 0} bytes`)
+
 
   return result
 }

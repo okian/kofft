@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { AudioState, AudioTrack } from '@/types'
+import { audioPlayer } from '@/utils/audioPlayer'
 
 interface AudioStore extends AudioState {
   // Actions
@@ -118,7 +119,19 @@ export const useAudioStore = create<AudioStore>()(
       if (playlist.length === 0) return
       
       const nextIndex = (currentTrackIndex + 1) % playlist.length
-      get().playTrack(nextIndex)
+      const nextTrack = playlist[nextIndex]
+      if (nextTrack) {
+        set({ 
+          currentTrackIndex: nextIndex,
+          currentTrack: nextTrack,
+          isPlaying: true,
+          isPaused: false,
+          isStopped: false,
+          currentTime: 0
+        })
+        // Actually play the track
+        audioPlayer.playTrack(nextTrack)
+      }
     },
     
     previousTrack: () => {
@@ -126,57 +139,65 @@ export const useAudioStore = create<AudioStore>()(
       if (playlist.length === 0) return
       
       const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
-      get().playTrack(prevIndex)
+      const prevTrack = playlist[prevIndex]
+      if (prevTrack) {
+        set({ 
+          currentTrackIndex: prevIndex,
+          currentTrack: prevTrack,
+          isPlaying: true,
+          isPaused: false,
+          isStopped: false,
+          currentTime: 0
+        })
+        // Actually play the track
+        audioPlayer.playTrack(prevTrack)
+      }
     },
     
     playTrack: (index) => {
       const { playlist } = get()
       if (index < 0 || index >= playlist.length) return
       
+      const track = playlist[index]
       set({ 
         currentTrackIndex: index,
-        currentTrack: playlist[index],
+        currentTrack: track,
         isPlaying: true,
         isPaused: false,
         isStopped: false,
         currentTime: 0
       })
+      // Actually play the track
+      audioPlayer.playTrack(track)
     },
     
     stopPlayback: () => {
-      set({ 
-        isPlaying: false,
-        isPaused: false,
-        isStopped: true,
-        currentTime: 0
-      })
+      audioPlayer.stopPlayback()
     },
     
     togglePlayPause: () => {
-      const { isPlaying, isStopped } = get()
+      const { isPlaying, isStopped, currentTrack } = get()
       if (isStopped) {
-        get().setPlaying(true)
+        if (currentTrack) {
+          audioPlayer.playTrack(currentTrack)
+        }
+      } else if (isPlaying) {
+        audioPlayer.pausePlayback()
       } else {
-        get().setPlaying(!isPlaying)
+        audioPlayer.resumePlayback()
       }
     },
     
     toggleMute: () => {
-      const { isMuted } = get()
-      set({ isMuted: !isMuted })
+      audioPlayer.toggleMute()
     },
     
     seekTo: (time) => {
-      get().setCurrentTime(time)
+      audioPlayer.seekTo(time)
     },
     
     updateVolume: (volume) => {
-      get().setVolume(volume)
-      if (volume === 0) {
-        get().setMuted(true)
-      } else if (get().isMuted) {
-        get().setMuted(false)
-      }
+      audioPlayer.setVolume(volume)
     },
   }))
 )

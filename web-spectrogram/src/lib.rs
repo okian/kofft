@@ -1,270 +1,259 @@
-use std::cell::RefCell;
-
-use kofft::fft::{new_fft_impl, Complex32, FftImpl};
-use kofft::visual::spectrogram::{self, Colormap as KColormap};
-use kofft::window::hann;
 use wasm_bindgen::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::io::Cursor;
+use console_error_panic_hook;
+use lofty::{
+    prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt},
+    picture::{Picture, PictureType},
+    probe::Probe,
+};
 
-const WIN_LEN: usize = 1024;
-const HOP: usize = WIN_LEN / 2;
-const FLOOR_DB: f32 = -80.0;
-
-#[wasm_bindgen]
-#[derive(Clone, Copy)]
-pub enum Colormap {
-    Fire,
-    Legacy,
-    Gray,
-    Viridis,
-    Plasma,
-    Inferno,
-    Rainbow,
+#[wasm_bindgen(start)]
+pub fn init_panic_hook() {
+    console_error_panic_hook::set_once();
 }
 
-impl From<Colormap> for KColormap {
-    fn from(c: Colormap) -> Self {
-        match c {
-            Colormap::Fire => KColormap::Fire,
-            Colormap::Legacy => KColormap::Legacy,
-            Colormap::Gray => KColormap::Gray,
-            Colormap::Viridis => KColormap::Viridis,
-            Colormap::Plasma => KColormap::Plasma,
-            Colormap::Inferno => KColormap::Inferno,
-            Colormap::Rainbow => KColormap::Rainbow,
-        }
-    }
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AudioMetadata {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<u32>,
+    pub genre: Option<String>,
+    pub duration: Option<f64>,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u16>,
+    pub bit_depth: Option<u16>,
+    pub bitrate: Option<u32>,
+    pub format: String,
+    pub album_art: Option<Vec<u8>>,
+    pub album_art_mime: Option<String>,
 }
 
-#[wasm_bindgen]
-pub struct StftResult {
-    mags: Vec<f32>,
-    width: usize,
-    height: usize,
-    max_mag: f32,
-}
-
-#[wasm_bindgen]
-impl StftResult {
-    #[wasm_bindgen(getter)]
-    pub fn mags(&self) -> Vec<f32> {
-        self.mags.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn height(&self) -> usize {
-        self.height
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn max_mag(&self) -> f32 {
-        self.max_mag
-    }
-}
-
-#[wasm_bindgen]
-pub fn stft_magnitudes(samples: &[f32], win_len: usize, hop: usize) -> Result<StftResult, JsValue> {
-    let (mags, max_mag) = spectrogram::stft_magnitudes(samples, win_len, hop)
-        .map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
-    let height = win_len / 2;
-    let width = mags.len();
-    let mut flat = Vec::with_capacity(width * height);
-    for frame in mags.iter() {
-        flat.extend_from_slice(&frame[..height]);
-    }
-    Ok(StftResult {
-        mags: flat,
-        width,
-        height,
-        max_mag,
-    })
-}
-
-#[wasm_bindgen]
-pub fn magnitude_to_db(mag: f32, max_mag: f32, floor_db: f32) -> f32 {
-    spectrogram::magnitude_to_db(mag, max_mag, floor_db)
-}
-
-#[wasm_bindgen]
-pub fn db_scale(mag: f32, max_mag: f32, dynamic_range: f32) -> f32 {
-    spectrogram::db_scale(mag, max_mag, dynamic_range)
-}
-
-#[wasm_bindgen]
-pub fn map_color_u8(t: f32, cmap: Colormap) -> Vec<u8> {
-    spectrogram::map_color_u8(t, cmap.into()).to_vec()
-}
-
-#[wasm_bindgen]
-pub fn color_from_magnitude_u8(mag: f32, max_mag: f32, floor_db: f32, cmap: Colormap) -> Vec<u8> {
-    spectrogram::color_from_magnitude_u8(mag, max_mag, floor_db, cmap.into()).to_vec()
-}
-
-thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State::new());
-}
-
-struct State {
-    buf: Vec<f32>,
-    fft: Box<dyn FftImpl<f32>>,
-    window: Vec<f32>,
-    cmap: KColormap,
-    max_mag: f32,
-}
-
-impl State {
-    fn new() -> Self {
+impl Default for AudioMetadata {
+    fn default() -> Self {
         Self {
-            buf: Vec::new(),
-            fft: new_fft_impl(),
-            window: hann(WIN_LEN),
-            cmap: KColormap::Rainbow,
-            max_mag: 1e-12,
+            title: None,
+            artist: None,
+            album: None,
+            year: None,
+            genre: None,
+            duration: None,
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            bitrate: None,
+            format: "unknown".to_string(),
+            album_art: None,
+            album_art_mime: None,
         }
     }
+}
 
-    fn compute_frame(&mut self, samples: &[f32]) -> Vec<u8> {
-        self.buf.extend_from_slice(samples);
-        if self.buf.len() < WIN_LEN {
-            return Vec::new();
-        }
-        let mut frame = vec![Complex32::new(0.0, 0.0); WIN_LEN];
-        for (f, (&s, &w)) in frame.iter_mut().zip(self.buf.iter().zip(&self.window)) {
-            *f = Complex32::new(s * w, 0.0);
-        }
-        let _ = self.fft.fft(&mut frame);
-        let half = WIN_LEN / 2;
-        let mut row = Vec::with_capacity(half * 4);
-        for c in &frame[..half] {
-            let mag = (c.re * c.re + c.im * c.im).sqrt();
-            if mag > self.max_mag {
-                self.max_mag = mag;
+#[wasm_bindgen]
+pub fn parse_metadata(bytes: &[u8]) -> Result<JsValue, JsValue> {
+    let mut meta = AudioMetadata::default();
+    let cursor = Cursor::new(bytes);
+    let tagged_file = match Probe::new(cursor).guess_file_type() {
+        Ok(probe) => match probe.read() {
+            Ok(f) => f,
+            Err(_e) => {
+                return serde_wasm_bindgen::to_value(&meta)
+                    .map_err(|e| JsValue::from_str(&format!("serde error: {e}")));
             }
-            let [r, g, b] =
-                spectrogram::color_from_magnitude_u8(mag, self.max_mag, FLOOR_DB, self.cmap);
-            row.extend_from_slice(&[r, g, b, 255]);
+        },
+        Err(_e) => {
+            return serde_wasm_bindgen::to_value(&meta)
+                .map_err(|e| JsValue::from_str(&format!("serde error: {e}")));
         }
-        self.buf.drain(0..HOP);
-        row
+    };
+
+    meta.format = format!("{:?}", tagged_file.file_type()).to_lowercase();
+
+    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+
+    if let Some(tag) = tag {
+        meta.title = tag.title().map(|s| s.to_string());
+        meta.artist = tag.artist().map(|s| s.to_string());
+        meta.album = tag.album().map(|s| s.to_string());
+
+        let mut year_found = None;
+        for item in tag.get_items(&ItemKey::RecordingDate) {
+            if let Some(text) = item.value().text() {
+                if let Some(year_str) = text.get(0..4) {
+                    if let Ok(year) = year_str.parse::<u32>() {
+                        year_found = Some(year);
+                        break;
+                    }
+                }
+            }
+        }
+        if year_found.is_none() {
+            for item in tag.get_items(&ItemKey::Year) {
+                if let Some(text) = item.value().text() {
+                    if let Ok(year) = text.parse::<u32>() {
+                        year_found = Some(year);
+                        break;
+                    }
+                }
+            }
+        }
+        meta.year = year_found;
+        meta.genre = tag.genre().map(|s| s.to_string());
+
+        // Debug: Check if we have any pictures
+        let pictures = tag.pictures();
+        
+        if let Some(pic) = pick_cover_picture(tag.pictures()) {
+            meta.album_art = Some(pic.data().to_vec());
+            meta.album_art_mime = Some(picture_mime(&pic).to_string());
+        }
     }
+
+    let props = tagged_file.properties();
+    meta.duration = Some(props.duration().as_secs_f64());
+    if let Some(sr) = props.sample_rate() { meta.sample_rate = Some(sr); }
+    if let Some(ch) = props.channels().map(|c| c as u16) { meta.channels = Some(ch); }
+    if let Some(bits) = props.bit_depth().map(|b| b as u16) { meta.bit_depth = Some(bits); }
+    if let Some(br) = props.overall_bitrate() { meta.bitrate = Some(br); }
+
+    serde_wasm_bindgen::to_value(&meta)
+        .map_err(|e| JsValue::from_str(&format!("serde error: {e}")))
 }
 
+/// Generate amplitude envelope for seekbar visualization
+/// Returns an array of amplitude values (0.0 to 1.0) representing the audio envelope
 #[wasm_bindgen]
-pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
-    STATE.with(|s| s.borrow_mut().compute_frame(samples))
+pub fn generate_amplitude_envelope(
+    audio_data: &[f32], 
+    sample_rate: u32,
+    target_bars: usize,
+    window_ms: u32,
+    smoothing_samples: usize
+) -> Vec<f32> {
+    if audio_data.is_empty() || target_bars == 0 {
+        return vec![0.0; target_bars];
+    }
+
+    // Calculate window size in samples
+    let window_samples = (sample_rate as f32 * window_ms as f32 / 1000.0) as usize;
+    if window_samples == 0 {
+        return vec![0.0; target_bars];
+    }
+
+    // Split audio into windows and compute RMS for each
+    let num_windows = (audio_data.len() + window_samples - 1) / window_samples;
+    let mut window_rms = Vec::with_capacity(num_windows);
+
+    for i in 0..num_windows {
+        let start = i * window_samples;
+        let end = ((i + 1) * window_samples).min(audio_data.len());
+        
+        if start >= audio_data.len() {
+            window_rms.push(0.0);
+            continue;
+        }
+
+        let chunk = &audio_data[start..end];
+        if chunk.is_empty() {
+            window_rms.push(0.0);
+            continue;
+        }
+
+        // Compute RMS (Root Mean Square) for amplitude
+        let sum_squares: f32 = chunk.iter().map(|&x| x * x).sum();
+        let rms = (sum_squares / chunk.len() as f32).sqrt();
+        window_rms.push(rms);
+    }
+
+    // Apply smoothing if requested
+    if smoothing_samples > 1 && window_rms.len() > smoothing_samples {
+        let mut smoothed = Vec::with_capacity(window_rms.len());
+        
+        for i in 0..window_rms.len() {
+            let start = if i >= smoothing_samples / 2 { i - smoothing_samples / 2 } else { 0 };
+            let end = (i + smoothing_samples / 2 + 1).min(window_rms.len());
+            let window = &window_rms[start..end];
+            
+            let avg = window.iter().sum::<f32>() / window.len() as f32;
+            smoothed.push(avg);
+        }
+        window_rms = smoothed;
+    }
+
+    // Downsample to target number of bars
+    let mut envelope = Vec::with_capacity(target_bars);
+    
+    if window_rms.len() <= target_bars {
+        // Upsample by interpolation
+        for i in 0..target_bars {
+            let window_index = (i as f32 * window_rms.len() as f32 / target_bars as f32) as usize;
+            let window_index = window_index.min(window_rms.len() - 1);
+            envelope.push(window_rms[window_index]);
+        }
+    } else {
+        // Downsample by averaging
+        let samples_per_bar = (window_rms.len() + target_bars - 1) / target_bars;
+        
+        for i in 0..target_bars {
+            let start = i * samples_per_bar;
+            let end = ((i + 1) * samples_per_bar).min(window_rms.len());
+            
+            if start >= window_rms.len() {
+                envelope.push(0.0);
+                continue;
+            }
+            
+            let chunk = &window_rms[start..end];
+            let avg = chunk.iter().sum::<f32>() / chunk.len() as f32;
+            envelope.push(avg);
+        }
+    }
+
+    // Normalize to 0.0-1.0 range
+    let max_val = envelope.iter().fold(0.0f32, |a, &b| a.max(b));
+    if max_val > 0.0 {
+        for val in &mut envelope {
+            *val = (*val / max_val).min(1.0);
+        }
+    }
+
+    envelope
 }
 
+/// Generate waveform data for visualization (legacy function for compatibility)
+/// Returns an array of amplitude values (0.0 to 1.0) representing the audio waveform
 #[wasm_bindgen]
-pub fn set_colormap(name: &str) {
-    STATE.with(|s| {
-        s.borrow_mut().cmap = KColormap::parse(name);
-    });
+pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
+    // Use the new amplitude envelope function with default parameters
+    generate_amplitude_envelope(audio_data, 44100, num_bars, 20, 3)
 }
 
-#[wasm_bindgen]
-pub fn reset_state() {
-    STATE.with(|s| *s.borrow_mut() = State::new());
+fn pick_cover_picture<'a>(pics: impl IntoIterator<Item = &'a Picture>) -> Option<&'a Picture> {
+    let mut pics_iter = pics.into_iter();
+    // First try to find a cover front picture
+    if let Some(cover_front) = pics_iter.find(|p| p.pic_type() == PictureType::CoverFront) {
+        return Some(cover_front);
+    }
+    // If no cover front, try to find any picture
+    pics_iter.next()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stft_wrapper_matches_core() {
-        let samples: Vec<f32> = (0..8).map(|i| i as f32).collect();
-        let win_len = 4;
-        let hop = 2;
-        let res = stft_magnitudes(&samples, win_len, hop).unwrap();
-        let (core, max_mag) = spectrogram::stft_magnitudes(&samples, win_len, hop).unwrap();
-        assert_eq!(res.max_mag(), max_mag);
-        assert_eq!(res.width(), core.len());
-        assert_eq!(res.height(), win_len / 2);
-        let mut flat = Vec::new();
-        for frame in core.iter() {
-            flat.extend_from_slice(&frame[..win_len / 2]);
-        }
-        assert_eq!(res.mags(), flat);
-    }
-
-    #[test]
-    fn magnitude_to_db_wrapper_matches_core() {
-        let mag = 0.5;
-        let max_mag = 1.0;
-        let floor_db = -120.0;
-        let w = magnitude_to_db(mag, max_mag, floor_db);
-        let c = spectrogram::magnitude_to_db(mag, max_mag, floor_db);
-        assert!((w - c).abs() < 1e-6);
-    }
-
-    #[test]
-    fn db_scale_wrapper_matches_core() {
-        let mag = 0.5;
-        let max_mag = 1.0;
-        let dynamic_range = 60.0;
-        let w = db_scale(mag, max_mag, dynamic_range);
-        let c = spectrogram::db_scale(mag, max_mag, dynamic_range);
-        assert!((w - c).abs() < 1e-6);
-    }
-
-    #[test]
-    fn color_wrappers_match_core() {
-        let mag = 0.25;
-        let max_mag = 1.0;
-        let floor_db = -60.0;
-        let w = color_from_magnitude_u8(mag, max_mag, floor_db, Colormap::Viridis);
-        let c = spectrogram::color_from_magnitude_u8(mag, max_mag, floor_db, KColormap::Viridis);
-        assert_eq!(w, c.to_vec());
-        for cmap in [
-            Colormap::Fire,
-            Colormap::Legacy,
-            Colormap::Gray,
-            Colormap::Viridis,
-            Colormap::Plasma,
-            Colormap::Inferno,
-            Colormap::Rainbow,
-        ] {
-            let w2 = map_color_u8(0.5, cmap);
-            let c2 = spectrogram::map_color_u8(0.5, cmap.into());
-            assert_eq!(w2, c2.to_vec());
+fn picture_mime(pic: &Picture) -> &str {
+    if let Some(m) = pic.mime_type() {
+        let mime_str = m.as_str();
+        if !mime_str.is_empty() {
+            return mime_str;
         }
     }
-
-    #[test]
-    fn streaming_compute_frame_and_colormap() {
-        reset_state();
-        let empty = compute_frame(&vec![0.0; HOP]);
-        assert!(empty.is_empty());
-        let frame = compute_frame(&vec![1.0; WIN_LEN]);
-        assert_eq!(frame.len(), (WIN_LEN / 2) * 4);
-        let frame2 = compute_frame(&vec![1.0; HOP]);
-        assert_eq!(frame2.len(), (WIN_LEN / 2) * 4);
-        for chunk in frame.chunks_exact(4) {
-            assert_eq!(chunk[3], 255);
-        }
-        // default colormap should be rainbow
-        reset_state();
-        let default_frame = compute_frame(&vec![1.0; WIN_LEN]);
-        reset_state();
-        set_colormap("rainbow");
-        let rainbow_frame = compute_frame(&vec![1.0; WIN_LEN]);
-        reset_state();
-        set_colormap("fire");
-        let fire_frame = compute_frame(&vec![1.0; WIN_LEN]);
-        assert_eq!(default_frame, rainbow_frame);
-        assert_ne!(default_frame, fire_frame);
-    }
-
-    #[test]
-    fn reset_clears_buffer() {
-        reset_state();
-        let _ = compute_frame(&vec![1.0; WIN_LEN]);
-        reset_state();
-        let empty = compute_frame(&vec![0.0; HOP]);
-        assert!(empty.is_empty());
+    let d = pic.data();
+    if d.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "image/jpeg"
+    } else if d.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else if d.len() > 12 && &d[0..4] == b"RIFF" && &d[8..12] == b"WEBP" {
+        "image/webp"
+    } else {
+        "application/octet-stream"
     }
 }

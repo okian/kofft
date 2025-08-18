@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { X, Palette, Sliders, Monitor, Zap, Key, Image, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { SpectrogramSettings, Theme, AmplitudeScale, FrequencyScale, Resolution, RefreshRate } from '@/types'
 import { cn } from '@/utils/cn'
+import { directToast } from '@/utils/toast'
 
 interface SettingsPanelProps {
   settings: SpectrogramSettings
@@ -74,7 +75,7 @@ export function SettingsPanel({
         })
       }
     } catch (error) {
-      console.error(`Failed to validate ${service} API key:`, error)
+      // Silently handle API key validation error
     } finally {
       setValidatingKeys(prev => ({ ...prev, [service]: false }))
     }
@@ -307,6 +308,28 @@ export function SettingsPanel({
                     className="text-accent-blue"
                   />
                   <span className="text-sm text-neutral-300">Show Legend</span>
+                </label>
+              </div>
+
+              {/* Toast Notifications Toggle */}
+              <div>
+                <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.enableToastNotifications}
+                    onChange={(e) => {
+                      const enabled = e.target.checked
+                      onSettingsChange({ enableToastNotifications: enabled })
+                      if (enabled) {
+                        directToast.success('Toast notifications enabled')
+                      }
+                    }}
+                    className="text-accent-blue"
+                  />
+                  <div>
+                    <span className="text-sm text-neutral-300">Toast Notifications</span>
+                    <p className="text-xs text-neutral-500">Show success and error notifications</p>
+                  </div>
                 </label>
               </div>
             </div>

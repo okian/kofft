@@ -1,217 +1,265 @@
-# React Spectrogram PWA
+# React Spectrogram - Modern Audio Visualization PWA
 
-A modern, responsive Progressive Web App (PWA) for real-time audio visualization with waterfall spectrogram display. Built with React, TypeScript, WebAssembly, and WebGL.
+A modern, responsive Progressive Web App for real-time audio spectrogram visualization with WebAssembly and WebGL support.
 
-## Features
+## ✨ Recent Major Updates
 
-### 🎵 Audio Support
-- **Multiple Input Sources**: File upload, microphone input, and hybrid mode
-- **Format Support**: MP3, WAV, FLAC, OGG, WebM, AAC, M4A
-- **Playlist Management**: Drag-and-drop reordering, track removal
-- **Metadata Extraction**: ID3 tags, album art, technical details
+### 🎨 **Completely Redesigned Layout**
+- **Responsive Design**: Fully adaptive layout that works seamlessly across desktop, tablet, and mobile devices
+- **Mobile-First Approach**: Optimized touch interactions and mobile-specific UI patterns
+- **Tablet Support**: Dedicated tablet layout with overlay panels and touch-friendly controls
+- **Accessibility**: WCAG 2.1 AA compliant with proper ARIA labels, keyboard navigation, and screen reader support
 
-### 📊 Spectrogram Visualization
-- **Real-time Rendering**: WebGL-powered spectrogram with 60 FPS updates
-- **Multiple Themes**: Dark, Light, Neon, and High Contrast modes
-- **Interactive Display**: Hover tooltips with frequency, time, and intensity data
-- **Customizable Settings**: Amplitude scale, frequency scale, resolution, refresh rate
-- **Color Maps**: Multiple colormap options for different visualization styles
+### 🚀 **Performance Improvements**
+- **Memory Leak Fixes**: Proper cleanup of animation frames and event listeners
+- **Optimized Rendering**: Throttled updates (20 FPS on mobile, 60 FPS on desktop) for better performance
+- **Responsive Canvas**: Dynamic canvas resizing with ResizeObserver for optimal rendering
+- **Touch Optimization**: Reduced waveform bars on mobile for better performance
 
-### 🎛️ Playback Controls
+### 🎯 **Enhanced User Experience**
+- **Mobile Overlay Panels**: Slide-up panels for metadata and playlist on mobile devices
+- **Touch-Friendly Controls**: 44px minimum touch targets for all interactive elements
+- **Smart Button Layout**: Context-aware button visibility based on screen size
+- **Improved Visual Feedback**: Better hover states, loading indicators, and transitions
+
+### 🔧 **Bug Fixes & Stability**
+- **State Management**: Fixed inconsistencies in audio state handling
+- **Error Handling**: Better error messages and graceful degradation
+- **Memory Management**: Proper cleanup of audio resources and canvas contexts
+- **Cross-Browser Support**: Improved compatibility across different browsers
+
+## 🎵 Features
+
+### Audio Input Sources
+- **File Upload**: Drag & drop or file picker for audio files
+- **Microphone Input**: Real-time live audio visualization
+- **Multiple Formats**: Support for MP3, WAV, FLAC, M4A, and more
+- **Playlist Management**: Queue multiple tracks with drag & drop reordering
+
+### Spectrogram Visualization
+- **Real-time Rendering**: Smooth 60 FPS spectrogram updates
+- **Multiple Themes**: Dark, Light, Neon, and High Contrast themes
+- **Interactive Tooltips**: Hover/touch to see frequency and intensity data
+- **Responsive Canvas**: Automatically adapts to screen size and orientation
+
+### Playback Controls
+- **Waveform Seekbar**: Visual waveform representation for easy navigation
 - **Transport Controls**: Play, pause, stop, previous, next
-- **Waveform Seek Bar**: Visual timeline with click-to-seek functionality
-- **Volume Control**: Slider with mute toggle
+- **Volume Control**: Mute/unmute with visual feedback
 - **Keyboard Shortcuts**: Full keyboard navigation support
 
-### 📱 Responsive Design
-- **Mobile-First**: Optimized for touch devices
-- **Adaptive Layout**: Collapsible sidebars, mobile modals
-- **PWA Features**: Installable, offline-capable, service worker
-- **Cross-Platform**: Works on desktop, tablet, and mobile
+### Advanced Features
+- **Metadata Display**: Album art, track info, and technical details
+- **Settings Panel**: Customizable spectrogram appearance and behavior
+- **Snapshot Capture**: Save spectrogram images (Ctrl+Shift+S)
+- **PWA Support**: Installable as a native app with offline capabilities
 
-### 🔧 Advanced Features
-- **WebAssembly Integration**: High-performance audio processing with Rust/WASM
-- **Snapshot Capture**: Save spectrogram images
-- **Settings Persistence**: User preferences saved locally
-- **Accessibility**: WCAG AA compliant, keyboard navigation
+## 📱 Responsive Design
 
-## Technology Stack
+### Desktop (1024px+)
+- Full sidebar layout with metadata and playlist panels
+- All controls visible with optimal spacing
+- High-resolution spectrogram with maximum detail
 
-- **Frontend**: React 18, TypeScript, Vite
-- **Styling**: Tailwind CSS, Framer Motion
-- **State Management**: Zustand
-- **Audio Processing**: WebAssembly (Rust), Web Audio API
-- **Graphics**: WebGL, Canvas API
-- **Testing**: Vitest, React Testing Library
-- **PWA**: Vite PWA Plugin, Service Worker
+### Tablet (768px - 1024px)
+- Adaptive layout with overlay panels
+- Touch-optimized controls
+- Balanced performance and usability
 
-## Getting Started
+### Mobile (< 768px)
+- Single-column layout optimized for touch
+- Slide-up overlay panels for metadata and playlist
+- Simplified controls with larger touch targets
+- Performance-optimized rendering
 
-### Prerequisites
+## 🎨 Design System
 
-- Node.js 18+ 
-- npm or yarn
-- Rust (for WASM compilation)
+### Color Themes
+- **Dark Theme** (Default): Professional dark interface with vibrant spectrogram colors
+- **Light Theme**: Clean light interface for bright environments
+- **Neon Theme**: Retro-futuristic aesthetic with electric colors
+- **High Contrast**: Accessibility-focused theme with maximum contrast
 
-### Installation
+### Typography
+- **Font**: Inter/Roboto for optimal readability
+- **Hierarchy**: Clear typographic scale (18px, 14px, 12px)
+- **Responsive**: Scaled appropriately for different screen sizes
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd react-spectrogram
-   ```
+### Interactive Elements
+- **Buttons**: Consistent 44px minimum touch targets
+- **Sliders**: Touch-friendly with visual feedback
+- **Panels**: Smooth slide animations with backdrop blur
+- **Focus States**: Clear focus indicators for keyboard navigation
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+## ♿ Accessibility Features
 
-3. **Build WebAssembly module**
-   ```bash
-   npm run wasm:build
-   ```
+### Screen Reader Support
+- Proper ARIA labels and roles throughout the interface
+- Semantic HTML structure
+- Keyboard navigation for all interactive elements
 
-4. **Start development server**
-   ```bash
-   npm run dev
-   ```
+### Visual Accessibility
+- High contrast mode support
+- Reduced motion preferences respected
+- Color-blind friendly theme options
+- Scalable text and controls
 
-5. **Open in browser**
-   ```
-   http://localhost:3000
-   ```
+### Keyboard Shortcuts
+- **Space** or **K**: Play/Pause
+- **J**: 10 seconds back
+- **L**: 10 seconds forward
+- **←/→** or **</>** or **,/.**: Previous/Next track
+- **M**: Toggle metadata panel
+- **P**: Toggle playlist panel
+- **S**: Open settings
+- **Ctrl+Shift+S**: Take snapshot
+- **↑/↓**: Volume up/down
+- **Esc**: Close panels
 
-### Development Commands
+## 🚀 Performance Optimizations
 
-```bash
-# Development
-npm run dev              # Start development server
-npm run wasm:watch       # Watch and rebuild WASM module
+### Rendering Performance
+- **WebGL Acceleration**: Hardware-accelerated spectrogram rendering
+- **Frame Rate Control**: Adaptive frame rates based on device capability
+- **Memory Management**: Efficient cleanup of audio buffers and canvas contexts
+- **Lazy Loading**: On-demand loading of audio data and metadata
 
-# Building
-npm run build           # Build for production
-npm run preview         # Preview production build
+### Mobile Optimizations
+- **Touch Performance**: Optimized touch event handling
+- **Battery Efficiency**: Reduced processing on mobile devices
+- **Memory Usage**: Smaller audio buffers and reduced canvas resolution
+- **Network Efficiency**: Compressed audio loading and caching
 
-# Testing
-npm run test            # Run tests
-npm run test:ui         # Run tests with UI
-npm run test:coverage   # Generate coverage report
+## 🛠️ Technical Stack
 
-# Linting
-npm run lint            # Check for linting errors
-npm run lint:fix        # Fix linting errors
-npm run type-check      # TypeScript type checking
-```
+### Frontend
+- **React 18**: Modern React with hooks and concurrent features
+- **TypeScript**: Type-safe development with comprehensive type definitions
+- **Tailwind CSS**: Utility-first CSS framework for responsive design
+- **Zustand**: Lightweight state management
+- **Vite**: Fast build tool and development server
 
-## Project Structure
-
-```
-src/
-├── components/          # React components
-│   ├── layout/         # Layout components (Header, Footer, Panels)
-│   ├── spectrogram/    # Spectrogram visualization components
-│   └── ui/            # Reusable UI components
-├── hooks/              # Custom React hooks
-├── stores/             # Zustand state stores
-├── types/              # TypeScript type definitions
-├── utils/              # Utility functions
-├── wasm/               # WebAssembly modules (built)
-└── test/               # Test setup and utilities
-```
-
-## Architecture
-
-### State Management
-The app uses Zustand for state management with three main stores:
-
-- **AudioStore**: Manages audio playback, playlist, and microphone state
-- **UIStore**: Handles UI state like panel visibility and screen size
-- **SettingsStore**: Manages spectrogram settings and theme preferences
-
-### Component Architecture
-Components are organized by responsibility:
-
-- **Layout Components**: Header, Footer, Sidebar panels
-- **Spectrogram Components**: Canvas, Legend, Tooltip
-- **Audio Components**: Controls, waveform, metadata
-- **UI Components**: Buttons, modals, forms
-
-### WebAssembly Integration
-The app integrates with the `kofft` DSP library via WebAssembly for:
-
-- Audio metadata extraction
-- FFT computation for spectrogram generation
-- Waveform analysis
-- Real-time audio processing
-
-## Testing
-
-The project includes comprehensive testing:
-
-- **Unit Tests**: Component testing with React Testing Library
-- **Integration Tests**: End-to-end functionality testing
-- **Mock Coverage**: WebGL, AudioContext, and browser APIs
-
-Run tests with:
-```bash
-npm run test
-```
-
-## Deployment
-
-### Build for Production
-```bash
-npm run build
-```
+### Audio Processing
+- **WebAssembly**: High-performance audio processing with Rust
+- **Web Audio API**: Real-time audio analysis and playback
+- **WebGL**: Hardware-accelerated spectrogram rendering
+- **Lofty**: Audio metadata extraction and parsing
 
 ### PWA Features
-The app is configured as a PWA with:
+- **Service Worker**: Offline functionality and caching
+- **Manifest**: Native app installation
+- **Push Notifications**: Real-time updates (future)
+- **Background Sync**: Offline data synchronization (future)
 
-- Service worker for offline functionality
-- Web app manifest for installation
-- Responsive design for all devices
-- Fast loading with code splitting
+## 📦 Installation & Development
 
-### Environment Variables
-Create a `.env` file for environment-specific configuration:
+### Prerequisites
+- Node.js 18+ 
+- Rust (for WASM compilation)
+- wasm-pack
 
-```env
-VITE_APP_TITLE=Spectrogram PWA
-VITE_APP_DESCRIPTION=Real-time audio visualization
+### Setup
+```bash
+# Clone the repository
+git clone <repository-url>
+cd react-spectrogram
+
+# Install dependencies
+npm install
+
+# Build WASM module
+npm run wasm:build
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Run tests
+npm test
 ```
 
-## Contributing
+### Development Scripts
+- `npm run dev`: Start development server
+- `npm run build`: Build for production
+- `npm run preview`: Preview production build
+- `npm run test`: Run test suite
+- `npm run wasm:build`: Build WASM module
+- `npm run wasm:watch`: Watch WASM changes
+
+## 🧪 Testing
+
+### Test Coverage
+- **Unit Tests**: Component and utility function testing
+- **Integration Tests**: End-to-end functionality testing
+- **Accessibility Tests**: Screen reader and keyboard navigation
+- **Performance Tests**: Rendering and memory usage validation
+
+### Test Commands
+```bash
+npm test              # Run all tests
+npm run test:ui       # Run tests with UI
+npm run test:coverage # Generate coverage report
+```
+
+## 🌐 Browser Support
+
+### Supported Browsers
+- **Chrome**: 90+
+- **Firefox**: 88+
+- **Safari**: 14+
+- **Edge**: 90+
+
+### Required Features
+- WebAssembly support
+- Web Audio API
+- WebGL 2.0
+- ES2020 features
+- CSS Grid and Flexbox
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Add tests for new functionality
-5. Run the test suite
+5. Ensure all tests pass
 6. Submit a pull request
 
-## License
+### Development Guidelines
+- Follow TypeScript best practices
+- Maintain accessibility standards
+- Add comprehensive tests
+- Update documentation
+- Follow the existing code style
 
-MIT License - see LICENSE file for details.
+## 🐛 Known Issues & Limitations
 
-## Acknowledgments
+### Current Limitations
+- Large audio files (>100MB) may cause performance issues
+- Some audio formats require additional codecs
+- WebGL performance varies by device capability
+- Mobile browsers have audio context limitations
 
-- **Design Inspiration**: Adobe Audition, Bauhaus design principles
-- **Audio Processing**: `kofft` DSP library
-- **Icons**: Lucide React
-- **UI Framework**: Tailwind CSS
+### Planned Improvements
+- **Advanced Audio Analysis**: More detailed frequency analysis
+- **Export Features**: Data export in various formats
+- **Plugin System**: Extensible spectrogram algorithms
+- **Cloud Integration**: Audio file storage and sharing
+- **Collaboration**: Real-time collaborative features
 
-## Roadmap
+## 📞 Support
 
-- [ ] Advanced audio effects and filters
-- [ ] Multi-track recording and mixing
-- [ ] Export functionality (CSV, JSON data)
-- [ ] Plugin system for custom visualizations
-- [ ] Collaborative features
-- [ ] Mobile app versions (React Native)
-
-## Support
-
-For issues and questions:
-- Create an issue on GitHub
+For questions, issues, or contributions:
+- Open an issue on GitHub
 - Check the documentation
-- Review the test examples
+- Review existing discussions
+
+---
+
+**Built with ❤️ using modern web technologies for the best audio visualization experience.**
