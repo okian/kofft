@@ -166,6 +166,8 @@ class AudioPlayerEngine {
   private stopCurrentPlayback() {
     if (this.source) {
       try {
+        // Prevent old onended handlers from firing after stop
+        this.source.onended = null
         this.source.stop()
       } catch (e) {
         // Source might already be stopped
