@@ -12,6 +12,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useScreenSize } from '@/hooks/useScreenSize'
 import { initWASM } from '@/utils/wasm'
+import { audioPlayer } from '@/utils/audioPlayer'
 import { cn } from '@/utils/cn'
 
 function App() {
@@ -53,6 +54,13 @@ function App() {
     initWASM().catch(error => {
       // Silently handle WASM initialization error
     })
+  }, [])
+
+  // Clean up audio resources on unmount
+  useEffect(() => {
+    return () => {
+      audioPlayer.cleanup()
+    }
   }, [])
 
   // Determine layout based on screen size and panel states
