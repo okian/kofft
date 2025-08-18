@@ -77,4 +77,18 @@ describe('audioPlayer overlap handling', () => {
     expect(startSpy).not.toHaveBeenCalled()
     expect(audioPlayer.isPlaying()).toBe(false)
   })
+
+  it('resumes from paused position', async () => {
+    const track = { file: { arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) } }
+    const startSpy = vi.spyOn(MockAudioBufferSourceNode.prototype, 'start')
+
+    await audioPlayer.playTrack(track)
+    const ctx = audioPlayer.getAudioContext() as any
+    ctx.currentTime = 5
+    audioPlayer.pausePlayback()
+    audioPlayer.resumePlayback()
+
+    expect(startSpy).toHaveBeenCalledTimes(2)
+    expect(startSpy.mock.calls[1][1]).toBeCloseTo(5)
+  })
 })
