@@ -185,7 +185,7 @@ class AudioPlayerEngine {
   }
 
   // Play a track
-  async playTrack(track: any): Promise<void> {
+  async playTrack(track: any, startAt = 0): Promise<void> {
     const requestId = ++this.playRequestId
     try {
       const context = await this.initAudioContext()
@@ -217,9 +217,9 @@ class AudioPlayerEngine {
         this.handleTrackEnded()
       }
 
-      // Start playback
-      this.source.start(0)
-      this.startTime = context.currentTime
+      // Start playback at the requested offset
+      this.source.start(0, startAt)
+      this.startTime = context.currentTime - startAt
 
       // Start time update loop
       this.updateTime()
@@ -279,6 +279,8 @@ class AudioPlayerEngine {
       } catch (error) {
         throw error
       }
+    }
+  }
     }
   }
 
