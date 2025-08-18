@@ -27,6 +27,7 @@ class AudioPlayerEngine {
   private callbacks: Set<AudioPlayerCallback> = new Set()
   private currentTrack: any = null
   private currentTime: number = 0
+  private playRequestId = 0
 
   // Microphone-related properties
   private microphoneSource: MediaStreamAudioSourceNode | null = null
@@ -163,15 +164,25 @@ class AudioPlayerEngine {
 
   // Stop all current playback
   private stopCurrentPlayback() {
+    // Invalidate any pending play requests
+    this.playRequestId++
+
     if (this.source) {
+      // Remove any ended handler to avoid race conditions
+      this.source.onended = null
       try {
         this.source.stop()
       } catch (e) {
         // Source might already be stopped
       }
+      try {
+        this.source.disconnect()
+      } catch (e) {
+        // Ignore if already disconnected
+      }
       this.source = null
     }
-    
+
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId)
       this.animationFrameId = null
@@ -180,13 +191,14 @@ class AudioPlayerEngine {
 
   // Play a track
   async playTrack(track: any): Promise<void> {
+    const requestId = ++this.playRequestId
     try {
       const context = await this.initAudioContext()
-      
+
       // Stop any current playback and microphone
       this.stopCurrentPlayback()
       this.stopMicrophone()
-      
+
       // Reset state
       this.isPaused = false
       this.pausedTime = 0
@@ -194,29 +206,36 @@ class AudioPlayerEngine {
 
       // Load audio buffer
       const arrayBuffer = await track.file.arrayBuffer()
-      this.currentBuffer = await context.decodeAudioData(arrayBuffer)
+      if (requestId !== this.playRequestId) return
+      const decodedBuffer = await context.decodeAudioData(arrayBuffer)
+      if (requestId !== this.playRequestId) return
+      this.currentBuffer = decodedBuffer
 
       // Create new source
-      this.source = context.createBufferSource()
-      this.source.buffer = this.currentBuffer
-      this.source.connect(this.gainNode!)
+      const source = context.createBufferSource()
+      source.buffer = this.currentBuffer
+      source.connect(this.gainNode!)
 
       // Set up ended callback
-      this.source.onended = () => {
-        this.handleTrackEnded()
+      source.onended = () => {
+        if (requestId === this.playRequestId) {
+          this.handleTrackEnded()
+        }
       }
 
       // Start playback
-      this.source.start(0)
+      source.start(0)
+      this.source = source
       this.startTime = context.currentTime
-      
+
       // Start time update loop
       this.updateTime()
 
       this.notifySubscribers()
-
     } catch (error) {
-      throw error
+      if (requestId === this.playRequestId) {
+        throw error
+      }
     }
   }
 
