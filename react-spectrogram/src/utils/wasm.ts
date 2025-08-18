@@ -118,10 +118,23 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
     const audio = new Audio()
     
     await new Promise((resolve, reject) => {
-      audio.addEventListener('loadedmetadata', resolve)
-      audio.addEventListener('error', reject)
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', onLoaded)
+        audio.removeEventListener('error', onError)
+      }
+      const onLoaded = () => {
+        cleanup()
+        resolve(null)
+      }
+      const onError = (e: Event) => {
+        cleanup()
+        reject(e)
+      }
+      audio.addEventListener('loadedmetadata', onLoaded)
+      audio.addEventListener('error', onError)
       audio.src = url
     })
+    audio.src = ''
 
     metadata.duration = audio.duration
     metadata.sample_rate = 44100 // Most common sample rate
@@ -177,10 +190,23 @@ async function extractBasicMetadata(file: File): Promise<AudioMetadata> {
     const url = URL.createObjectURL(file)
     
     await new Promise((resolve, reject) => {
-      audio.addEventListener('loadedmetadata', resolve)
-      audio.addEventListener('error', reject)
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', onLoaded)
+        audio.removeEventListener('error', onError)
+      }
+      const onLoaded = () => {
+        cleanup()
+        resolve(null)
+      }
+      const onError = (e: Event) => {
+        cleanup()
+        reject(e)
+      }
+      audio.addEventListener('loadedmetadata', onLoaded)
+      audio.addEventListener('error', onError)
       audio.src = url
     })
+    audio.src = ''
 
     metadata.duration = audio.duration
     metadata.sample_rate = 44100 // Most common sample rate
