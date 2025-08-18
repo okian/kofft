@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Album Art Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .info { color: #60a5fa; }
+        .warning { color: #fbbf24; }
+        pre {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .album-art {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border: 2px solid #4ade80;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .log {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .test-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .test-result {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #404040;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 Audio Album Art Extraction Test</h1>
+    
+    <div class="test-section">
+        <h2>🧪 Test Audio Files</h2>
+        <p>This test checks if the improved Rust WASM module can extract album art from both MP3 and FLAC files.</p>
+        
+        <div class="test-grid">
+            <div>
+                <h3>🎸 Perfect Circle MP3</h3>
+                <p>According to ffprobe, this file has a PNG image stream with <code>"attached_pic": 1</code> and <code>"comment": "Cover (front)"</code>.</p>
+                <button onclick="testPerfectCircleMP3()">Test Perfect Circle MP3</button>
+                <div id="mp3-results" class="test-result"></div>
+            </div>
+            
+            <div>
+                <h3>🌙 AIR FLAC</h3>
+                <p>According to ffprobe, this file has a Motion JPEG image stream with <code>"attached_pic": 1</code> and <code>"comment": "Cover (front)"</code>.</p>
+                <button onclick="testAIRFLAC()">Test AIR FLAC</button>
+                <div id="flac-results" class="test-result"></div>
+            </div>
+        </div>
+        
+        <button onclick="clearLog()">Clear Log</button>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script type="module">
+        let wasmModule = null;
+        let extractor = null;
+
+        // Override console methods to capture logs
+        const originalLog = console.log;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+
+        function addToLog(message, type = 'log') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#f87171' : type === 'warn' ? '#fbbf24' : '#60a5fa';
+            logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToLog(args.join(' '), 'log');
+        };
+
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addToLog(args.join(' '), 'warn');
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToLog(args.join(' '), 'error');
+        };
+
+        async function initWASM() {
+            try {
+                console.log('🔧 Initializing improved Rust WASM module...');
+                
+                // Import the WASM module
+                const module = await import('./src/wasm/web_spectrogram.js');
+                
+                // Initialize the module properly
+                await module.default();
+                
+                wasmModule = module;
+                extractor = new module.MetadataExtractor();
+                
+                console.log('✅ Improved Rust WASM module initialized successfully');
+                return true;
+            } catch (error) {
+                console.error('❌ Failed to initialize improved Rust WASM module:', error);
+                return false;
+            }
+        }
+
+        async function extractMetadata(file) {
+            if (!extractor) {
+                const success = await initWASM();
+                if (!success) {
+                    throw new Error('Failed to initialize improved Rust WASM module');
+                }
+            }
+
+            try {
+                const fileData = new Uint8Array(await file.arrayBuffer());
+                console.log(`📁 File: ${file.name}, Size: ${fileData.length} bytes`);
+                
+                const metadata = extractor.extract_metadata(fileData, file.name);
+                return metadata;
+            } catch (error) {
+                console.error('❌ Improved Rust metadata extraction failed:', error);
+                throw error;
+            }
+        }
+
+        function displayResults(file, metadata, resultDivId) {
+            const resultsDiv = document.getElementById(resultDivId);
+            
+            let html = `
+                <h4 class="success">✅ Improved Rust WASM Metadata Extracted</h4>
+                <p><strong>File:</strong> ${file.name}</p>
+                <p><strong>Size:</strong> ${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p><strong>Type:</strong> ${file.type}</p>
+                
+                <h5>📋 Metadata:</h5>
+                <pre>${JSON.stringify(metadata, null, 2)}</pre>
+            `;
+
+            if (metadata.album_art && metadata.album_art.length > 0) {
+                html += `
+                    <h5 class="success">🎨 Album Art Found!</h5>
+                    <p><strong>Size:</strong> ${metadata.album_art.length} bytes</p>
+                    <p><strong>MIME Type:</strong> ${metadata.album_art_mime || 'unknown'}</p>
+                `;
+
+                try {
+                    const blob = new Blob([metadata.album_art], { 
+                        type: metadata.album_art_mime || 'image/jpeg' 
+                    });
+                    const url = URL.createObjectURL(blob);
+                    html += `<img src="${url}" alt="Album Art" class="album-art" />`;
+                    console.log('✅ Album art image displayed successfully');
+                } catch (error) {
+                    html += `<p class="error">❌ Failed to display album art: ${error.message}</p>`;
+                    console.error('❌ Failed to display album art:', error);
+                }
+            } else {
+                html += `<p class="warning">⚠️ No album art found in this file</p>`;
+                console.warn('⚠️ No album art found in metadata');
+            }
+
+            resultsDiv.innerHTML = html;
+        }
+
+        async function testPerfectCircleMP3() {
+            try {
+                console.log('🧪 Testing Perfect Circle MP3 file...');
+                
+                const response = await fetch('./test-fixtures/perfect-circle-passive-30s.mp3');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch MP3 file: ${response.statusText}`);
+                }
+                
+                const blob = await response.blob();
+                const file = new File([blob], 'perfect-circle-passive-30s.mp3', { type: 'audio/mp3' });
+                
+                console.log('📁 MP3 file loaded, extracting metadata...');
+                const metadata = await extractMetadata(file);
+                console.log('📋 MP3 metadata extracted:', metadata);
+                
+                displayResults(file, metadata, 'mp3-results');
+            } catch (error) {
+                const resultsDiv = document.getElementById('mp3-results');
+                resultsDiv.innerHTML = `
+                    <h4 class="error">❌ MP3 Test Failed</h4>
+                    <p class="error">Error: ${error.message}</p>
+                `;
+                console.error('❌ MP3 test failed:', error);
+            }
+        }
+
+        async function testAIRFLAC() {
+            try {
+                console.log('🧪 Testing AIR FLAC file...');
+                
+                const response = await fetch('./test-fixtures/perfect-circle-passive.flac');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch FLAC file: ${response.statusText}`);
+                }
+                
+                const blob = await response.blob();
+                const file = new File([blob], 'perfect-circle-passive.flac', { type: 'audio/flac' });
+                
+                console.log('📁 FLAC file loaded, extracting metadata...');
+                const metadata = await extractMetadata(file);
+                console.log('📋 FLAC metadata extracted:', metadata);
+                
+                displayResults(file, metadata, 'flac-results');
+            } catch (error) {
+                const resultsDiv = document.getElementById('flac-results');
+                resultsDiv.innerHTML = `
+                    <h4 class="error">❌ FLAC Test Failed</h4>
+                    <p class="error">Error: ${error.message}</p>
+                `;
+                console.error('❌ FLAC test failed:', error);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Global functions for button clicks
+        window.testPerfectCircleMP3 = testPerfectCircleMP3;
+        window.testAIRFLAC = testAIRFLAC;
+        window.clearLog = clearLog;
+
+        // Initialize WASM on page load
+        window.addEventListener('load', async () => {
+            console.log('🚀 Page loaded, initializing improved Rust WASM...');
+            await initWASM();
+        });
+    </script>
+</body>
+</html>
