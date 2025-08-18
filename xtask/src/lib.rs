@@ -1,6 +1,9 @@
-use std::env;
 use std::process::Command;
 use std::string::String;
+use std::fs;
+use std::env;
+use anyhow::Result;
+use std::path::PathBuf;
 
 /// Options derived from the host machine used to configure cargo commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +22,14 @@ impl BuildConfig {
             Some(self.features.join(" "))
         }
     }
+}
+
+/// Get the workspace root directory
+fn workspace_root() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let mut path = PathBuf::from(manifest_dir);
+    path.pop(); // Go up from xtask to workspace root
+    path
 }
 
 /// Detect build configuration from the current machine.
@@ -189,13 +200,60 @@ pub fn sanity_command(input: &str, output: &str) -> Command {
     cmd
 }
 
-pub fn web_spectrogram_command() -> Command {
-    let mut cmd = Command::new("sh");
-    cmd.args([
-        "-c",
-        "cd web-spectrogram && wasm-pack build --target web && rm -rf static && mkdir -p static/pkg && cp -r pkg/* static/pkg/ && cp index.html app.mjs manifest.json sw.js static/ && cargo run -p web-spectrogram",
-    ]);
-    cmd
+pub fn web_spectrogram_command() -> Result<()> {
+    let web_spectrogram_dir = workspace_root().join("web-spectrogram");
+    
+    // Build WebAssembly module directly with cargo
+    let status = Command::new("cargo")
+        .args(&["build", "--lib", "--release", "--target", "wasm32-unknown-unknown", "--no-default-features"])
+        .current_dir(&web_spectrogram_dir)
+        .status()?;
+    
+    if !status.success() {
+        anyhow::bail!("Failed to build WebAssembly module");
+    }
+    
+    // Copy the built WASM files to pkg directory
+    let pkg_dir = web_spectrogram_dir.join("pkg");
+    if !pkg_dir.exists() {
+        fs::create_dir(&pkg_dir)?;
+    }
+    
+    // Copy the built .wasm file
+    let wasm_source = workspace_root()
+        .join("target")
+        .join("wasm32-unknown-unknown")
+        .join("release")
+        .join("web_spectrogram.wasm");
+    let wasm_dest = pkg_dir.join("web_spectrogram.wasm");
+    fs::copy(wasm_source, wasm_dest)?;
+    
+    // Generate the JavaScript bindings using wasm-bindgen CLI
+    let status = Command::new("wasm-bindgen")
+        .args(&[
+            "--target", "web",
+            "--out-dir", "pkg",
+            "--out-name", "web_spectrogram",
+            "../target/wasm32-unknown-unknown/release/web_spectrogram.wasm"
+        ])
+        .current_dir(&web_spectrogram_dir)
+        .status()?;
+    
+    if !status.success() {
+        anyhow::bail!("Failed to generate JavaScript bindings");
+    }
+    
+    // Build and run the server
+    let status = Command::new("cargo")
+        .args(&["run", "--bin", "web-spectrogram-server", "--features", "server"])
+        .current_dir(&web_spectrogram_dir)
+        .status()?;
+    
+    if !status.success() {
+        anyhow::bail!("Failed to run web-spectrogram server");
+    }
+    
+    Ok(())
 }
 
 #[cfg(test)]

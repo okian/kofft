@@ -11,6 +11,7 @@ interface SettingsStore extends SpectrogramSettings {
   setRefreshRate: (rate: RefreshRate) => void
   setColormap: (colormap: string) => void
   setShowLegend: (show: boolean) => void
+  setEnableToastNotifications: (enable: boolean) => void
   updateSettings: (settings: Partial<SpectrogramSettings>) => void
   resetToDefaults: () => void
   loadFromStorage: () => void
@@ -36,6 +37,7 @@ const defaultSettings: SpectrogramSettings = {
   refreshRate: 60,
   colormap: 'viridis',
   showLegend: true,
+  enableToastNotifications: false, // Disabled by default
   // API Keys
   apiKeys: {},
   apiKeyStatus: {
@@ -62,6 +64,7 @@ export const useSettingsStore = create<SettingsStore>()(
     setRefreshRate: (refreshRate) => set({ refreshRate }),
     setColormap: (colormap) => set({ colormap }),
     setShowLegend: (showLegend) => set({ showLegend }),
+    setEnableToastNotifications: (enableToastNotifications) => set({ enableToastNotifications }),
 
     updateSettings: (settings) => {
       set((state) => ({ ...state, ...settings }))
@@ -80,18 +83,18 @@ export const useSettingsStore = create<SettingsStore>()(
           const mergedSettings = { ...defaultSettings, ...settings }
           set((state) => ({ ...state, ...mergedSettings }))
         }
-      } catch (error) {
-        console.warn('Failed to load settings from storage:', error)
-      }
+          } catch (error) {
+      // Failed to load settings from storage
+    }
     },
 
     saveToStorage: () => {
       try {
         const settings = get()
         localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-      } catch (error) {
-        console.warn('Failed to save settings to storage:', error)
-      }
+          } catch (error) {
+      // Failed to save settings to storage
+    }
     },
 
     // API Key actions
@@ -141,7 +144,6 @@ export const useSettingsStore = create<SettingsStore>()(
 
         return isValid
       } catch (error) {
-        console.warn(`Failed to validate ${service} API key:`, error)
         set((state) => ({
           apiKeyStatus: {
             ...state.apiKeyStatus,

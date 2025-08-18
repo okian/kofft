@@ -1,387 +1,290 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
-import { AudioTrack, AudioMetadata, ArtworkSource } from '@/types'
-import { extractMetadata } from '@/utils/wasm'
+import { audioPlayer, type AudioPlayerState } from '@/utils/audioPlayer'
+import { AudioTrack, AudioMetadata } from '@/types'
+import { extractMetadata, generateAmplitudeEnvelope } from '@/utils/wasm'
 import { extractArtwork } from '@/utils/artwork'
-import toast from 'react-hot-toast'
+import { conditionalToast } from '@/utils/toast'
 
 export const useAudioFile = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const gainNodeRef = useRef<GainNode | null>(null)
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null)
-  
-  const { addToPlaylist, setCurrentTrack, setPlaying, setPaused, setStopped, setCurrentTime, setDuration, setVolume, setMuted } = useAudioStore()
+  const unsubscribeRef = useRef<(() => void) | null>(null)
 
-  // Initialize audio context
-  const initAudioContext = useCallback(async () => {
-    if (audioContextRef.current) return audioContextRef.current
+  const {
+    setPlaying,
+    setPaused,
+    setStopped,
+    setCurrentTime,
+    setDuration,
+    setVolume,
+    setMuted,
+    setCurrentTrack,
+    addToPlaylist
+  } = useAudioStore()
 
+  // Subscribe to audio player state changes
+  useEffect(() => {
+    const unsubscribe = audioPlayer.subscribe((state: AudioPlayerState) => {
+      setPlaying(state.isPlaying)
+      setPaused(state.isPaused)
+      setStopped(state.isStopped)
+      setCurrentTime(state.currentTime)
+      setDuration(state.duration)
+      setVolume(state.volume)
+      setMuted(state.isMuted)
+    })
+
+    unsubscribeRef.current = unsubscribe
+
+    return () => {
+      unsubscribe()
+    }
+  }, [setPlaying, setPaused, setStopped, setCurrentTime, setDuration, setVolume, setMuted])
+
+  // Parse metadata using WASM utility
+  const parseMetadata = useCallback(async (file: File): Promise<AudioMetadata> => {
     try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-      const context = new AudioContextClass()
-      
-      const analyser = context.createAnalyser()
-      const gainNode = context.createGain()
-      
-      analyser.fftSize = 2048
-      analyser.smoothingTimeConstant = 0.8
-      
-      gainNode.connect(analyser)
-      analyser.connect(context.destination)
-      
-      audioContextRef.current = context
-      analyserRef.current = analyser
-      gainNodeRef.current = gainNode
-      
-      return context
+      return await extractMetadata(file)
     } catch (error) {
-      console.error('Failed to initialize audio context:', error)
-      throw new Error('Audio context initialization failed')
+      return {
+        title: file.name.replace(/\.[^/.]+$/, ''),
+        artist: 'Unknown Artist',
+        album: 'Unknown Album',
+        format: file.type || 'unknown'
+      }
     }
   }, [])
 
-  // Parse audio metadata using WASM if available, fallback to basic extraction
-  const parseMetadata = useCallback(async (file: File): Promise<AudioMetadata> => {
-    return await extractMetadata(file)
+  // Generate amplitude envelope using WASM utility
+  const generateAmplitudeEnvelopeData = useCallback(async (file: File): Promise<Float32Array> => {
+    try {
+      // Get audio metadata first to get sample rate
+      const metadata = await parseMetadata(file)
+      const sampleRate = metadata.sample_rate || 44100
+      
+      // Use the shared audio context to decode audio data
+      const context = await audioPlayer.initAudioContext()
+      const arrayBuffer = await file.arrayBuffer()
+      const audioBuffer = await context.decodeAudioData(arrayBuffer)
+      
+      // Get first channel data
+      const channelData = audioBuffer.getChannelData(0)
+      const audioData = new Float32Array(channelData.length)
+      audioData.set(channelData)
+      
+      // Generate envelope
+      const envelope = await generateAmplitudeEnvelope(audioData, sampleRate, 1000, 20, 3)
+      
+      return envelope
+    } catch (error) {
+      // Return empty array as fallback
+      return new Float32Array(0)
+    }
+  }, [parseMetadata])
+
+  // Validate audio file
+  const validateAudioFile = useCallback((file: File): boolean => {
+    const validTypes = [
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/wave',
+      'audio/x-wav',
+      'audio/flac',
+      'audio/x-flac',
+      'audio/ogg',
+      'audio/oga',
+      'audio/m4a',
+      'audio/x-m4a',
+      'audio/aac',
+      'audio/webm',
+      'audio/x-webm'
+    ]
+
+    return validTypes.includes(file.type) || !!file.name.match(/\.(mp3|wav|flac|ogg|m4a|aac|webm)$/i)
   }, [])
 
-  // Load and process audio file with artwork extraction
-  const loadAudioFile = useCallback(async (file: File) => {
+  // Load single audio file
+  const loadAudioFile = useCallback(async (file: File): Promise<AudioTrack> => {
     setIsLoading(true)
     setError(null)
 
-    console.log('🚀 Starting audio file load process for:', file.name)
-
     try {
-      // Validate file type
-      if (!file.type.startsWith('audio/')) {
-        throw new Error('Invalid file type. Please select an audio file.')
+      if (!validateAudioFile(file)) {
+        throw new Error('Invalid audio file format')
       }
-
-      console.log('📋 File validation passed, starting metadata extraction...')
 
       // Parse metadata
       const metadata = await parseMetadata(file)
       
-      console.log('✅ Metadata extraction completed')
-      console.log('📊 Final metadata summary:', {
-        title: metadata.title,
-        artist: metadata.artist,
-        album: metadata.album,
-        duration: metadata.duration,
-        format: metadata.format,
-        hasAlbumArt: metadata.album_art ? metadata.album_art.length > 0 : false,
-        albumArtSize: metadata.album_art?.length || 0
-      })
+      // Generate amplitude envelope
+      const audioData = await generateAmplitudeEnvelopeData(file)
 
-      // Extract artwork using the multi-step system
-      let artwork: ArtworkSource | undefined = undefined
-      try {
-        console.log('🎨 Starting artwork extraction...')
-        const audioData = await file.arrayBuffer()
-        const artworkResult = await extractArtwork(metadata, file.name, audioData)
-        if (artworkResult.success && artworkResult.artwork) {
-          artwork = artworkResult.artwork
-          console.log(`🎨 Artwork extraction completed: ${artwork.type} (${artwork.data?.length || 0} bytes)`)
-        } else {
-          console.log('❌ Artwork extraction failed:', artworkResult.error)
-        }
-      } catch (artworkError) {
-        console.warn('❌ Failed to extract artwork:', artworkError)
-        // Continue without artwork
-      }
+      // Extract artwork
+      const arrayBuffer = await file.arrayBuffer()
+      const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
 
-      // Create audio track
       const track: AudioTrack = {
         id: crypto.randomUUID(),
         file,
-        metadata,
+        metadata: {
+          title: metadata.title || file.name.replace(/\.[^/.]+$/, ''),
+          artist: metadata.artist || 'Unknown Artist',
+          album: metadata.album || 'Unknown Album',
+          year: metadata.year ? parseInt(metadata.year.toString()) : undefined,
+          genre: metadata.genre || '',
+          duration: metadata.duration || 0,
+          bitrate: metadata.bitrate || 0,
+          sample_rate: metadata.sample_rate || 0,
+          channels: metadata.channels || 0,
+          album_art: metadata.album_art,
+          album_art_mime: metadata.album_art_mime
+        },
         duration: metadata.duration || 0,
         url: URL.createObjectURL(file),
-        artwork
+        audioData: audioData,
+        artwork: artworkResult.artwork
       }
+      
 
-      console.log('🎵 Created audio track:', {
-        id: track.id,
-        title: track.metadata.title,
-        artist: track.metadata.artist,
-        hasArtwork: !!track.artwork,
-        artworkType: track.artwork?.type
-      })
 
       // Add to playlist
       addToPlaylist(track)
-
+      
       // Set as current track if it's the first one
       const { playlist } = useAudioStore.getState()
       if (playlist.length === 1) {
         setCurrentTrack(track)
       }
 
-      toast.success(`Loaded: ${metadata.title || file.name}`)
-      console.log('✅ Audio file load process completed successfully')
+      conditionalToast.success(`Loaded: ${track.metadata.title}`)
       return track
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load audio file'
       setError(errorMessage)
-      toast.error(errorMessage)
-      console.error('❌ Audio file load process failed:', error)
+      conditionalToast.error(errorMessage)
       throw error
     } finally {
       setIsLoading(false)
     }
-  }, [addToPlaylist, setCurrentTrack, parseMetadata])
+  }, [validateAudioFile, parseMetadata, generateAmplitudeEnvelope, addToPlaylist, setCurrentTrack])
 
   // Load multiple audio files
-  const loadAudioFiles = useCallback(async (files: FileList | File[]) => {
+  const loadAudioFiles = useCallback(async (files: FileList | File[]): Promise<AudioTrack[]> => {
     setIsLoading(true)
     setError(null)
 
     try {
       const fileArray = Array.from(files)
-      const validFiles = fileArray.filter(file => file.type.startsWith('audio/'))
+      const validFiles = fileArray.filter(validateAudioFile)
+      const invalidFiles = fileArray.filter(file => !validateAudioFile(file))
 
       if (validFiles.length === 0) {
         throw new Error('No valid audio files found')
       }
 
       const tracks: AudioTrack[] = []
+      const invalidFileNames: string[] = []
 
       for (const file of validFiles) {
         try {
-          const metadata = await parseMetadata(file)
-          
-          // Extract artwork for each file
-          let artwork: ArtworkSource | undefined = undefined
-          try {
-            const audioData = await file.arrayBuffer()
-            const artworkResult = await extractArtwork(metadata, file.name, audioData)
-            if (artworkResult.success && artworkResult.artwork) {
-              artwork = artworkResult.artwork
-            }
-          } catch (artworkError) {
-            console.warn(`Failed to extract artwork for ${file.name}:`, artworkError)
-          }
-
-          const track: AudioTrack = {
-            id: crypto.randomUUID(),
-            file,
-            metadata,
-            duration: metadata.duration || 0,
-            url: URL.createObjectURL(file),
-            artwork
-          }
+          const track = await loadAudioFile(file)
           tracks.push(track)
         } catch (error) {
-          console.warn(`Failed to load ${file.name}:`, error)
+          invalidFileNames.push(file.name)
         }
       }
 
-      // Add all tracks to playlist
-      tracks.forEach(track => addToPlaylist(track))
-
       // Set first track as current if no current track
-      const { currentTrack } = useAudioStore.getState()
-      if (!currentTrack && tracks.length > 0) {
-        setCurrentTrack(tracks[0])
+      if (tracks.length > 0) {
+        const { currentTrack } = useAudioStore.getState()
+        if (!currentTrack) {
+          setCurrentTrack(tracks[0])
+        }
       }
 
-      toast.success(`Loaded ${tracks.length} audio file${tracks.length > 1 ? 's' : ''}`)
+      const successMessage = `Loaded ${tracks.length} audio file${tracks.length > 1 ? 's' : ''}`
+      if (invalidFiles.length > 0) {
+        conditionalToast.success(`${successMessage} (${invalidFiles.length} skipped)`)
+      } else {
+        conditionalToast.success(successMessage)
+      }
+      
       return tracks
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load audio files'
       setError(errorMessage)
-      toast.error(errorMessage)
+      conditionalToast.error(errorMessage)
       throw error
     } finally {
       setIsLoading(false)
     }
-  }, [addToPlaylist, setCurrentTrack, parseMetadata])
+  }, [validateAudioFile, loadAudioFile, setCurrentTrack])
 
   // Play audio track
   const playTrack = useCallback(async (track: AudioTrack) => {
     try {
-      const context = await initAudioContext()
-      
-      // Resume context if suspended
-      if (context.state === 'suspended') {
-        await context.resume()
-      }
-
-      // Stop current playback
-      if (sourceRef.current) {
-        sourceRef.current.stop()
-        sourceRef.current = null
-      }
-
-      // Load audio buffer
-      const arrayBuffer = await track.file.arrayBuffer()
-      const audioBuffer = await context.decodeAudioData(arrayBuffer)
-
-      // Create source
-      const source = context.createBufferSource()
-      source.buffer = audioBuffer
-      source.connect(gainNodeRef.current!)
-
-      // Set up time tracking
-      let startTime = context.currentTime
-      let pausedTime = 0
-      let isPaused = false
-
-      source.onended = () => {
-        setPlaying(false)
-        setStopped(true)
-        setCurrentTime(0)
-      }
-
-      // Start playback
-      source.start(0)
-      sourceRef.current = source
-      startTime = context.currentTime
-      setPlaying(true)
-      setPaused(false)
-      setStopped(false)
-      setDuration(audioBuffer.duration)
-
-      // Time update loop
-      const updateTime = () => {
-        if (!isPaused && sourceRef.current) {
-          const currentTime = context.currentTime - startTime + pausedTime
-          setCurrentTime(currentTime)
-          
-          if (currentTime < audioBuffer.duration) {
-            requestAnimationFrame(updateTime)
-          }
-        }
-      }
-      updateTime()
-
-      // Store pause/resume functions
-      const pause = () => {
-        if (sourceRef.current && !isPaused) {
-          sourceRef.current.stop()
-          pausedTime = context.currentTime - startTime
-          isPaused = true
-          setPaused(true)
-          setPlaying(false)
-        }
-      }
-
-      const resume = () => {
-        if (isPaused) {
-          playTrack(track) // Restart with current paused time
-        }
-      }
-
-      // Store in track for external control
-      ;(track as any).pause = pause
-      ;(track as any).resume = resume
-
+      await audioPlayer.playTrack(track)
     } catch (error) {
-      console.error('Failed to play track:', error)
-      toast.error('Failed to play audio track')
+      conditionalToast.error('Failed to play audio track')
       throw error
     }
-  }, [initAudioContext, setPlaying, setPaused, setStopped, setCurrentTime, setDuration])
+  }, [])
 
   // Stop playback
   const stopPlayback = useCallback(() => {
-    if (sourceRef.current) {
-      sourceRef.current.stop()
-      sourceRef.current = null
-    }
-    setPlaying(false)
-    setPaused(false)
-    setStopped(true)
-    setCurrentTime(0)
-  }, [setPlaying, setPaused, setStopped, setCurrentTime])
+    audioPlayer.stopPlayback()
+  }, [])
 
   // Pause playback
   const pausePlayback = useCallback(() => {
-    if (sourceRef.current) {
-      sourceRef.current.stop()
-      sourceRef.current = null
-    }
-    setPlaying(false)
-    setPaused(true)
-  }, [setPlaying, setPaused])
+    audioPlayer.pausePlayback()
+  }, [])
 
   // Resume playback
   const resumePlayback = useCallback(() => {
-    const { currentTrack } = useAudioStore.getState()
-    if (currentTrack) {
-      playTrack(currentTrack)
-    }
-  }, [playTrack])
+    audioPlayer.resumePlayback()
+  }, [])
 
-  // Seek to time
+  // Seek to position
   const seekTo = useCallback((time: number) => {
-    const { currentTrack } = useAudioStore.getState()
-    if (currentTrack && time >= 0) {
-      setCurrentTime(time)
-      // Note: Actual seeking would require recreating the audio source
-      // This is a simplified implementation
-    }
-  }, [setCurrentTime])
+    audioPlayer.seekTo(time)
+  }, [])
 
   // Set volume
   const setAudioVolume = useCallback((volume: number) => {
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = volume
-    }
-    setVolume(volume)
-  }, [setVolume])
+    audioPlayer.setVolume(volume)
+  }, [])
 
   // Toggle mute
   const toggleMute = useCallback(() => {
-    const { isMuted } = useAudioStore.getState()
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = isMuted ? useAudioStore.getState().volume : 0
-    }
-    setMuted(!isMuted)
-  }, [setMuted])
+    audioPlayer.toggleMute()
+  }, [])
 
   // Get frequency data for spectrogram
   const getFrequencyData = useCallback(() => {
-    if (!analyserRef.current) return null
-    
-    const bufferLength = analyserRef.current.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyserRef.current.getByteFrequencyData(dataArray)
-    
-    return dataArray
+    return audioPlayer.getFrequencyData()
   }, [])
 
   // Get time domain data
   const getTimeData = useCallback(() => {
-    if (!analyserRef.current) return null
-    
-    const bufferLength = analyserRef.current.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyserRef.current.getByteTimeDomainData(dataArray)
-    
-    return dataArray
+    return audioPlayer.getTimeData()
+  }, [])
+
+  // Initialize audio context
+  const initAudioContext = useCallback(async () => {
+    return await audioPlayer.initAudioContext()
   }, [])
 
   // Cleanup
   const cleanup = useCallback(() => {
-    if (sourceRef.current) {
-      sourceRef.current.stop()
-      sourceRef.current = null
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current()
     }
-    
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-    
-    analyserRef.current = null
-    gainNodeRef.current = null
+    audioPlayer.cleanup()
   }, [])
 
   return {

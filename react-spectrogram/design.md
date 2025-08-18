@@ -176,8 +176,11 @@ Additionally, maybe a “Clear Playlist” button to remove all tracks (maybe in
 By designing the playlist panel with these details, we ensure it’s not just functional but also visually integrated. It turns the app into a mini music player with a clear queue, which users will find familiar. Despite the additional complexity, we keep it organized and clean – no garish colors or heavy elements, just a structured list with slight highlights. The playlist, like the rest of the app, follows the modern style guide: consistent typography, spacing, and interactive feedback (e.g., list item highlight on hover selection in desktop, maybe slight elevation effect if clicked).
 Keyboard Shortcuts
 For power users and convenience, several keyboard shortcuts are defined. These allow quick control of playback and toggling of UI panels. They are chosen to be mnemonic and not conflict with standard browser keys:
-Spacebar – Play/Pause: Toggles playback of the current track or input. (If in a text input field, space would normally input a space, but we can ensure no text fields are focused to capture this. Most players use Space as play/pause when focused.)
-Arrow Left / Right – Previous/Next Track: Hitting the Left Arrow will jump to the previous track in the playlist (or restart current track if within the first few seconds, similar to common music app behavior). Right Arrow goes to the next track. These provide quick track navigation without clicking the buttons.
+**Space** or **K** – Play/Pause: Toggles playback of the current track or input. Both Space and K work for play/pause to provide flexibility.
+**J** – 10 seconds back: Seeks backward by 10 seconds in the current track.
+**L** – 10 seconds forward: Seeks forward by 10 seconds in the current track.
+**Arrow Left** or **<** or **,** – Previous Track: Jumps to the previous track in the playlist.
+**Arrow Right** or **>** or **.** – Next Track: Jumps to the next track in the playlist.
 M – Toggle Metadata Panel: Press “M” to show or hide the Metadata sidebar. This is a quick way to peek at track info. When toggled, the panel slides in or out accordingly. If the app is in a state (mobile) where metadata opens as a modal, this shortcut would trigger that modal.
 P – Toggle Playlist Panel: Press “P” to open/close the Playlist sidebar. Similarly, on mobile it could bring up the playlist screen. This is handy for quickly checking or changing the next track.
 S – Open Spectrogram Settings: Press “S” to open the spectrogram settings module (the panel with theme/scale options). This is a convenient shortcut to avoid clicking the gear icon. Likely it opens as a modal and focuses it.
@@ -282,3 +285,113 @@ e.g., On mobile, swiping left/right on spectrogram could optionally seek in trac
 Haptic feedback on mobile (if accessible via web API) when pressing play or toggling could add a tactile feel (this is a detail beyond pure UI design, but consider if technology allows).
 Performance Considerations in Design: While not directly visual, mention that the design has considered performance – ensuring that heavy visualizations are efficient (WebGL or Canvas acceleration) and that large images (album art) are lazy-loaded or scaled down appropriately. This affects user experience (a smooth UI is part of good design). So design-wise we might choose to limit how much history the spectrogram shows to avoid memory bloat (maybe only last N seconds visible, older data purged, because infinitely scrolling could exhaust memory if left forever). This invisible detail ensures the app remains fluid and responsive which is crucial for a good user experience.
 Finally, all these elements come together to create a cohesive application. The design is simple but complete – it has all needed components, each styled in a coherent way. By not leaving any detail to chance, we ensure the final product looks polished: from the exact shade of gray in the background, to the padding around icons, to the way a panel slides out – everything follows the same design language. The end result will be a modern spectrogram viewer PWA that is not only powerful and feature-rich but also delights users with its clarity and aesthetic uniformity, echoing both the practicality of professional audio tools and the timeless principles of good design.
+
+
+
+## Play icon for current playing song in Playlist section
+
+What it looks like
+Album art tile with a centered circular control:
+Outer ring = progress track.
+Progress arc = played (or download/sync) progress.
+Optional buffer arc = buffered-but-unplayed.
+Inner disc = the clickable Play/Pause (or Cloud/Arrow for sync) glyph.
+Micro tiles (“other album art”) show a mini ring in a corner (usually bottom-right) so the main art stays unobstructed.
+States: idle, hover, focus, playing, paused, scrubbing, buffering, syncing/downloading, error, disabled.
+Theming: CSS variables; ring has sufficient contrast on both dark/light.
+Behaviors & states
+Playback mode
+progress (0..1) drives the progress arc.
+buffered (0..1) drives a thin secondary arc behind it.
+Center glyph toggles Play ↔ Pause (morph animation optional).
+Scrub on ring (optional): drag along ring to seek by angle.
+Sync/Download mode
+Center glyph shows cloud/arrow.
+syncProgress (0..1) fills the same progress arc.
+When complete, briefly show a checkmark, then revert to Play.
+Hover/Focus
+Slight scale-up (1.02–1.05), raise ring opacity, show subtle inner shadow to ensure glyph contrast.
+Keyboard: Space/Enter toggles; ←/→ seek ±5s (hold Shift for ±10s).
+Accessibility
+role="button" for pure toggle; role="slider" if you implement ring-scrub.
+aria-pressed for play state, or aria-valuenow/max for slider.
+aria-label="Play <title>", "Pause <title>", "Downloading <title> 42%" etc.
+Visual spec (measurements you can tweak)
+Sizes: 64–96 px for regular tiles; 128–160 px for featured; mini ring 18–24 px.
+Ring thickness: 6–8 px (regular), 2–3 px (mini).
+Gaps: 2 px gap between track and inner disc.
+Start angle: −90° (top) so progress fills clockwise from 12 o’clock.
+Colors (CSS vars):
+--ring-track: neutral (e.g., #e5e7eb/#374151)
+--ring-buffered: mid neutral (e.g., #cbd5e1/#6b7280)
+--ring-progress: brand accent
+--disc-bg: semi-opaque scrim to ensure icon contrast
+--icon: white/near-white
+--focus: outline color (meets AA)
+
+
+
+
+## Seekbar in control section 
+crisp spec + an implementation plan for the seek bar. Use kofft and implement in wasm
+What it is (visual spec)
+Form: A horizontal timeline made of vertical rounded bars (“pills”) placed with small gaps. Bars vary in height to suggest loudness; the left (played) side is dark, the right (unplayed) side is light.
+Playhead: Implicit—the boundary where color switches from dark→light. (You can optionally render a thin caret line at the current bar.)
+Time labels: Elapsed time on the left (e.g., 01:32) and total duration on the right (03:20).
+Polarity: Bars are bipolar (extend above and below a center line), but you should support unipolar (from baseline up) as a prop.
+Rhythm: Bars are evenly spaced; height is mapped from an amplitude envelope (not a true waveform).
+States:
+Default (idle), Hover (cursor changes to pointer + subtle scale/opacity on nearby bars),
+Active Scrub (while dragging), Disabled (reduced opacity),
+Buffering (optional third tint to indicate buffered-yet-unplayed).
+Theming: Provide CSS variables for dark/light; ensure AA contrast on both themes.
+RTL-aware: Layout can mirror for RTL UIs, but seeking direction should remain left=earlier, right=later to match media norms.
+Data pipeline (how to get those bar heights)
+Goal: produce a compact Float32Array bars[0..N-1] with values in [0..1].
+Source: Use Web Audio (or your WASM DSP) to compute an amplitude envelope:
+Split audio into windows (e.g., 20–40 ms).
+For each window, compute RMS or peak per channel, then mix to mono (average or max).
+Optional log/dBFS scaling: db = 20*log10(rms + ε), normalize with floor (e.g., −60 dB).
+Light smoothing (e.g., 1D moving average, 3–5 samples) to tame spikiness.
+Density / downsampling: Pick a visual density, e.g., ~200–400 bars for typical widths. Downsample your raw envelope by mean/peak in buckets to hit the target count.
+Streaming / very long files: Compute envelope progressively in a Worker (or your WASM task), push partial arrays to the UI.
+Rendering strategy (performance-first)
+Canvas over DOM when N ≥ ~300 bars for smooth scrubbing and low layout cost.
+Use a single <canvas> and draw rounded rects via ctx.roundRect or path + arc.
+Handle HiDPI: scale by devicePixelRatio.
+Repaint only on currentTime changes, hover, resize, or when new bars arrive.
+DOM/CSS option (Flex/Grid with border-radius) is fine for N ≤ ~200; Canvas is still simpler + faster overall.
+Mirrored (bipolar) bars: Centerline at midY; height = h = minH + value * (maxH - minH); draw from midY - h/2 to midY + h/2.
+Colors:
+Played: --seek-played
+Unplayed: --seek-unplayed
+Buffered (optional): --seek-buffered
+Focus ring: --seek-focus
+Hit testing & mapping: time = (x / width) * duration (clamp 0..duration). Bar index i = floor(x / (barWidth+gap)).
+Interaction & accessibility
+Pointer:
+Click-to-seek, drag-to-scrub (pointerdown → capture → pointermove → pointerup).
+Update hover state for nearby bars (≤ 1–2 gaps).
+Keyboard (WAI-ARIA slider):
+role="slider", aria-valuemin="0", aria-valuemax=duration, aria-valuenow=currentTime, aria-valuetext="01:32 of 03:20".
+Keys: ←/→ = ±1s, Shift+←/→ = ±5s, Home=0, End=duration, number keys 0–9 jump to %.
+Visible focus outline and 2D hit target ≥ 32 px tall for touch.
+Announcements: Live region to announce new time on scrub (throttled).
+RTL: Keep semantic seeking direction; only mirror labels as needed.
+Edge cases
+Very short audio (< 5 s): ensure minimum bar count (e.g., 40) by interpolation.
+Very long audio: cap bars (e.g., 600) with bucketed reduction.
+No envelope yet: render a placeholder (low-contrast symmetric hump).
+Resize: debounce and rebin envelope to new bar count.
+High zoom / DPR: crisp lines via pixel snapping (0.5 offset) after scaling.
+
+Testing checklist (what to verify)
+Geometry: bar count correctly fits width: floor(width / (barWidth+gap)).
+Scrub accuracy: click at x → time ≈ (x/width)*duration (±1 bar).
+Keyboard: all keys work, including % jumps via 0–9; focus ring visible.
+HiDPI: crisp bars (no fuzzy edges) at various DPRs.
+Resize: bars reflow and rebin without jank; playhead time preserved.
+States: disabled, buffering tint, hover emphasis, and active scrub cursor.
+Polarity toggle: bipolar ↔ unipolar renders correctly.
+Perf: drag at 60 fps on mid-range laptop/phone with N≈400 bars.
+RTL: labels align properly; seeking still left→right in time.

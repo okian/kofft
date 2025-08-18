@@ -2,33 +2,25 @@
 name = "web-spectrogram"
 version = "0.1.0"
 edition = "2021"
+authors = ["Kian Ostad <c@kianostad.com>"]
+description = "WebAssembly-powered spectrogram PWA using kofft DSP library"
+license = "MIT OR Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-
 [dependencies]
 wasm-bindgen = "0.2"
-web-sys = "0.3"
-kofft = { path = "..", features = ["wasm", "simd"], default-features = true }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = ["console"] }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-axum = "0.7"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tower-http = { version = "0.5", features = ["fs", "cors"] }
+# Unified tagging/props across formats
+lofty = "0.22"
+
+# DSP library for waveform generation
+kofft = "0.1"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tempfile = "3"
-http = "1"
-tower = { version = "0.5", features = ["util"] }
-hyper = { version = "1", features = ["client", "http1", "http2"] }
-http-body-util = "0.1"
-
-[package.metadata.wasm-pack.profile.dev]
-wasm-opt = false
-
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false

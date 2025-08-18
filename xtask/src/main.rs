@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::process::Command;
 #[cfg(not(test))]
 use xtask::*;
 
@@ -52,7 +53,20 @@ fn main() -> std::io::Result<()> {
         Commands::Benchmark => benchmark_command(&cfg).status(),
         Commands::BenchLibs => bench_libs_command(&cfg).status(),
         Commands::UpdateBenchReadme => update_bench_readme_command(&cfg).status(),
-        Commands::WebSpectrogram => web_spectrogram_command().status(),
+        Commands::WebSpectrogram => {
+            match web_spectrogram_command() {
+                Ok(_) => {
+                    let mut cmd = Command::new("echo");
+                    cmd.arg("web-spectrogram completed successfully");
+                    cmd.status()
+                },
+                Err(e) => {
+                    eprintln!("web-spectrogram failed: {}", e);
+                    let mut cmd = Command::new("false");
+                    cmd.status()
+                }
+            }
+        },
         Commands::Sanity { input, output } => sanity_command(&input, &output).status(),
     }?;
 
