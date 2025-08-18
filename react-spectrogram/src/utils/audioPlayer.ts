@@ -27,6 +27,7 @@ class AudioPlayerEngine {
   private callbacks: Set<AudioPlayerCallback> = new Set()
   private currentTrack: any = null
   private currentTime: number = 0
+  private playRequestId = 0
 
   // Microphone-related properties
   private microphoneSource: MediaStreamAudioSourceNode | null = null
@@ -169,6 +170,11 @@ class AudioPlayerEngine {
       } catch (e) {
         // Source might already be stopped
       }
+      try {
+        this.source.disconnect()
+      } catch (e) {
+        // Source might already be disconnected
+      }
       this.source = null
     }
     
@@ -180,13 +186,14 @@ class AudioPlayerEngine {
 
   // Play a track
   async playTrack(track: any): Promise<void> {
+    const requestId = ++this.playRequestId
     try {
       const context = await this.initAudioContext()
-      
+
       // Stop any current playback and microphone
       this.stopCurrentPlayback()
       this.stopMicrophone()
-      
+
       // Reset state
       this.isPaused = false
       this.pausedTime = 0
@@ -194,7 +201,11 @@ class AudioPlayerEngine {
 
       // Load audio buffer
       const arrayBuffer = await track.file.arrayBuffer()
-      this.currentBuffer = await context.decodeAudioData(arrayBuffer)
+      const decodedBuffer = await context.decodeAudioData(arrayBuffer)
+      if (requestId !== this.playRequestId) {
+        return
+      }
+      this.currentBuffer = decodedBuffer
 
       // Create new source
       this.source = context.createBufferSource()
@@ -209,7 +220,7 @@ class AudioPlayerEngine {
       // Start playback
       this.source.start(0)
       this.startTime = context.currentTime
-      
+
       // Start time update loop
       this.updateTime()
 
@@ -273,13 +284,14 @@ class AudioPlayerEngine {
 
   // Stop playback
   stopPlayback(): void {
+    this.playRequestId++
     this.stopCurrentPlayback()
     this.stopMicrophone()
     this.isPaused = false
     this.pausedTime = 0
     this.currentTime = 0
     this.currentTrack = null
-    
+
     this.notifySubscribers()
   }
 
