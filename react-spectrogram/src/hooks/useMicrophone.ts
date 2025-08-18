@@ -1,46 +1,25 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
-import toast from 'react-hot-toast'
+import { audioPlayer } from '@/utils/audioPlayer'
+import { conditionalToast } from '@/utils/toast'
 
 export const useMicrophone = () => {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRequestingPermission, setIsRequestingPermission] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  const audioContextRef = useRef<AudioContext | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const gainNodeRef = useRef<GainNode | null>(null)
   const animationFrameRef = useRef<number | null>(null)
   
   const { setMicrophoneActive, setLive, setCurrentTrack } = useAudioStore()
 
-  // Initialize audio context
+  // Initialize audio context using the shared one
   const initAudioContext = useCallback(async () => {
-    if (audioContextRef.current) return audioContextRef.current
-
     try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-      const context = new AudioContextClass()
-      
-      const analyser = context.createAnalyser()
-      const gainNode = context.createGain()
-      
-      analyser.fftSize = 2048
-      analyser.smoothingTimeConstant = 0.8
-      
-      gainNode.connect(analyser)
-      analyser.connect(context.destination)
-      
-      audioContextRef.current = context
-      analyserRef.current = analyser
-      gainNodeRef.current = gainNode
-      
+      const context = await audioPlayer.initAudioContext()
       setIsInitialized(true)
       return context
     } catch (error) {
-      console.error('Failed to initialize audio context:', error)
       throw new Error('Audio context initialization failed')
     }
   }, [])
@@ -76,9 +55,9 @@ export const useMicrophone = () => {
       setError(errorMessage)
       
       if (error instanceof Error && error.name === 'NotAllowedError') {
-        toast.error('Microphone permission denied. Please allow microphone access.')
+        conditionalToast.error('Microphone permission denied. Please allow microphone access.')
       } else {
-        toast.error(errorMessage)
+        conditionalToast.error(errorMessage)
       }
       
       throw error
@@ -89,32 +68,27 @@ export const useMicrophone = () => {
   const startMicrophone = useCallback(async () => {
     try {
       // Initialize audio context if needed
-      const context = await initAudioContext()
+      await initAudioContext()
       
-      // Resume context if suspended
-      if (context.state === 'suspended') {
-        await context.resume()
-      }
-
       // Request permission and get stream
       const stream = await requestPermission()
 
-      // Create audio source from stream
-      const source = context.createMediaStreamSource(stream)
-      source.connect(gainNodeRef.current!)
+      // Use the shared audio player to start microphone
+      const success = await audioPlayer.startMicrophone(stream)
       
-      sourceRef.current = source
+      if (success) {
+        // Set up live mode
+        setMicrophoneActive(true)
+        setLive(true)
+        setCurrentTrack(null) // Clear any file track
 
-      // Set up live mode
-      setMicrophoneActive(true)
-      setLive(true)
-      setCurrentTrack(null) // Clear any file track
-
-      toast.success('Microphone activated')
-      return true
+        conditionalToast.success('Microphone activated')
+        return true
+      } else {
+        throw new Error('Failed to start microphone')
+      }
 
     } catch (error) {
-      console.error('Failed to start microphone:', error)
       return false
     }
   }, [initAudioContext, requestPermission, setMicrophoneActive, setLive, setCurrentTrack])
@@ -122,33 +96,21 @@ export const useMicrophone = () => {
   // Stop microphone input
   const stopMicrophone = useCallback(() => {
     try {
-      // Stop all tracks in the stream
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop())
-        mediaStreamRef.current = null
+      // Use the shared audio player to stop microphone
+      const success = audioPlayer.stopMicrophone()
+      
+      if (success) {
+        // Update state
+        setMicrophoneActive(false)
+        setLive(false)
+
+        conditionalToast.success('Microphone deactivated')
+        return true
+      } else {
+        throw new Error('Failed to stop microphone')
       }
-
-      // Disconnect audio source
-      if (sourceRef.current) {
-        sourceRef.current.disconnect()
-        sourceRef.current = null
-      }
-
-      // Cancel animation frame
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-        animationFrameRef.current = null
-      }
-
-      // Update state
-      setMicrophoneActive(false)
-      setLive(false)
-
-      toast.success('Microphone deactivated')
-      return true
 
     } catch (error) {
-      console.error('Failed to stop microphone:', error)
       return false
     }
   }, [setMicrophoneActive, setLive])
@@ -170,7 +132,6 @@ export const useMicrophone = () => {
       const devices = await navigator.mediaDevices.enumerateDevices()
       return devices.filter(device => device.kind === 'audioinput')
     } catch (error) {
-      console.error('Failed to enumerate devices:', error)
       return []
     }
   }, [])
@@ -192,52 +153,34 @@ export const useMicrophone = () => {
         }
       })
 
-      mediaStreamRef.current = stream
-
-      // Reconnect to audio context
-      const context = audioContextRef.current
-      if (context && gainNodeRef.current) {
-        const source = context.createMediaStreamSource(stream)
-        source.connect(gainNodeRef.current)
-        sourceRef.current = source
+      // Start microphone with new stream
+      const success = await audioPlayer.startMicrophone(stream)
+      
+      if (success) {
+        conditionalToast.success('Input device switched')
+        return true
+      } else {
+        throw new Error('Failed to switch input device')
       }
 
-      toast.success('Input device switched')
-      return true
-
     } catch (error) {
-      console.error('Failed to switch input device:', error)
-      toast.error('Failed to switch input device')
+      conditionalToast.error('Failed to switch input device')
       return false
     }
   }, [stopMicrophone])
 
-  // Get frequency data for spectrogram
+  // Get frequency data for spectrogram (from shared audio player)
   const getFrequencyData = useCallback(() => {
-    if (!analyserRef.current) return null
-    
-    const bufferLength = analyserRef.current.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyserRef.current.getByteFrequencyData(dataArray)
-    
-    return dataArray
+    return audioPlayer.getFrequencyData()
   }, [])
 
-  // Get time domain data
+  // Get time domain data (from shared audio player)
   const getTimeData = useCallback(() => {
-    if (!analyserRef.current) return null
-    
-    const bufferLength = analyserRef.current.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyserRef.current.getByteTimeDomainData(dataArray)
-    
-    return dataArray
+    return audioPlayer.getTimeData()
   }, [])
 
   // Start real-time analysis loop
   const startAnalysis = useCallback((onData: (frequencyData: Uint8Array, timeData: Uint8Array) => void) => {
-    if (!analyserRef.current) return
-
     const analyse = () => {
       const frequencyData = getFrequencyData()
       const timeData = getTimeData()

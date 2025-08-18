@@ -5,6 +5,9 @@ interface SpectrogramCanvasProps {
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void
   onMouseLeave?: () => void
   onMouseClick?: (event: React.MouseEvent<HTMLCanvasElement>) => void
+  onTouchStart?: (event: React.TouchEvent<HTMLCanvasElement>) => void
+  onTouchEnd?: () => void
+  className?: string
 }
 
 export interface SpectrogramCanvasRef {
@@ -15,7 +18,7 @@ export interface SpectrogramCanvasRef {
 }
 
 export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCanvasProps>(
-  ({ onMouseMove, onMouseLeave, onMouseClick }, ref) => {
+  ({ onMouseMove, onMouseLeave, onMouseClick, onTouchStart, onTouchEnd, className }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const glRef = useRef<WebGLRenderingContext | null>(null)
     const programRef = useRef<WebGLProgram | null>(null)
@@ -78,21 +81,18 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
         })
 
         if (!gl) {
-          console.warn('WebGL not supported, falling back to 2D canvas')
           return false
         }
 
         // Test basic WebGL functionality
         const testShader = gl.createShader(gl.VERTEX_SHADER)
         if (!testShader) {
-          console.warn('WebGL shader creation failed')
           return false
         }
 
         gl.deleteShader(testShader)
         return true
       } catch (error) {
-        console.warn('WebGL initialization failed:', error)
         return false
       }
     }, [])
@@ -117,7 +117,6 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       })
 
       if (!gl) {
-        console.error('WebGL not supported')
         webglSupportedRef.current = false
         return false
       }
@@ -177,7 +176,6 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)
 
       if (!vertexShader || !fragmentShader) {
-        console.error('Failed to create shaders')
         webglSupportedRef.current = false
         return false
       }
@@ -188,13 +186,11 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       gl.compileShader(fragmentShader)
 
       if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
-        console.error('Vertex shader compilation error:', gl.getShaderInfoLog(vertexShader))
         webglSupportedRef.current = false
         return false
       }
 
       if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-        console.error('Fragment shader compilation error:', gl.getShaderInfoLog(fragmentShader))
         webglSupportedRef.current = false
         return false
       }
@@ -202,7 +198,6 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       // Create program
       const program = gl.createProgram()
       if (!program) {
-        console.error('Failed to create program')
         webglSupportedRef.current = false
         return false
       }
@@ -212,7 +207,6 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       gl.linkProgram(program)
 
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error('Program linking error:', gl.getProgramInfoLog(program))
         webglSupportedRef.current = false
         return false
       }
@@ -414,10 +408,12 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
     return (
       <canvas
         ref={canvasRef}
-        className="w-full h-full block"
+        className={className || "w-full h-full block"}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
         onClick={onMouseClick}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
         style={{ cursor: 'crosshair' }}
         data-testid="spectrogram-canvas"
       />

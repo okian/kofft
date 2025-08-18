@@ -1,9 +1,18 @@
 import { AudioMetadata } from '@/types'
+import { audioPlayer } from './audioPlayer'
 
 // WASM module types
 interface WASMModule {
   init_panic_hook: () => void
   parse_metadata: (bytes: Uint8Array) => any
+  generate_waveform: (audioData: Float32Array, numBars: number) => Float32Array
+  generate_amplitude_envelope: (
+    audioData: Float32Array, 
+    sampleRate: number, 
+    targetBars: number, 
+    windowMs: number, 
+    smoothingSamples: number
+  ) => Float32Array
 }
 
 let wasmModule: WASMModule | null = null
@@ -18,8 +27,6 @@ export async function initWASM(): Promise<WASMModule | null> {
   initPromise = (async () => {
     try {
       isInitializing = true
-      console.log('🔧 Initializing WASM module...')
-
       // Dynamic import of the WASM glue
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - resolved by Vite at runtime
@@ -36,11 +43,9 @@ export async function initWASM(): Promise<WASMModule | null> {
       }
 
       wasmModule = module as unknown as WASMModule
-      console.log('✅ WASM module initialized successfully')
 
       return wasmModule
     } catch (error) {
-      console.warn('⚠️ Failed to initialize WASM module:', error)
       return null
     } finally {
       isInitializing = false
@@ -50,125 +55,114 @@ export async function initWASM(): Promise<WASMModule | null> {
   return initPromise
 }
 
-// Extract metadata using WASM if available, fallback to basic extraction
+// Extract metadata from audio file
 export async function extractMetadata(file: File): Promise<AudioMetadata> {
-  console.log('🔍 Starting metadata extraction for:', file.name)
-  console.log('📊 File details:', {
-    name: file.name,
-    size: file.size,
-    type: file.type,
-    lastModified: new Date(file.lastModified).toISOString()
-  })
+  const metadata: AudioMetadata = {
+    title: file.name.replace(/\.[^/.]+$/, ''),
+    artist: 'Unknown Artist',
+    album: 'Unknown Album',
+    year: undefined,
+    genre: '',
+    duration: 0,
+    bitrate: 0,
+    sample_rate: 0,
+    channels: 0,
+    bit_depth: 0,
+    album_art: undefined,
+    album_art_mime: undefined
+  }
 
   try {
-    // Try to use WASM module
+    // Try to extract metadata using WASM
     const module = await initWASM()
+    
     if (module && module.parse_metadata) {
       try {
-        // Read file data
-        const fileData = new Uint8Array(await file.arrayBuffer())
+        const arrayBuffer = await file.arrayBuffer()
+        const wasmMetadata = module.parse_metadata(new Uint8Array(arrayBuffer))
         
-        console.log(`🔍 Extracting metadata from ${file.name} (${fileData.length} bytes)`) 
-        
-        // Validate file data
-        if (fileData.length === 0) {
-          console.warn('⚠️ File data is empty, skipping WASM extraction')
-          return extractBasicMetadata(file)
-        }
-        
-        // Extract metadata using WASM with error handling
-        let metadata: any = null
-        try {
-          metadata = module.parse_metadata(fileData)
-        } catch (extractError) {
-          console.warn('⚠️ WASM parse_metadata call failed:', extractError)
-          return extractBasicMetadata(file)
-        }
-        
-        console.log('📋 Raw WASM metadata:', metadata)
-        
-        // Convert the WASM metadata to our AudioMetadata format
-        if (metadata && typeof metadata === 'object' && metadata !== null) {
-          const convertedMetadata: AudioMetadata = {
-            title: metadata.title || null,
-            artist: metadata.artist || null,
-            album: metadata.album || null,
-            year: metadata.year || null,
-            genre: metadata.genre || null,
-            duration: metadata.duration || null,
-            bitrate: metadata.bitrate || null,
-            sample_rate: metadata.sample_rate || null,
-            channels: metadata.channels || null,
-            bit_depth: metadata.bit_depth || null,
-            album_art: metadata.album_art ? new Uint8Array(metadata.album_art) : undefined,
-            album_art_mime: metadata.album_art_mime || null,
-            format: metadata.format || file.type || 'unknown'
-          }
+        if (wasmMetadata) {
           
-          // Comprehensive logging of extracted metadata
-          console.log('🎵 Extracted Metadata Summary:')
-          console.log('   Title:', convertedMetadata.title || 'null')
-          console.log('   Artist:', convertedMetadata.artist || 'null')
-          console.log('   Album:', convertedMetadata.album || 'null')
-          console.log('   Year:', convertedMetadata.year || 'null')
-          console.log('   Genre:', convertedMetadata.genre || 'null')
-          console.log('   Duration:', convertedMetadata.duration || 'null')
-          console.log('   Bitrate:', convertedMetadata.bitrate || 'null')
-          console.log('   Sample Rate:', convertedMetadata.sample_rate || 'null')
-          console.log('   Channels:', convertedMetadata.channels || 'null')
-          console.log('   Bit Depth:', convertedMetadata.bit_depth || 'null')
-          console.log('   Format:', convertedMetadata.format || 'null')
           
-          // Check for album art
-          if (convertedMetadata.album_art && convertedMetadata.album_art.length > 0) {
-            console.log('🎨 Album art found in WASM metadata!')
-            console.log('   Size:', convertedMetadata.album_art.length, 'bytes')
-            console.log('   MIME:', convertedMetadata.album_art_mime || 'unknown')
-            
-            // Validate album art data
-            const header = convertedMetadata.album_art.slice(0, 8)
-            const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ')
-            console.log('   Header bytes:', headerHex)
-            
-            // Check for valid image format headers
-            if (header[0] === 0xFF && header[1] === 0xD8) {
-              console.log('   ✅ Valid JPEG header detected')
-            } else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
-              console.log('   ✅ Valid PNG header detected')
-            } else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) {
-              console.log('   ✅ Valid GIF header detected')
-            } else {
-              console.log('   ⚠️ Unknown image format, but data present')
-            }
-            
-            console.log('🎨 Album Art Status: TRUE')
+          metadata.title = wasmMetadata.title || metadata.title
+          metadata.artist = wasmMetadata.artist || metadata.artist
+          metadata.album = wasmMetadata.album || metadata.album
+          metadata.year = wasmMetadata.year
+          metadata.genre = wasmMetadata.genre || metadata.genre
+          metadata.duration = wasmMetadata.duration || metadata.duration
+          metadata.sample_rate = wasmMetadata.sample_rate || metadata.sample_rate
+          metadata.channels = wasmMetadata.channels || metadata.channels
+          metadata.bit_depth = wasmMetadata.bit_depth || metadata.bit_depth
+          metadata.bitrate = wasmMetadata.bitrate || metadata.bitrate
+          // Convert album art data to Uint8Array if it's a regular array
+          if (wasmMetadata.album_art && Array.isArray(wasmMetadata.album_art)) {
+            metadata.album_art = new Uint8Array(wasmMetadata.album_art)
           } else {
-            console.log('❌ No album art in WASM metadata')
-            console.log('🎨 Album Art Status: FALSE')
+            metadata.album_art = wasmMetadata.album_art || undefined
           }
+          metadata.album_art_mime = wasmMetadata.album_art_mime || undefined
           
-          console.log('✅ Metadata extracted using WASM:', convertedMetadata)
-          return convertedMetadata
-        } else {
-          console.warn('⚠️ WASM returned null or invalid metadata, falling back to basic extraction')
-          return extractBasicMetadata(file)
+          return metadata
         }
       } catch (error) {
-        console.warn('⚠️ WASM metadata extraction failed, falling back to basic extraction:', error)
+        // WASM metadata extraction failed, falling back to other methods
       }
     }
   } catch (error) {
-    console.warn('⚠️ WASM module not available, using basic metadata extraction:', error)
+    // WASM module not available for metadata extraction
   }
 
-  // Fallback to basic metadata extraction
-  console.log('🔄 Falling back to basic metadata extraction')
-  return extractBasicMetadata(file)
+  // Fallback: Use HTML5 audio element for basic metadata
+  try {
+    const url = URL.createObjectURL(file)
+    const audio = new Audio()
+    
+    await new Promise((resolve, reject) => {
+      audio.addEventListener('loadedmetadata', resolve)
+      audio.addEventListener('error', reject)
+      audio.src = url
+    })
+
+    metadata.duration = audio.duration
+    metadata.sample_rate = 44100 // Most common sample rate
+    
+    // Try to get more detailed info using shared audio context
+    try {
+      const context = await audioPlayer.initAudioContext()
+      const arrayBuffer = await file.arrayBuffer()
+      const audioBuffer = await context.decodeAudioData(arrayBuffer)
+      
+      metadata.sample_rate = audioBuffer.sampleRate
+      metadata.channels = audioBuffer.numberOfChannels
+      
+      // Estimate bit depth based on file format and size
+      if (file.type.includes('flac') || file.type.includes('wav')) {
+        metadata.bit_depth = 16
+      } else if (file.type.includes('mp3')) {
+        metadata.bit_depth = 16
+      } else {
+        metadata.bit_depth = 16
+      }
+    } catch (decodeError) {
+      // Failed to decode audio for detailed metadata
+    }
+    
+    // Estimate bitrate based on file size and duration
+    if (metadata.duration) {
+      const fileSizeInBits = file.size * 8
+      metadata.bitrate = Math.round(fileSizeInBits / metadata.duration / 1000)
+    }
+
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    // Failed to parse audio metadata
+  }
+
+  return metadata
 }
 
 // Basic metadata extraction (current implementation)
 async function extractBasicMetadata(file: File): Promise<AudioMetadata> {
-  console.log('🔧 Using basic metadata extraction for:', file.name)
   
   const metadata: AudioMetadata = {
     title: file.name.replace(/\.[^/.]+$/, ''),
@@ -191,11 +185,11 @@ async function extractBasicMetadata(file: File): Promise<AudioMetadata> {
     metadata.duration = audio.duration
     metadata.sample_rate = 44100 // Most common sample rate
     
-    // Try to get more detailed info using AudioContext
+    // Try to get more detailed info using shared audio context
     try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const context = await audioPlayer.initAudioContext()
       const arrayBuffer = await file.arrayBuffer()
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+      const audioBuffer = await context.decodeAudioData(arrayBuffer)
       
       metadata.sample_rate = audioBuffer.sampleRate
       metadata.channels = audioBuffer.numberOfChannels
@@ -208,10 +202,8 @@ async function extractBasicMetadata(file: File): Promise<AudioMetadata> {
       } else {
         metadata.bit_depth = 16
       }
-      
-      audioContext.close()
     } catch (decodeError) {
-      console.warn('Failed to decode audio for detailed metadata:', decodeError)
+      // Failed to decode audio for detailed metadata
     }
     
     // Estimate bitrate based on file size and duration
@@ -222,23 +214,130 @@ async function extractBasicMetadata(file: File): Promise<AudioMetadata> {
 
     URL.revokeObjectURL(url)
   } catch (error) {
-    console.warn('Failed to parse audio metadata:', error)
+    // Failed to parse audio metadata
   }
 
-  // Log basic metadata extraction results
-  console.log('🎵 Basic Metadata Extraction Summary:')
-  console.log('   Title:', metadata.title || 'null')
-  console.log('   Artist:', metadata.artist || 'null')
-  console.log('   Album:', metadata.album || 'null')
-  console.log('   Duration:', metadata.duration || 'null')
-  console.log('   Sample Rate:', metadata.sample_rate || 'null')
-  console.log('   Channels:', metadata.channels || 'null')
-  console.log('   Bit Depth:', metadata.bit_depth || 'null')
-  console.log('   Bitrate:', metadata.bitrate || 'null')
-  console.log('   Format:', metadata.format || 'null')
-  console.log('🎨 Album Art Status: FALSE (basic extraction)')
-
   return metadata
+}
+
+// Generate waveform data using WASM
+export async function generateWaveform(audioData: Float32Array, numBars: number): Promise<Float32Array> {
+  try {
+    const module = await initWASM()
+    if (module && module.generate_waveform) {
+      try {
+        return module.generate_waveform(audioData, numBars)
+      } catch (error) {
+        // WASM waveform generation failed, falling back to JS
+      }
+    }
+  } catch (error) {
+    // WASM module not available for waveform generation
+  }
+  return generateWaveformJS(audioData, numBars)
+}
+
+// Generate amplitude envelope using WASM
+export async function generateAmplitudeEnvelope(
+  audioData: Float32Array, 
+  sampleRate: number = 44100,
+  targetBars: number = 300,
+  windowMs: number = 20,
+  smoothingSamples: number = 3
+): Promise<Float32Array> {
+  try {
+    const module = await initWASM()
+    if (module && module.generate_amplitude_envelope) {
+      try {
+        return module.generate_amplitude_envelope(audioData, sampleRate, targetBars, windowMs, smoothingSamples)
+      } catch (error) {
+        // WASM amplitude envelope generation failed, falling back to JS
+      }
+    }
+  } catch (error) {
+    // WASM module not available for amplitude envelope generation
+  }
+  return generateAmplitudeEnvelopeJS(audioData, sampleRate, targetBars, windowMs, smoothingSamples)
+}
+
+// JavaScript fallback for waveform generation
+function generateWaveformJS(audioData: Float32Array, numBars: number): Float32Array {
+  if (audioData.length === 0 || numBars === 0) {
+    return new Float32Array(numBars)
+  }
+
+  const waveform = new Float32Array(numBars)
+  const samplesPerBar = Math.ceil(audioData.length / numBars)
+
+  for (let i = 0; i < numBars; i++) {
+    const start = i * samplesPerBar
+    const end = Math.min(start + samplesPerBar, audioData.length)
+    
+    if (start >= audioData.length) {
+      waveform[i] = 0
+      continue
+    }
+
+    const chunk = audioData.slice(start, end)
+    if (chunk.length === 0) {
+      waveform[i] = 0
+      continue
+    }
+
+    // Calculate RMS (Root Mean Square) for amplitude
+    const sumSquares = chunk.reduce((sum, sample) => sum + sample * sample, 0)
+    const rms = Math.sqrt(sumSquares / chunk.length)
+    
+    // Normalize to 0.0-1.0 range and apply some smoothing
+    const amplitude = Math.min(rms * 2, 1.0) // Scale up and clamp
+    waveform[i] = amplitude
+  }
+
+  return waveform
+}
+
+// JavaScript fallback for amplitude envelope generation
+function generateAmplitudeEnvelopeJS(
+  audioData: Float32Array, 
+  sampleRate: number = 44100,
+  targetBars: number = 300,
+  windowMs: number = 20,
+  smoothingSamples: number = 3
+): Float32Array {
+  if (audioData.length === 0 || targetBars === 0) {
+    return new Float32Array(targetBars)
+  }
+
+  const envelope = new Float32Array(targetBars)
+  const samplesPerBar = Math.ceil(audioData.length / targetBars)
+  const windowSize = Math.round(sampleRate * windowMs / 1000)
+  const smoothingWindow = Math.round(sampleRate * smoothingSamples / 1000)
+
+  for (let i = 0; i < targetBars; i++) {
+    const start = i * samplesPerBar
+    const end = Math.min(start + samplesPerBar, audioData.length)
+    
+    if (start >= audioData.length) {
+      envelope[i] = 0
+      continue
+    }
+
+    const chunk = audioData.slice(start, end)
+    if (chunk.length === 0) {
+      envelope[i] = 0
+      continue
+    }
+
+    // Calculate RMS (Root Mean Square) for amplitude
+    const sumSquares = chunk.reduce((sum, sample) => sum + sample * sample, 0)
+    const rms = Math.sqrt(sumSquares / chunk.length)
+    
+    // Apply windowing and smoothing
+    const windowedRms = rms * (1 - Math.exp(-(i + 1) / smoothingWindow)) // Exponential smoothing
+    envelope[i] = windowedRms
+  }
+
+  return envelope
 }
 
 // Check if WASM is available

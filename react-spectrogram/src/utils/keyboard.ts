@@ -65,9 +65,9 @@ export function getShortcutDisplay(combo: string): string {
 export function saveShortcuts(shortcuts: KeyboardShortcuts): void {
   try {
     localStorage.setItem('spectrogram-shortcuts', JSON.stringify(shortcuts))
-  } catch (error) {
-    console.warn('Failed to save shortcuts:', error)
-  }
+      } catch (error) {
+      // Failed to save shortcuts
+    }
 }
 
 export function loadShortcuts(): KeyboardShortcuts {
@@ -77,7 +77,7 @@ export function loadShortcuts(): KeyboardShortcuts {
       return { ...DEFAULT_SHORTCUTS, ...JSON.parse(stored) }
     }
   } catch (error) {
-    console.warn('Failed to load shortcuts:', error)
+    // Failed to load shortcuts
   }
   return DEFAULT_SHORTCUTS
 }

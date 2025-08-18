@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useAudioStore } from '@/stores/audioStore'
 import { useAudioFile } from '@/hooks/useAudioFile'
-import toast from 'react-hot-toast'
+import { conditionalToast } from '@/utils/toast'
 
 export const useKeyboardShortcuts = () => {
   const { 
@@ -22,7 +22,9 @@ export const useKeyboardShortcuts = () => {
     playlist, 
     currentTrackIndex,
     volume,
-    isMuted
+    isMuted,
+    currentTime,
+    duration
   } = useAudioStore()
   
   const audioFile = useAudioFile()
@@ -40,6 +42,21 @@ export const useKeyboardShortcuts = () => {
 
     // Spacebar - Play/Pause
     if (key === ' ' && !ctrlKey && !shiftKey && !metaKey) {
+      event.preventDefault()
+      if (isStopped) {
+        if (currentTrack) {
+          audioFile.playTrack(currentTrack)
+        }
+      } else if (isPlaying) {
+        audioFile.pausePlayback()
+      } else {
+        audioFile.resumePlayback()
+      }
+      return
+    }
+
+    // K - Play/Pause (alternative to spacebar)
+    if (key.toLowerCase() === 'k' && !ctrlKey && !shiftKey && !metaKey) {
       event.preventDefault()
       if (isStopped) {
         if (currentTrack) {
@@ -79,6 +96,32 @@ export const useKeyboardShortcuts = () => {
       return
     }
 
+    // < and , - Previous track
+    if ((key === '<' || key === ',') && !ctrlKey && !shiftKey && !metaKey) {
+      event.preventDefault()
+      if (playlist.length > 0) {
+        const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
+        const prevTrack = playlist[prevIndex]
+        if (prevTrack) {
+          audioFile.playTrack(prevTrack)
+        }
+      }
+      return
+    }
+
+    // > and . - Next track
+    if ((key === '>' || key === '.') && !ctrlKey && !shiftKey && !metaKey) {
+      event.preventDefault()
+      if (playlist.length > 0) {
+        const nextIndex = (currentTrackIndex + 1) % playlist.length
+        const nextTrack = playlist[nextIndex]
+        if (nextTrack) {
+          audioFile.playTrack(nextTrack)
+        }
+      }
+      return
+    }
+
     // Arrow Up - Volume up
     if (key === 'ArrowUp' && !ctrlKey && !shiftKey && !metaKey) {
       event.preventDefault()
@@ -92,6 +135,26 @@ export const useKeyboardShortcuts = () => {
       event.preventDefault()
       const newVolume = Math.max(0, volume - 0.05)
       audioFile.setAudioVolume(newVolume)
+      return
+    }
+
+    // J - 10 seconds back
+    if (key.toLowerCase() === 'j' && !ctrlKey && !shiftKey && !metaKey) {
+      event.preventDefault()
+      if (currentTrack) {
+        const newTime = Math.max(0, currentTime - 10)
+        audioFile.seekTo(newTime)
+      }
+      return
+    }
+
+    // L - 10 seconds forward
+    if (key.toLowerCase() === 'l' && !ctrlKey && !shiftKey && !metaKey) {
+      event.preventDefault()
+      if (currentTrack) {
+        const newTime = Math.min(duration, currentTime + 10)
+        audioFile.seekTo(newTime)
+      }
       return
     }
 
@@ -120,8 +183,7 @@ export const useKeyboardShortcuts = () => {
     if (key.toLowerCase() === 's' && (ctrlKey || metaKey) && shiftKey) {
       event.preventDefault()
       // TODO: Implement snapshot functionality
-      console.log('Taking snapshot...')
-      toast.success('Snapshot taken!')
+      conditionalToast.success('Snapshot taken!')
       return
     }
 
@@ -143,7 +205,7 @@ export const useKeyboardShortcuts = () => {
       event.preventDefault()
       // This would trigger the file input, but we need to access the file input ref
       // For now, we'll just show a toast
-      toast('Use the file button to open audio files', { icon: '💡' })
+      conditionalToast.info('Use the file button to open audio files')
       return
     }
 
@@ -165,6 +227,8 @@ export const useKeyboardShortcuts = () => {
     currentTrackIndex,
     volume,
     isMuted,
+    currentTime,
+    duration,
     metadataPanelOpen,
     playlistPanelOpen,
     settingsPanelOpen,
@@ -188,9 +252,8 @@ export const useKeyboardShortcuts = () => {
     const hasSeenHelp = localStorage.getItem('spectrogram-keyboard-help')
     if (!hasSeenHelp) {
       setTimeout(() => {
-        toast.success(
-          '💡 Keyboard shortcuts available! Press S for settings to see all shortcuts.',
-          { duration: 5000 }
+        conditionalToast.success(
+          '💡 Keyboard shortcuts available! Press S for settings to see all shortcuts.'
         )
         localStorage.setItem('spectrogram-keyboard-help', 'true')
       }, 2000)
@@ -242,8 +305,7 @@ export const useKeyboardShortcuts = () => {
     openSettings: () => setSettingsPanelOpen(true),
     takeSnapshot: () => {
       // TODO: Implement snapshot functionality
-      console.log('Taking snapshot...')
-      toast.success('Snapshot taken!')
+      conditionalToast.success('Snapshot taken!')
     }
   }
 }

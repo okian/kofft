@@ -111,6 +111,7 @@ export interface AudioTrack {
   duration: number;
   url: string;
   artwork?: ArtworkSource;
+  audioData?: Float32Array; // Audio buffer data for waveform generation
 }
 
 export interface SpectrogramSettings {
@@ -121,6 +122,7 @@ export interface SpectrogramSettings {
   refreshRate: 30 | 60;
   colormap: string;
   showLegend: boolean;
+  enableToastNotifications: boolean;
   // API Keys
   apiKeys: APIKeys;
   apiKeyStatus: APIKeyStatus;
@@ -231,6 +233,7 @@ export interface MetadataPanelProps {
   track: AudioTrack | null;
   isOpen: boolean;
   onClose: () => void;
+  isMobile?: boolean;
 }
 
 export interface PlaylistPanelProps {
@@ -241,6 +244,7 @@ export interface PlaylistPanelProps {
   onTrackSelect: (index: number) => void;
   onTrackRemove: (index: number) => void;
   onTrackReorder: (fromIndex: number, toIndex: number) => void;
+  isMobile?: boolean;
 }
 
 export interface SettingsPanelProps {

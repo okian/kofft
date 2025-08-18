@@ -69,15 +69,6 @@ export async function extractAudioMetadata(file: File): Promise<AudioMetadata> {
   return await extractMetadata(file)
 }
 
-export function createAudioContext(): AudioContext | null {
-  try {
-    return new (window.AudioContext || (window as any).webkitAudioContext)()
-  } catch (error) {
-    console.error('Failed to create AudioContext:', error)
-    return null
-  }
-}
-
 export function getAudioInputDevices(): Promise<MediaDeviceInfo[]> {
   return navigator.mediaDevices.enumerateDevices()
     .then(devices => devices.filter(device => device.kind === 'audioinput'))
@@ -87,7 +78,6 @@ export async function requestMicrophonePermission(): Promise<MediaStream | null>
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: true })
   } catch (error) {
-    console.error('Failed to get microphone permission:', error)
     return null
   }
 }

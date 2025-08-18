@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { AudioState, AudioTrack } from '@/types'
+import { audioPlayer } from '@/utils/audioPlayer'
 
 interface AudioStore extends AudioState {
   // Actions
@@ -20,11 +21,11 @@ interface AudioStore extends AudioState {
   setLive: (live: boolean) => void
   setMicrophoneActive: (active: boolean) => void
   setInputDevice: (device: string | null) => void
-  nextTrack: () => void
-  previousTrack: () => void
-  playTrack: (index: number) => void
+  nextTrack: () => Promise<void>
+  previousTrack: () => Promise<void>
+  playTrack: (index: number) => Promise<void>
   stopPlayback: () => void
-  togglePlayPause: () => void
+  togglePlayPause: () => Promise<void>
   toggleMute: () => void
   seekTo: (time: number) => void
   updateVolume: (volume: number) => void
@@ -113,70 +114,90 @@ export const useAudioStore = create<AudioStore>()(
     setMicrophoneActive: (active) => set({ isMicrophoneActive: active }),
     setInputDevice: (device) => set({ inputDevice: device }),
     
-    nextTrack: () => {
+    nextTrack: async () => {
       const { playlist, currentTrackIndex } = get()
       if (playlist.length === 0) return
       
       const nextIndex = (currentTrackIndex + 1) % playlist.length
-      get().playTrack(nextIndex)
+      const nextTrack = playlist[nextIndex]
+      if (nextTrack) {
+        set({ 
+          currentTrackIndex: nextIndex,
+          currentTrack: nextTrack,
+          isPlaying: true,
+          isPaused: false,
+          isStopped: false,
+          currentTime: 0
+        })
+        // Actually play the track
+        await audioPlayer.playTrack(nextTrack)
+      }
     },
     
-    previousTrack: () => {
+    previousTrack: async () => {
       const { playlist, currentTrackIndex } = get()
       if (playlist.length === 0) return
       
       const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
-      get().playTrack(prevIndex)
+      const prevTrack = playlist[prevIndex]
+      if (prevTrack) {
+        set({ 
+          currentTrackIndex: prevIndex,
+          currentTrack: prevTrack,
+          isPlaying: true,
+          isPaused: false,
+          isStopped: false,
+          currentTime: 0
+        })
+        // Actually play the track
+        await audioPlayer.playTrack(prevTrack)
+      }
     },
     
-    playTrack: (index) => {
+    playTrack: async (index) => {
       const { playlist } = get()
       if (index < 0 || index >= playlist.length) return
       
+      const track = playlist[index]
       set({ 
         currentTrackIndex: index,
-        currentTrack: playlist[index],
+        currentTrack: track,
         isPlaying: true,
         isPaused: false,
         isStopped: false,
         currentTime: 0
       })
+      // Actually play the track
+      await audioPlayer.playTrack(track)
     },
     
     stopPlayback: () => {
-      set({ 
-        isPlaying: false,
-        isPaused: false,
-        isStopped: true,
-        currentTime: 0
-      })
+      audioPlayer.stopPlayback()
     },
     
-    togglePlayPause: () => {
-      const { isPlaying, isStopped } = get()
+    togglePlayPause: async () => {
+      const { isPlaying, isStopped, currentTrack } = get()
       if (isStopped) {
-        get().setPlaying(true)
+        if (currentTrack) {
+          await audioPlayer.playTrack(currentTrack)
+        }
+      } else if (isPlaying) {
+        audioPlayer.pausePlayback()
       } else {
-        get().setPlaying(!isPlaying)
+        await audioPlayer.resumePlayback()
       }
     },
     
     toggleMute: () => {
-      const { isMuted } = get()
-      set({ isMuted: !isMuted })
+      audioPlayer.toggleMute()
     },
     
     seekTo: (time) => {
-      get().setCurrentTime(time)
+      audioPlayer.seekTo(time)
     },
     
     updateVolume: (volume) => {
-      get().setVolume(volume)
-      if (volume === 0) {
-        get().setMuted(true)
-      } else if (get().isMuted) {
-        get().setMuted(false)
-      }
+      audioPlayer.setVolume(volume)
     },
   }))
 )
