@@ -1,0 +1,229 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-neutral-800;
+  }
+  
+  body {
+    @apply bg-neutral-950 text-neutral-100 font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  html {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  /* Layout system */
+  .app-layout {
+    @apply h-screen flex flex-col overflow-hidden;
+  }
+  
+  .main-content {
+    @apply flex-1 flex relative overflow-hidden;
+  }
+  
+  .sidebar-left {
+    @apply w-80 bg-neutral-900 border-r border-neutral-800 flex-shrink-0;
+    @apply transition-all duration-300 ease-in-out;
+  }
+  
+  .sidebar-right {
+    @apply w-80 bg-neutral-900 border-l border-neutral-800 flex-shrink-0;
+    @apply transition-all duration-300 ease-in-out;
+  }
+  
+  .content-area {
+    @apply flex-1 flex flex-col relative overflow-hidden;
+    @apply transition-all duration-300 ease-in-out;
+  }
+  
+  .footer-controls {
+    @apply h-28 bg-neutral-900 border-t border-neutral-800 flex-shrink-0;
+    @apply flex flex-col relative z-50;
+    @apply transition-colors duration-300;
+    @apply shadow-lg;
+  }
+
+  /* Custom scrollbar styles */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.neutral.600') theme('colors.neutral.800');
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-neutral-800;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-neutral-600 rounded-full;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-500;
+  }
+  
+  /* Focus styles */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-accent-blue focus:ring-offset-2 focus:ring-offset-neutral-950;
+  }
+  
+  /* Button base styles */
+  .btn-base {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-ring disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  .btn-primary {
+    @apply btn-base bg-accent-blue text-white hover:bg-accent-blue/90;
+  }
+  
+  .btn-secondary {
+    @apply btn-base bg-neutral-800 text-neutral-100 hover:bg-neutral-700;
+  }
+  
+  .btn-ghost {
+    @apply btn-base hover:bg-neutral-800 hover:text-neutral-100;
+  }
+  
+  /* Icon button styles */
+  .icon-btn {
+    @apply inline-flex items-center justify-center rounded-md p-2 text-neutral-400 transition-colors hover:text-neutral-100 hover:bg-neutral-800 focus-ring;
+  }
+  
+  .icon-btn.active {
+    @apply text-accent-blue bg-neutral-800;
+  }
+  
+  /* Panel styles */
+  .panel {
+    @apply bg-neutral-900 border border-neutral-800 rounded-lg shadow-medium;
+  }
+  
+  /* Sidebar styles */
+  .sidebar {
+    @apply bg-neutral-900 border-r border-neutral-800 transition-all duration-300 ease-in-out;
+  }
+  
+  /* Spectrogram canvas styles */
+  .spectrogram-canvas {
+    @apply rounded-lg bg-neutral-950 border border-neutral-800;
+  }
+  
+  /* Waveform styles */
+  .waveform-bar {
+    @apply bg-neutral-600 rounded-sm transition-all duration-150;
+  }
+  
+  .waveform-bar.played {
+    @apply bg-accent-blue;
+  }
+  
+  .waveform-bar.current {
+    @apply bg-accent-teal;
+  }
+
+  /* Slider styles */
+  .slider-thumb {
+    @apply appearance-none w-4 h-4 bg-neutral-300 rounded-full cursor-pointer border-0;
+  }
+  
+  .slider-thumb:hover {
+    @apply bg-neutral-200;
+  }
+  
+  .slider-thumb:focus {
+    @apply outline-none ring-2 ring-accent-blue ring-offset-2 ring-offset-neutral-950;
+  }
+
+  /* Animation classes */
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-in-out;
+  }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  .animate-scale-in {
+    animation: scaleIn 0.15s ease-in-out;
+  }
+  
+  .animate-pulse-subtle {
+    animation: pulseSubtle 2s ease-in-out infinite;
+  }
+}
+
+@layer utilities {
+  /* Text truncation */
+  .text-truncate {
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+  
+  /* Aspect ratio utilities */
+  .aspect-square {
+    aspect-ratio: 1 / 1;
+  }
+  
+  .aspect-video {
+    aspect-ratio: 16 / 9;
+  }
+  
+  /* Glass effect */
+  .glass {
+    @apply bg-white/10 backdrop-blur-md border border-white/20;
+  }
+  
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-accent-blue to-accent-teal bg-clip-text text-transparent;
+  }
+
+  /* Custom animations */
+  @keyframes slideIn {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes scaleIn {
+    from {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes pulseSubtle {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+}
