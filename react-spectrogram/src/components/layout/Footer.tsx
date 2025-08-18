@@ -1,13 +1,13 @@
-import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react'
+import React, { useRef, useCallback, useMemo } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
 import { useAudioFile } from '@/hooks/useAudioFile'
 import { useScreenSize } from '@/hooks/useScreenSize'
 import { WaveformSeekbar } from '@/components/spectrogram/WaveformSeekbar'
-import { 
-  Play, 
-  Pause, 
-  SkipBack, 
-  SkipForward, 
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
   Square,
   Volume2,
   VolumeX,
@@ -19,27 +19,22 @@ import { cn } from '@/utils/cn'
 import { conditionalToast } from '@/utils/toast'
 
 export const Footer: React.FC = () => {
-  const seekBarRef = useRef<HTMLDivElement>(null)
   const volumeSliderRef = useRef<HTMLInputElement>(null)
-  const [isSeeking, setIsSeeking] = useState(false)
-  const [seekPosition, setSeekPosition] = useState(0)
   
-  const { 
-    isPlaying, 
-    isStopped, 
-    currentTime, 
-    duration, 
-    volume, 
+  const {
+    isPlaying,
+    isStopped,
+    currentTime,
+    duration,
+    volume,
     isMuted,
     currentTrack,
     playlist,
     currentTrackIndex
   } = useAudioStore()
-  
+
   const { isMobile, isTablet } = useScreenSize()
   const audioFile = useAudioFile()
-
-
 
   // Format time for display
   const formatTime = (seconds: number): string => {
@@ -47,38 +42,6 @@ export const Footer: React.FC = () => {
     const secs = Math.floor(seconds % 60)
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
-
-  // Handle seek bar interaction
-  const handleSeekStart = useCallback((event: React.MouseEvent | React.TouchEvent) => {
-    setIsSeeking(true)
-    handleSeek(event)
-  }, [])
-
-  const handleSeek = useCallback((event: React.MouseEvent | React.TouchEvent) => {
-    if (!seekBarRef.current || !isSeeking) return
-
-    const rect = seekBarRef.current.getBoundingClientRect()
-    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
-    const x = clientX - rect.left
-    const percentage = Math.max(0, Math.min(1, x / rect.width))
-    
-    setSeekPosition(percentage)
-  }, [isSeeking])
-
-  const handleSeekEnd = useCallback(() => {
-    if (!isSeeking) return
-    
-    setIsSeeking(false)
-    const newTime = seekPosition * duration
-    audioFile.seekTo(newTime)
-  }, [isSeeking, seekPosition, duration, audioFile])
-
-  // Update seek position based on current time
-  useEffect(() => {
-    if (!isSeeking && duration > 0) {
-      setSeekPosition(currentTime / duration)
-    }
-  }, [currentTime, duration, isSeeking])
 
   // Handle volume change
   const handleVolumeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
