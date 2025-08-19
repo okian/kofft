@@ -13,7 +13,7 @@ export async function initWasmWithThreadPool(initFn, threadPoolFn) {
 }
 
 export async function initSpectrogram() {
-  const module = await import("./wasm/web_spectrogram.js");
+  const module = await import("./wasm/react_spectrogram_wasm.js");
   return initWasmWithThreadPool(module.default, module.initThreadPool);
 }
 
