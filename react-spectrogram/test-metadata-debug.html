@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metadata Extraction Debug Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .warning { color: #fbbf24; }
+        .info { color: #60a5fa; }
+        pre {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .file-input-label {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .file-input-label:hover {
+            background: #059669;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .metadata-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+        }
+        .album-art {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Metadata Extraction Debug Test</h1>
+        <p>This page tests the metadata extraction functionality using the web_spectrogram WASM module.</p>
+        
+        <div>
+            <label for="file-input" class="file-input-label">
+                📁 Select Audio File
+            </label>
+            <input type="file" id="file-input" accept="audio/*" />
+        </div>
+        
+        <div>
+            <button onclick="testWASMLoading()">🧪 Test WASM Loading</button>
+            <button onclick="clearResults()">🗑️ Clear Results</button>
+        </div>
+        
+        <div id="status" class="info"></div>
+        <div id="results" class="results"></div>
+    </div>
+
+    <script type="module">
+        let wasmModule = null;
+        let isInitialized = false;
+
+        // Test WASM module loading
+        window.testWASMLoading = async function() {
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+            
+            try {
+                statusDiv.innerHTML = '<span class="info">🔧 Testing WASM module loading...</span>';
+                
+                console.log('🔧 [TEST] Starting WASM module loading test...');
+                
+                // Try to import the web_spectrogram module
+                console.log('🔧 [TEST] Importing web_spectrogram module...');
+                const module = await import('./src/wasm/web_spectrogram.js');
+                
+                console.log('🔧 [TEST] Module imported successfully');
+                console.log('🔧 [TEST] Available functions:', Object.keys(module));
+                
+                // Check if parse_metadata function exists
+                if (typeof module.parse_metadata === 'function') {
+                    console.log('🔧 [TEST] parse_metadata function found!');
+                    
+                    // Initialize the module
+                    if (typeof module.default === "function") {
+                        console.log('🔧 [TEST] Initializing module with default function...');
+                        await module.default();
+                        console.log('🔧 [TEST] Module initialization completed');
+                    }
+                    
+                    // Initialize panic hook
+                    if (typeof module.init_panic_hook === "function") {
+                        console.log('🔧 [TEST] Initializing panic hook...');
+                        module.init_panic_hook();
+                        console.log('🔧 [TEST] Panic hook initialized');
+                    }
+                    
+                    wasmModule = module;
+                    isInitialized = true;
+                    
+                    statusDiv.innerHTML = '<span class="success">✅ WASM module loaded and initialized successfully!</span>';
+                    resultsDiv.innerHTML = `
+                        <div class="metadata-item">
+                            <h3>✅ WASM Module Status</h3>
+                            <p><strong>Module:</strong> web_spectrogram</p>
+                            <p><strong>Functions:</strong> ${Object.keys(module).join(', ')}</p>
+                            <p><strong>parse_metadata:</strong> ${typeof module.parse_metadata}</p>
+                            <p><strong>Initialized:</strong> ${isInitialized}</p>
+                        </div>
+                    `;
+                } else {
+                    throw new Error('parse_metadata function not found in module');
+                }
+            } catch (error) {
+                console.error('🔧 [TEST] WASM module loading failed:', error);
+                statusDiv.innerHTML = `<span class="error">❌ WASM module loading failed: ${error.message}</span>`;
+                resultsDiv.innerHTML = `
+                    <div class="metadata-item">
+                        <h3>❌ WASM Module Error</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <pre>${error.stack}</pre>
+                    </div>
+                `;
+            }
+        };
+
+        // Extract metadata from file
+        async function extractMetadata(file) {
+            if (!wasmModule || !isInitialized) {
+                throw new Error("WASM module not available or not initialized");
+            }
+
+            try {
+                console.log(`🔍 [METADATA] Extracting metadata from ${file.name} (${file.size} bytes)`);
+
+                // Read file data
+                const arrayBuffer = await file.arrayBuffer();
+                const fileData = new Uint8Array(arrayBuffer);
+                console.log(`🔍 [METADATA] File data loaded: ${fileData.length} bytes`);
+
+                // Extract metadata using WASM
+                console.log('🔍 [METADATA] Calling parse_metadata...');
+                const metadata = wasmModule.parse_metadata(fileData);
+                console.log('🔍 [METADATA] parse_metadata returned:', metadata);
+
+                return metadata;
+            } catch (error) {
+                console.error('🔍 [METADATA] Error extracting metadata:', error);
+                throw error;
+            }
+        }
+
+        // Display results
+        function displayResults(metadata, file) {
+            const resultsDiv = document.getElementById('results');
+            
+            let html = `
+                <div class="metadata-item">
+                    <h3>📋 Metadata Extraction Results</h3>
+                    <p><strong>File:</strong> ${file.name}</p>
+                    <p><strong>Size:</strong> ${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p><strong>Type:</strong> ${file.type}</p>
+                </div>
+            `;
+
+            // Display metadata fields
+            const metadataFields = [
+                { key: 'title', label: 'Title' },
+                { key: 'artist', label: 'Artist' },
+                { key: 'album', label: 'Album' },
+                { key: 'year', label: 'Year' },
+                { key: 'genre', label: 'Genre' },
+                { key: 'duration', label: 'Duration' },
+                { key: 'sample_rate', label: 'Sample Rate' },
+                { key: 'channels', label: 'Channels' },
+                { key: 'bit_depth', label: 'Bit Depth' },
+                { key: 'bitrate', label: 'Bitrate' },
+                { key: 'format', label: 'Format' }
+            ];
+
+            html += '<div class="metadata-item"><h4>📊 Metadata Fields:</h4>';
+            metadataFields.forEach(field => {
+                const value = metadata[field.key];
+                if (value !== undefined && value !== null) {
+                    let displayValue = value;
+                    if (field.key === 'duration') {
+                        displayValue = `${Math.round(value)}s`;
+                    } else if (field.key === 'sample_rate') {
+                        displayValue = `${(value / 1000).toFixed(1)} kHz`;
+                    } else if (field.key === 'bitrate') {
+                        displayValue = `${value} kbps`;
+                    }
+                    html += `<p><strong>${field.label}:</strong> ${displayValue}</p>`;
+                }
+            });
+            html += '</div>';
+
+            // Check for album art
+            if (metadata.album_art && metadata.album_art.length > 0) {
+                console.log('🎨 Album art found!');
+                console.log(`   Size: ${metadata.album_art.length} bytes`);
+                console.log(`   MIME type: ${metadata.album_art_mime || 'unknown'}`);
+
+                // Validate album art data
+                const header = metadata.album_art.slice(0, 8);
+                const headerHex = Array.from(header)
+                    .map((b) => b.toString(16).padStart(2, '0'))
+                    .join(' ');
+                console.log('   Header bytes:', headerHex);
+
+                // Check for valid image format headers
+                let imageFormat = 'Unknown';
+                if (header[0] === 0xff && header[1] === 0xd8) {
+                    imageFormat = 'JPEG';
+                    console.log('   ✅ Valid JPEG header detected');
+                } else if (
+                    header[0] === 0x89 &&
+                    header[1] === 0x50 &&
+                    header[2] === 0x4e &&
+                    header[3] === 0x47
+                ) {
+                    imageFormat = 'PNG';
+                    console.log('   ✅ Valid PNG header detected');
+                } else if (
+                    header[0] === 0x47 &&
+                    header[1] === 0x49 &&
+                    header[2] === 0x46
+                ) {
+                    imageFormat = 'GIF';
+                    console.log('   ✅ Valid GIF header detected');
+                } else {
+                    console.log('   ⚠️ Unknown image format');
+                }
+
+                html += `
+                    <div class="metadata-item">
+                        <h4>🎨 Album Art Found!</h4>
+                        <p><strong>Size:</strong> ${metadata.album_art.length} bytes</p>
+                        <p><strong>MIME Type:</strong> ${metadata.album_art_mime || 'unknown'}</p>
+                        <p><strong>Format:</strong> ${imageFormat}</p>
+                        <p><strong>Header:</strong> ${headerHex}</p>
+                `;
+
+                // Try to display the image
+                try {
+                    const mimeType = metadata.album_art_mime || 'image/jpeg';
+                    const blob = new Blob([metadata.album_art], { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+
+                    html += `
+                        <img src="${url}" alt="Album Art" class="album-art" 
+                             onload="setTimeout(() => URL.revokeObjectURL('${url}'), 5000)" />
+                    `;
+                } catch (error) {
+                    html += `<p class="error">❌ Failed to display album art: ${error.message}</p>`;
+                }
+
+                html += '</div>';
+            } else {
+                html += `
+                    <div class="metadata-item">
+                        <h4>🎨 Album Art</h4>
+                        <p class="warning">⚠️ No album art found in this file</p>
+                    </div>
+                `;
+            }
+
+            // Display raw metadata for debugging
+            html += `
+                <div class="metadata-item">
+                    <h4>🔧 Raw Metadata (Debug):</h4>
+                    <pre>${JSON.stringify(metadata, null, 2)}</pre>
+                </div>
+            `;
+
+            resultsDiv.innerHTML = html;
+        }
+
+        // Clear results
+        window.clearResults = function() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('status').innerHTML = '';
+        };
+
+        // File input handler
+        document.getElementById('file-input').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+
+            try {
+                statusDiv.innerHTML = '<span class="info">🔍 Extracting metadata...</span>';
+
+                if (!wasmModule || !isInitialized) {
+                    throw new Error('WASM module not initialized. Please run the WASM loading test first.');
+                }
+
+                const metadata = await extractMetadata(file);
+                displayResults(metadata, file);
+                statusDiv.innerHTML = '<span class="success">✅ Metadata extraction completed!</span>';
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                statusDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                resultsDiv.innerHTML = `
+                    <div class="metadata-item">
+                        <h3>❌ Error</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <pre>${error.stack}</pre>
+                    </div>
+                `;
+            }
+        });
+
+        // Auto-test WASM loading on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                testWASMLoading();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

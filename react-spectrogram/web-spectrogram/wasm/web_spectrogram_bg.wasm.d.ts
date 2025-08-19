@@ -1,0 +1,36 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const init_panic_hook: () => void;
+export const __wbg_stftresult_free: (a: number, b: number) => void;
+export const stftresult_mags: (a: number) => [number, number];
+export const stftresult_width: (a: number) => number;
+export const stftresult_height: (a: number) => number;
+export const stftresult_max_mag: (a: number) => number;
+export const stft_magnitudes: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const magnitude_to_db: (a: number, b: number, c: number) => number;
+export const db_scale: (a: number, b: number, c: number) => number;
+export const map_color_u8: (a: number, b: number) => [number, number];
+export const color_from_magnitude_u8: (a: number, b: number, c: number, d: number) => [number, number];
+export const __wbg_fftresult_free: (a: number, b: number) => void;
+export const fftresult_re: (a: number) => [number, number];
+export const fftresult_im: (a: number) => [number, number];
+export const fft_split: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const dct2: (a: number, b: number) => [number, number];
+export const __wbg_haarresult_free: (a: number, b: number) => void;
+export const haarresult_avg: (a: number) => [number, number];
+export const haarresult_diff: (a: number) => [number, number];
+export const haar_forward: (a: number, b: number) => number;
+export const haar_inverse: (a: number, b: number, c: number, d: number) => [number, number];
+export const reset_state: () => void;
+export const set_colormap: (a: number, b: number) => void;
+export const compute_frame: (a: number, b: number) => [number, number];
+export const parse_metadata: (a: number, b: number) => [number, number, number];
+export const generate_amplitude_envelope: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const generate_waveform: (a: number, b: number, c: number) => [number, number];
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_export_3: WebAssembly.Table;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_start: () => void;

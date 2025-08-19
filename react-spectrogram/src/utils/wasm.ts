@@ -88,69 +88,168 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
 
   try {
     // Try to extract metadata using WASM
-    console.log('🔍 [METADATA] Attempting WASM metadata extraction');
+    console.log('🔍 [METADATA] Attempting WASM metadata extraction for file:', file.name, 'size:', file.size);
     
-    // Import the metadata extraction module
+    // Import the metadata extraction module (web_spectrogram, not react_spectrogram_wasm)
+    console.log('🔍 [METADATA] Importing web_spectrogram WASM module...');
     const metadataModule: any = await import("@wasm/web_spectrogram");
     
-    if (metadataModule && metadataModule.parse_metadata) {
+    console.log('🔍 [METADATA] Module imported, checking for parse_metadata function...');
+    console.log('🔍 [METADATA] Available functions:', Object.keys(metadataModule));
+    
+    if (metadataModule && typeof metadataModule.parse_metadata === 'function') {
       try {
-        console.log('🔍 [METADATA] WASM metadata module found, parsing metadata');
-        const arrayBuffer = await file.arrayBuffer();
-        const wasmMetadata = metadataModule.parse_metadata(new Uint8Array(arrayBuffer));
+        console.log('🔍 [METADATA] WASM metadata module found, initializing...');
         
-        console.debug(
-          "[wasm] metadata extraction succeeded",
-          wasmMetadata && wasmMetadata.album_art
-            ? `album art bytes: ${wasmMetadata.album_art.length}`
-            : "no album art",
-        );
-
+        // Initialize the WASM module if it has a default function
+        if (typeof metadataModule.default === "function") {
+          console.log('🔍 [METADATA] Initializing WASM module with default function...');
+          await metadataModule.default();
+          console.log('🔍 [METADATA] WASM module initialization completed');
+        }
+        
+        // Initialize panic hook if available
+        if (typeof metadataModule.init_panic_hook === "function") {
+          console.log('🔍 [METADATA] Initializing panic hook...');
+          metadataModule.init_panic_hook();
+          console.log('🔍 [METADATA] Panic hook initialized');
+        }
+        
+        console.log('🔍 [METADATA] Reading file data...');
+        const arrayBuffer = await file.arrayBuffer();
+        const fileData = new Uint8Array(arrayBuffer);
+        console.log('🔍 [METADATA] File data loaded, size:', fileData.length, 'bytes');
+        
+        console.log('🔍 [METADATA] Calling parse_metadata...');
+        const wasmMetadata = metadataModule.parse_metadata(fileData);
+        console.log('🔍 [METADATA] parse_metadata returned:', wasmMetadata);
+        
         if (wasmMetadata) {
-          console.debug(
-            "[wasm] metadata extraction succeeded",
-            wasmMetadata.album_art
-              ? `album art bytes: ${wasmMetadata.album_art.length}`
-              : "no album art",
-          );
-          metadata.title = wasmMetadata.title || metadata.title;
-          metadata.artist = wasmMetadata.artist || metadata.artist;
-          metadata.album = wasmMetadata.album || metadata.album;
-          metadata.year = wasmMetadata.year;
-          metadata.genre = wasmMetadata.genre || metadata.genre;
-          metadata.duration = wasmMetadata.duration || metadata.duration;
-          metadata.sample_rate =
-            wasmMetadata.sample_rate || metadata.sample_rate;
-          metadata.channels = wasmMetadata.channels || metadata.channels;
-          metadata.bit_depth = wasmMetadata.bit_depth || metadata.bit_depth;
-          metadata.bitrate = wasmMetadata.bitrate || metadata.bitrate;
-          // Convert album art data to Uint8Array if it's a regular array
-          if (wasmMetadata.album_art) {
-            const art: unknown = wasmMetadata.album_art as unknown;
-            metadata.album_art = Array.isArray(art)
-              ? new Uint8Array(art as number[])
-              : (art as Uint8Array);
-          } else {
-            metadata.album_art = undefined;
+          console.log('🔍 [METADATA] Processing extracted metadata...');
+          
+          // Extract all metadata fields with detailed logging
+          if (wasmMetadata.title) {
+            console.log('🔍 [METADATA] Title found:', wasmMetadata.title);
+            metadata.title = wasmMetadata.title;
           }
-          metadata.album_art_mime = wasmMetadata.album_art_mime || undefined;
+          
+          if (wasmMetadata.artist) {
+            console.log('🔍 [METADATA] Artist found:', wasmMetadata.artist);
+            metadata.artist = wasmMetadata.artist;
+          }
+          
+          if (wasmMetadata.album) {
+            console.log('🔍 [METADATA] Album found:', wasmMetadata.album);
+            metadata.album = wasmMetadata.album;
+          }
+          
+          if (wasmMetadata.year) {
+            console.log('🔍 [METADATA] Year found:', wasmMetadata.year);
+            metadata.year = wasmMetadata.year;
+          }
+          
+          if (wasmMetadata.genre) {
+            console.log('🔍 [METADATA] Genre found:', wasmMetadata.genre);
+            metadata.genre = wasmMetadata.genre;
+          }
+          
+          if (wasmMetadata.duration) {
+            console.log('🔍 [METADATA] Duration found:', wasmMetadata.duration);
+            metadata.duration = wasmMetadata.duration;
+          }
+          
+          if (wasmMetadata.sample_rate) {
+            console.log('🔍 [METADATA] Sample rate found:', wasmMetadata.sample_rate);
+            metadata.sample_rate = wasmMetadata.sample_rate;
+          }
+          
+          if (wasmMetadata.channels) {
+            console.log('🔍 [METADATA] Channels found:', wasmMetadata.channels);
+            metadata.channels = wasmMetadata.channels;
+          }
+          
+          if (wasmMetadata.bit_depth) {
+            console.log('🔍 [METADATA] Bit depth found:', wasmMetadata.bit_depth);
+            metadata.bit_depth = wasmMetadata.bit_depth;
+          }
+          
+          if (wasmMetadata.bitrate) {
+            console.log('🔍 [METADATA] Bitrate found:', wasmMetadata.bitrate);
+            metadata.bitrate = wasmMetadata.bitrate;
+          }
+          
+          // Handle album art with detailed validation
+          if (wasmMetadata.album_art) {
+            console.log('🔍 [METADATA] Album art found, size:', wasmMetadata.album_art.length, 'bytes');
+            console.log('🔍 [METADATA] Album art MIME type:', wasmMetadata.album_art_mime);
+            
+            // Convert album art data to Uint8Array if it's a regular array
+            const art: unknown = wasmMetadata.album_art as unknown;
+            if (Array.isArray(art)) {
+              console.log('🔍 [METADATA] Converting array to Uint8Array...');
+              metadata.album_art = new Uint8Array(art as number[]);
+            } else if (art instanceof Uint8Array) {
+              console.log('🔍 [METADATA] Album art is already Uint8Array');
+              metadata.album_art = art as Uint8Array;
+            } else {
+              console.warn('🔍 [METADATA] Unknown album art format:', typeof art);
+              metadata.album_art = undefined;
+            }
+            
+            // Validate album art data
+            if (metadata.album_art && metadata.album_art.length > 0) {
+              const header = metadata.album_art.slice(0, 8);
+              const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
+              console.log('🔍 [METADATA] Album art header bytes:', headerHex);
+              
+              // Check for valid image format headers
+              if (header[0] === 0xff && header[1] === 0xd8) {
+                console.log('🔍 [METADATA] ✅ Valid JPEG header detected');
+              } else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47) {
+                console.log('🔍 [METADATA] ✅ Valid PNG header detected');
+              } else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) {
+                console.log('🔍 [METADATA] ✅ Valid GIF header detected');
+              } else {
+                console.warn('🔍 [METADATA] ⚠️ Unknown image format header');
+              }
+            }
+            
+            metadata.album_art_mime = wasmMetadata.album_art_mime || undefined;
+          } else {
+            console.log('🔍 [METADATA] No album art found in file');
+            metadata.album_art = undefined;
+            metadata.album_art_mime = undefined;
+          }
 
           console.log('🔍 [METADATA] Successfully extracted rich metadata from WASM');
+          console.log('🔍 [METADATA] Final metadata:', metadata);
           return metadata;
         } else {
-          console.debug("[wasm] metadata extraction returned null");
+          console.warn('🔍 [METADATA] parse_metadata returned null or undefined');
         }
-      } catch (error) {
-        console.error("[wasm] metadata extraction failed", error);
+              } catch (error) {
+          console.error('🔍 [METADATA] WASM metadata extraction failed:', error);
+          console.error('🔍 [METADATA] Error details:', {
+            name: (error as Error).name,
+            message: (error as Error).message,
+            stack: (error as Error).stack
+          });
+        }
+      } else {
+        console.warn('🔍 [METADATA] parse_metadata function not available in module');
+        console.warn('🔍 [METADATA] Available functions:', Object.keys(metadataModule));
       }
-    } else {
-      console.warn("[wasm] parse_metadata not available; using fallback");
+    } catch (error) {
+      console.error('🔍 [METADATA] Failed to initialize metadata module:', error);
+      console.error('🔍 [METADATA] Error details:', {
+        name: (error as Error).name,
+        message: (error as Error).message,
+        stack: (error as Error).stack
+      });
     }
-  } catch (error) {
-    console.error("[wasm] failed to initialize metadata module", error);
-  }
 
   // Fallback: Use HTML5 audio element for basic metadata
+  console.log('🔍 [METADATA] Falling back to HTML5 audio element for basic metadata');
   try {
     const url = URL.createObjectURL(file);
     const audio = new Audio();
@@ -195,7 +294,7 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
         metadata.bit_depth = 16;
       }
     } catch (decodeError) {
-      // Failed to decode audio for detailed metadata
+      console.warn('🔍 [METADATA] Failed to decode audio for detailed metadata:', decodeError);
     }
 
     // Estimate bitrate based on file size and duration
@@ -205,8 +304,9 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
     }
 
     URL.revokeObjectURL(url);
+    console.log('🔍 [METADATA] Fallback metadata extraction completed:', metadata);
   } catch (error) {
-    // Failed to parse audio metadata
+    console.error('🔍 [METADATA] Fallback metadata extraction failed:', error);
   }
 
   return metadata;
