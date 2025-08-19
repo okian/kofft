@@ -1,4 +1,9 @@
 import { useEffect, useRef } from "react";
+import {
+  MARQUEE_DURATION_MULTIPLIER,
+  MARQUEE_MIN_DURATION,
+  PREFERS_REDUCED_MOTION,
+} from "@/config";
 
 interface UseMarqueeOptions {
   /** Delay before starting marquee */
@@ -12,7 +17,10 @@ interface UseMarqueeOptions {
  * Adds `marquee-active` class to the element after the delay when overflow occurs.
  * Removes animation on cleanup or when text fits.
  */
-export function useMarquee<T extends HTMLElement>({ delay, text }: UseMarqueeOptions) {
+export function useMarquee<T extends HTMLElement>({
+  delay,
+  text,
+}: UseMarqueeOptions) {
   const ref = useRef<T>(null);
 
   useEffect(() => {
@@ -20,7 +28,6 @@ export function useMarquee<T extends HTMLElement>({ delay, text }: UseMarqueeOpt
     const container = el?.parentElement;
     if (!el || !container) return;
 
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const update = () => {
@@ -31,8 +38,12 @@ export function useMarquee<T extends HTMLElement>({ delay, text }: UseMarqueeOpt
         clearTimeout(timer);
         timer = null;
       }
-      if (overflow && !prefersReduced) {
-        const duration = Math.max((el.scrollWidth / container.clientWidth) * 5, 5);
+      if (overflow && !PREFERS_REDUCED_MOTION) {
+        const duration = Math.max(
+          (el.scrollWidth / container.clientWidth) *
+            MARQUEE_DURATION_MULTIPLIER,
+          MARQUEE_MIN_DURATION,
+        );
         el.style.setProperty("--marquee-duration", `${duration}s`);
         timer = setTimeout(() => {
           el.classList.add("marquee-active");
