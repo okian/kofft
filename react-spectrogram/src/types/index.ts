@@ -112,6 +112,7 @@ export interface AudioTrack {
   url: string;
   artwork?: ArtworkSource;
   audioData?: Float32Array; // Audio buffer data for waveform generation
+  isLoading?: boolean;
 }
 
 export interface SpectrogramSettings {
