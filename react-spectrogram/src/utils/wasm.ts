@@ -13,6 +13,10 @@ interface WASMModule {
     windowMs: number,
     smoothingSamples: number,
   ) => Float32Array;
+  compute_waveform_peaks: (
+    audioData: Float32Array,
+    numBars: number,
+  ) => Float32Array;
 }
 
 let wasmModule: WASMModule | null = null;
@@ -297,6 +301,21 @@ export async function generateAmplitudeEnvelope(
     windowMs,
     smoothingSamples,
   );
+}
+
+// Compute waveform peaks using WASM if available
+export function computeWaveformPeaksWASM(
+  audioData: Float32Array,
+  numBars: number,
+): Float32Array | null {
+  if (!wasmModule || !wasmModule.compute_waveform_peaks) {
+    return null;
+  }
+  try {
+    return wasmModule.compute_waveform_peaks(audioData, numBars);
+  } catch (error) {
+    return null;
+  }
 }
 
 // JavaScript fallback for waveform generation

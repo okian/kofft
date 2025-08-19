@@ -1,6 +1,8 @@
+import { computeWaveformPeaksWASM } from "./wasm";
+
 export type PeaksCacheKey = { numBars: number };
 
-const peaksCache = new WeakMap<Float32Array, Map<number, Float32Array>>();
+let peaksCache = new WeakMap<Float32Array, Map<number, Float32Array>>();
 
 /**
  * Compute simplified waveform peaks for a given audio buffer.
@@ -12,7 +14,6 @@ export function computeWaveformPeaks(
   numBars: number,
 ): Float32Array {
   if (!audioData || audioData.length === 0) {
-    // Fallback simple waveform pattern for visibility
     const placeholder = new Float32Array(numBars);
     for (let i = 0; i < numBars; i++) {
       const progress = i / numBars;
@@ -28,10 +29,21 @@ export function computeWaveformPeaks(
   }
 
   const cached = cacheForBuffer.get(numBars);
-  if (cached) {
-    return cached;
+  if (cached) return cached;
+
+  let peaks = computeWaveformPeaksWASM(audioData, numBars);
+  if (!peaks) {
+    peaks = computeWaveformPeaksJS(audioData, numBars);
   }
 
+  cacheForBuffer.set(numBars, peaks);
+  return peaks;
+}
+
+function computeWaveformPeaksJS(
+  audioData: Float32Array,
+  numBars: number,
+): Float32Array {
   const peaks = new Float32Array(numBars);
   const samplesPerBar = Math.ceil(audioData.length / numBars);
 
@@ -51,13 +63,12 @@ export function computeWaveformPeaks(
       if (sample > max) max = sample;
     }
 
-    peaks[i] = start < end ? Math.max(Math.abs(min), Math.abs(max)) : 0;
+    peaks[i] = Math.max(Math.abs(min), Math.abs(max));
   }
 
-  cacheForBuffer.set(numBars, peaks);
   return peaks;
 }
 
 export function clearWaveformPeaksCache() {
-  peaksCache.clear();
+  peaksCache = new WeakMap();
 }

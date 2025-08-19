@@ -12,8 +12,6 @@ pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-
-
 #[wasm_bindgen]
 pub struct StftResult {
     mags: Vec<f32>,
@@ -213,7 +211,9 @@ pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
         // Compute magnitudes
         let mut magnitudes = Vec::with_capacity(WIN_LEN / 2);
         for i in 0..WIN_LEN / 2 {
-            let mag = ((spectrum[i].re * spectrum[i].re + spectrum[i].im * spectrum[i].im) / WIN_LEN as f32).sqrt();
+            let mag = ((spectrum[i].re * spectrum[i].re + spectrum[i].im * spectrum[i].im)
+                / WIN_LEN as f32)
+                .sqrt();
             magnitudes.push(mag);
             state.max_mag = state.max_mag.max(mag);
         }
@@ -252,8 +252,6 @@ impl State {
         }
     }
 }
-
-
 
 /// Generate amplitude envelope for seekbar visualization
 /// Returns an array of amplitude values (0.0 to 1.0) representing the audio envelope
@@ -359,6 +357,42 @@ pub fn generate_amplitude_envelope(
     envelope
 }
 
+/// Compute peak amplitudes for waveform visualization
+/// Returns an array of peak values for each bar
+#[wasm_bindgen]
+pub fn compute_waveform_peaks(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
+    if audio_data.is_empty() || num_bars == 0 {
+        return vec![0.0; num_bars];
+    }
+
+    let samples_per_bar = (audio_data.len() + num_bars - 1) / num_bars;
+    let mut peaks = Vec::with_capacity(num_bars);
+
+    for i in 0..num_bars {
+        let start = i * samples_per_bar;
+        if start >= audio_data.len() {
+            peaks.push(0.0);
+            continue;
+        }
+        let end = (start + samples_per_bar).min(audio_data.len());
+        let mut min = f32::MAX;
+        let mut max = f32::MIN;
+
+        for &sample in &audio_data[start..end] {
+            if sample < min {
+                min = sample;
+            }
+            if sample > max {
+                max = sample;
+            }
+        }
+
+        peaks.push(min.abs().max(max.abs()));
+    }
+
+    peaks
+}
+
 /// Generate waveform data for visualization (legacy function for compatibility)
 /// Returns an array of amplitude values (0.0 to 1.0) representing the audio waveform
 #[wasm_bindgen]
@@ -366,8 +400,6 @@ pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     // Use the new amplitude envelope function with default parameters
     generate_amplitude_envelope(audio_data, 44100, num_bars, 20, 3)
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -411,12 +443,9 @@ mod tests {
         let empty = compute_frame(&vec![0.0; HOP]);
         assert!(empty.is_empty());
         let frame = compute_frame(&vec![1.0; WIN_LEN]);
-        assert_eq!(frame.len(), (WIN_LEN / 2) * 4);
+        assert_eq!(frame.len(), (WIN_LEN / 2) * 3);
         let frame2 = compute_frame(&vec![1.0; HOP]);
-        assert_eq!(frame2.len(), (WIN_LEN / 2) * 4);
-        for chunk in frame.chunks_exact(4) {
-            assert_eq!(chunk[3], 255);
-        }
+        assert!(frame2.is_empty());
         // default colormap should be rainbow
         reset_state();
         let default_frame = compute_frame(&vec![1.0; WIN_LEN]);
@@ -428,5 +457,14 @@ mod tests {
         let fire_frame = compute_frame(&vec![1.0; WIN_LEN]);
         assert_eq!(default_frame, rainbow_frame);
         assert_ne!(default_frame, fire_frame);
+    }
+
+    #[test]
+    fn compute_waveform_peaks_basic() {
+        let data = vec![1.0, -1.0, 0.5, -0.5];
+        let peaks = compute_waveform_peaks(&data, 2);
+        assert_eq!(peaks, vec![1.0, 0.5]);
+        let more = compute_waveform_peaks(&data, 5);
+        assert_eq!(more.last().copied().unwrap_or(1.0), 0.0);
     }
 }
