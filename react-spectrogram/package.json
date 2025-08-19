@@ -14,7 +14,6 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext ts,tsx --fix",
     "type-check": "tsc --noEmit",
-<<<<<<< HEAD
     "wasm:build": "cd wasm && wasm-pack build --target web --out-dir ../src/wasm",
     "wasm:watch": "cd wasm && wasm-pack build --target web --out-dir ../src/wasm --watch"
   },
