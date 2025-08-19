@@ -33,12 +33,7 @@ export function magnitudeToDb(mag, maxMag) {
   return 20 * Math.log10(Math.max(ratio, 1e-12));
 }
 
-export function drawSpectrogram(
-  canvas,
-  res,
-  colorFn,
-  colormap = wasm?.Colormap.Rainbow,
-) {
+function drawSpectrogramCanvas(canvas, res, colorFn, colormap) {
   const ctx = canvas.getContext("2d");
   const { mags, width, height, max_mag } = res;
   canvas.width = width;
@@ -56,6 +51,90 @@ export function drawSpectrogram(
     }
   }
   ctx.putImageData(img, 0, 0);
+}
+
+function drawSpectrogramWebGL(gl, canvas, res) {
+  const { mags, width, height, max_mag } = res;
+  canvas.width = width;
+  canvas.height = height;
+
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(
+    vs,
+    "attribute vec2 p; varying vec2 v; void main(){v=(p+1.0)/2.0; gl_Position=vec4(p,0.0,1.0);}",
+  );
+  gl.compileShader(vs);
+
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(
+    fs,
+    "precision highp float; varying vec2 v; uniform sampler2D m; uniform float maxMag; const float FLOOR_DB=-80.0; vec3 rainbow(float t){ if(t<0.25){ float local=t/0.25; return mix(vec3(0.0,0.0,0.0), vec3(0.0,0.0,1.0), local);} else if(t<0.5){ float local=(t-0.25)/0.25; return mix(vec3(0.0,0.0,1.0), vec3(0.0,1.0,1.0), local);} else if(t<0.75){ float local=(t-0.5)/0.25; return mix(vec3(0.0,1.0,1.0), vec3(1.0,1.0,0.0), local);} else if(t<0.9){ float local=(t-0.75)/0.15; return mix(vec3(1.0,1.0,0.0), vec3(1.0,0.0,0.0), local);} float local=(t-0.9)/0.1; return mix(vec3(1.0,0.0,0.0), vec3(1.0,1.0,1.0), local);} void main(){ float mag=texture2D(m,v).r; float ratio=mag/maxMag; float db=20.0*log(max(ratio,1e-12)); float t=(db-FLOOR_DB)/(-FLOOR_DB); gl_FragColor=vec4(rainbow(clamp(t,0.0,1.0)),1.0); }",
+  );
+  gl.compileShader(fs);
+
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  gl.useProgram(program);
+
+  const pos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+    gl.STATIC_DRAW,
+  );
+  const loc = gl.getAttribLocation(program, "p");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RED,
+    width,
+    height,
+    0,
+    gl.RED,
+    gl.FLOAT,
+    new Float32Array(mags),
+  );
+
+  const maxLoc = gl.getUniformLocation(program, "maxMag");
+  gl.uniform1f(maxLoc, max_mag);
+  const texLoc = gl.getUniformLocation(program, "m");
+  gl.uniform1i(texLoc, 0);
+
+  gl.viewport(0, 0, width, height);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+export function drawSpectrogram(
+  canvas,
+  res,
+  colorFn,
+  colormap = wasm?.Colormap.Rainbow,
+) {
+  const gl = canvas.getContext("webgl2") || canvas.getContext("webgl") || null;
+  if (gl) {
+    drawSpectrogramWebGL(gl, canvas, res, colormap);
+    return;
+  }
+  if (typeof navigator !== "undefined" && navigator.gpu) {
+    const ctx = canvas.getContext("webgpu");
+    if (ctx) {
+      // WebGPU not implemented, fall back for now
+      drawSpectrogramCanvas(canvas, res, colorFn, colormap);
+      return;
+    }
+  }
+  drawSpectrogramCanvas(canvas, res, colorFn, colormap);
 }
 
 /* c8 ignore start */
