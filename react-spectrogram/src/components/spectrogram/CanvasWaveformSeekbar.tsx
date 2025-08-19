@@ -48,10 +48,32 @@ export function CanvasWaveformSeekbar({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
+  const [barCount, setBarCount] = useState(numBars);
+  const lastDispatchRef = useRef({ time: 0, pos: 0 });
+
+  useEffect(() => {
+    if (numBars) setBarCount(numBars);
+  }, [numBars]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const width = entry.contentRect.width;
+      const calculated = Math.max(
+        1,
+        Math.floor(width / (barWidth + barGap)),
+      );
+      setBarCount(calculated);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [barWidth, barGap]);
 
   const peaks = useMemo(
-    () => computeWaveformPeaks(audioData, numBars),
-    [audioData, numBars],
+    () => computeWaveformPeaks(audioData, barCount),
+    [audioData, barCount],
   );
 
   const currentPosition = duration > 0 ? currentTime / duration : 0;
@@ -63,8 +85,15 @@ export function CanvasWaveformSeekbar({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const width = (canvas.width = numBars * (barWidth + barGap) - barGap);
+    const width = (canvas.width = barCount * (barWidth + barGap) - barGap);
     const height = (canvas.height = maxBarHeight);
+
+    const style = getComputedStyle(containerRef.current!);
+    const playedColor = style.getPropertyValue("--seek-played") || "#3b82f6";
+    const unplayedColor = style.getPropertyValue("--seek-unplayed") || "#3f3f46";
+    const bufferedColor = style.getPropertyValue("--seek-buffered") || "#737373";
+    const disabledColor = style.getPropertyValue("--seek-disabled") || "#52525b";
+    const playheadColor = style.getPropertyValue("--seek-playhead") || "#60a5fa";
 
     if (useWebGL) {
       const gl = canvas.getContext("webgl");
@@ -79,7 +108,14 @@ export function CanvasWaveformSeekbar({
           {
             barWidth,
             barGap,
-            numBars,
+            numBars: barCount,
+            colors: {
+              played: playedColor,
+              unplayed: unplayedColor,
+              buffered: bufferedColor,
+              disabled: disabledColor,
+              playhead: playheadColor,
+            },
           },
         );
         return;
@@ -91,34 +127,35 @@ export function CanvasWaveformSeekbar({
 
     ctx.clearRect(0, 0, width, height);
 
-    for (let i = 0; i < numBars; i++) {
+    const centerY = height / 2;
+    for (let i = 0; i < barCount; i++) {
       const amplitude = peaks[i];
       const barHeight = Math.max(amplitude * maxBarHeight, 2);
       const x = i * (barWidth + barGap);
-      const barPosition = i / (numBars - 1);
+      const barPosition = i / (barCount - 1);
 
-      let color = "#3f3f46"; // unplayed
+      let color = unplayedColor.trim();
       if (disabled) {
-        color = "#52525b";
+        color = disabledColor.trim();
       } else if (barPosition <= progressPosition) {
-        color = "#3b82f6"; // played
+        color = playedColor.trim();
       } else if (barPosition <= bufferedPosition) {
-        color = "#737373"; // buffered
+        color = bufferedColor.trim();
       }
 
       ctx.fillStyle = color;
-      ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+      ctx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
     }
 
     // Playhead line
     if (!disabled) {
       const playheadX = progressPosition * width;
-      ctx.fillStyle = "#60a5fa";
+      ctx.fillStyle = playheadColor.trim();
       ctx.fillRect(playheadX, 0, 1, height);
     }
   }, [
     peaks,
-    numBars,
+    barCount,
     barWidth,
     barGap,
     maxBarHeight,
@@ -128,43 +165,54 @@ export function CanvasWaveformSeekbar({
     useWebGL,
   ]);
 
-  const getPositionFromEvent = useCallback(
-    (event: React.MouseEvent | React.TouchEvent) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return 0;
-      const clientX =
-        "touches" in event ? event.touches[0].clientX : event.clientX;
-      const x = clientX - rect.left;
-      return Math.max(0, Math.min(1, x / rect.width));
-    },
-    [],
-  );
+  const getPositionFromEvent = useCallback((event: React.PointerEvent) => {
+    const canvas = canvasRef.current;
+    const rect = canvas?.getBoundingClientRect();
+    if (!canvas || !rect) return 0;
+    const x = event.clientX - rect.left;
+    return Math.max(0, Math.min(1, x / rect.width));
+  }, []);
 
   const handleSeekStart = useCallback(
-    (event: React.MouseEvent | React.TouchEvent) => {
+    (event: React.PointerEvent) => {
       if (disabled) return;
       setIsSeeking(true);
       const position = getPositionFromEvent(event);
       setSeekPosition(position);
+      lastDispatchRef.current = { time: performance.now(), pos: position };
     },
     [disabled, getPositionFromEvent],
   );
 
   const handleSeekMove = useCallback(
-    (event: React.MouseEvent | React.TouchEvent) => {
+    (event: React.PointerEvent) => {
       if (!isSeeking || disabled) return;
       const position = getPositionFromEvent(event);
       setSeekPosition(position);
+      const now = performance.now();
+      if (
+        Math.abs(position - lastDispatchRef.current.pos) > 0.01 &&
+        now - lastDispatchRef.current.time > 200
+      ) {
+        onSeek(position * duration);
+        lastDispatchRef.current = { time: now, pos: position };
+      }
     },
-    [isSeeking, disabled, getPositionFromEvent],
+    [isSeeking, disabled, getPositionFromEvent, duration, onSeek],
   );
 
-  const handleSeekEnd = useCallback(() => {
-    if (!isSeeking || disabled) return;
-    setIsSeeking(false);
-    const seekTime = seekPosition * duration;
-    onSeek(seekTime);
-  }, [isSeeking, disabled, seekPosition, duration, onSeek]);
+  const handleSeekEnd = useCallback(
+    (event: React.PointerEvent) => {
+      if (!isSeeking || disabled) return;
+      setIsSeeking(false);
+      const position = getPositionFromEvent(event);
+      setSeekPosition(position);
+      const seekTime = position * duration;
+      onSeek(seekTime);
+      lastDispatchRef.current = { time: performance.now(), pos: position };
+    },
+    [isSeeking, disabled, getPositionFromEvent, duration, onSeek],
+  );
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -236,13 +284,11 @@ export function CanvasWaveformSeekbar({
         className,
       )}
       style={{ height: maxBarHeight + 20 }}
-      onMouseDown={handleSeekStart}
-      onMouseMove={handleSeekMove}
-      onMouseUp={handleSeekEnd}
-      onMouseLeave={() => setIsSeeking(false)}
-      onTouchStart={handleSeekStart}
-      onTouchMove={handleSeekMove}
-      onTouchEnd={handleSeekEnd}
+      onPointerDown={handleSeekStart}
+      onPointerMove={handleSeekMove}
+      onPointerUp={handleSeekEnd}
+      onPointerLeave={() => setIsSeeking(false)}
+      onPointerCancel={() => setIsSeeking(false)}
       onKeyDown={handleKeyDown}
       role="slider"
       aria-valuemin={0}
@@ -271,9 +317,20 @@ function drawWithWebGL(
   peaks: Float32Array,
   progress: number,
   buffered: number,
-  opts: { barWidth: number; barGap: number; numBars: number },
+  opts: {
+    barWidth: number;
+    barGap: number;
+    numBars: number;
+    colors: {
+      played: string;
+      unplayed: string;
+      buffered: string;
+      disabled: string;
+      playhead: string;
+    };
+  },
 ) {
-  const { barWidth, barGap, numBars } = opts;
+  const { barWidth, barGap, numBars, colors } = opts;
 
   const vertexSrc = `
     attribute vec2 a_position;
@@ -306,7 +363,7 @@ function drawWithWebGL(
   gl.useProgram(program);
 
   const vertices: number[] = [];
-  const colors: number[] = [];
+  const colorValues: number[] = [];
 
   for (let i = 0; i < numBars; i++) {
     const amplitude = peaks[i];
@@ -314,15 +371,15 @@ function drawWithWebGL(
     const x = i * (barWidth + barGap);
     const left = (x / width) * 2 - 1;
     const right = ((x + barWidth) / width) * 2 - 1;
-    const bottom = -1;
-    const top = bottom + (barHeight / height) * 2;
     const barPosition = i / (numBars - 1);
+    const top = (barHeight / height);
+    const bottom = -top;
 
-    let color = "#3f3f46";
-    if (barPosition <= progress) color = "#3b82f6";
-    else if (barPosition <= buffered) color = "#737373";
+    let color = colors.unplayed;
+    if (barPosition <= progress) color = colors.played;
+    else if (barPosition <= buffered) color = colors.buffered;
 
-    const rgb = hexToRgb(color).map((v) => v / 255) as [number, number, number];
+    const rgb = hexToRgb(color.trim()).map((v) => v / 255) as [number, number, number];
 
     // two triangles per bar
     vertices.push(
@@ -340,7 +397,7 @@ function drawWithWebGL(
       top,
     );
     for (let j = 0; j < 6; j++) {
-      colors.push(...rgb);
+      colorValues.push(...rgb);
     }
   }
 
@@ -353,7 +410,7 @@ function drawWithWebGL(
 
   const colorBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colorValues), gl.STATIC_DRAW);
   const aColor = gl.getAttribLocation(program, "a_color");
   gl.enableVertexAttribArray(aColor);
   gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
