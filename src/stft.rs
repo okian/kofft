@@ -322,7 +322,7 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
                     acc[i] = time_buf[i].re * window[i];
                     norm[i] = window[i] * window[i];
                 }
-                Ok((start, acc.clone(), norm.clone()))
+                Ok((start, take(acc), take(norm)))
             },
         )
         .collect();
