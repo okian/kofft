@@ -60,12 +60,69 @@
 //! out.extend_from_slice(istft_stream.flush());
 //! ```
 
-#[cfg(not(all(feature = "wasm", feature = "simd")))]
-compile_error!("stft requires `wasm` and `simd` features to be enabled");
-
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
+
+#[cfg(all(feature = "simd", feature = "wasm"))]
+fn apply_window(signal: &[f32], window: &[f32], start: usize, frame: &mut [Complex32]) {
+    let win_len = window.len();
+    for i in 0..win_len {
+        let x = if start + i < signal.len() {
+            signal[start + i] * window[i]
+        } else {
+            0.0
+        };
+        frame[i] = Complex32::new(x, 0.0);
+    }
+}
+
+#[cfg(not(all(feature = "simd", feature = "wasm")))]
+fn apply_window(signal: &[f32], window: &[f32], start: usize, frame: &mut [Complex32]) {
+    let win_len = window.len();
+    for i in 0..win_len {
+        let x = if start + i < signal.len() {
+            signal[start + i] * window[i]
+        } else {
+            0.0
+        };
+        frame[i] = Complex32::new(x, 0.0);
+    }
+}
+
+#[cfg(all(feature = "simd", feature = "wasm"))]
+fn overlap_add(
+    frame: &[Complex32],
+    window: &[f32],
+    start: usize,
+    output: &mut [f32],
+    scratch: &mut [f32],
+) {
+    let win_len = window.len();
+    for i in 0..win_len {
+        if start + i < output.len() {
+            output[start + i] += frame[i].re * window[i];
+            scratch[start + i] += window[i] * window[i];
+        }
+    }
+}
+
+#[cfg(not(all(feature = "simd", feature = "wasm")))]
+fn overlap_add(
+    frame: &[Complex32],
+    window: &[f32],
+    start: usize,
+    output: &mut [f32],
+    scratch: &mut [f32],
+) {
+    let win_len = window.len();
+    for i in 0..win_len {
+        if start + i < output.len() {
+            output[start + i] += frame[i].re * window[i];
+            scratch[start + i] += window[i] * window[i];
+        }
+    }
+}
 
 /// Compute the STFT of a real-valued signal.
 ///
@@ -94,14 +151,7 @@ pub fn stft<Fft: FftImpl<f32>>(
     for (frame_idx, frame) in output.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
         frame.resize(win_len, Complex32::new(0.0, 0.0));
-        for i in 0..win_len {
-            let x = if start + i < signal.len() {
-                signal[start + i] * window[i]
-            } else {
-                0.0
-            };
-            frame[i] = Complex32::new(x, 0.0);
-        }
+        apply_window(signal, window, start, frame);
         fft.fft(frame)?;
     }
     Ok(())
@@ -142,12 +192,7 @@ pub fn istft<Fft: FftImpl<f32>>(
             return Err(FftError::MismatchedLengths);
         }
         fft.ifft(frame)?;
-        for i in 0..win_len {
-            if start + i < output.len() {
-                output[start + i] += frame[i].re * window[i];
-                scratch[start + i] += window[i] * window[i];
-            }
-        }
+        overlap_add(frame, window, start, output, scratch);
     }
     // Normalize by window sum
     for i in 0..output.len() {
@@ -194,14 +239,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
         if self.pos >= self.signal.len() {
             return Ok(false);
         }
-        for (i, out_i) in out.iter_mut().enumerate() {
-            let x = if self.pos + i < self.signal.len() {
-                self.signal[self.pos + i] * self.window[i]
-            } else {
-                0.0
-            };
-            *out_i = Complex32::new(x, 0.0);
-        }
+        apply_window(self.signal, self.window, self.pos, out);
         self.fft.fft(out)?;
         self.pos += self.hop_size;
         Ok(true)
@@ -463,13 +501,13 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         self.time_buf.copy_from_slice(frame);
         self.fft.ifft(&mut self.time_buf)?;
         // Window and overlap-add
-        for i in 0..self.win_len {
-            let win = self.window[i];
-            let val = self.time_buf[i].re * win;
-            let idx = self.buf_pos + i;
-            self.buffer[idx] += val;
-            self.norm_buf[idx] += win * win;
-        }
+        overlap_add(
+            &self.time_buf,
+            self.window,
+            self.buf_pos,
+            &mut self.buffer,
+            &mut self.norm_buf,
+        );
         self.frame_count += 1;
         // Output is available after the first frame
         let out_start = self.out_pos;
