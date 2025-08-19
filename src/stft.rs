@@ -60,6 +60,9 @@
 //! out.extend_from_slice(istft_stream.flush());
 //! ```
 
+#[cfg(not(all(feature = "wasm", feature = "simd")))]
+compile_error!("stft requires `wasm` and `simd` features to be enabled");
+
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
