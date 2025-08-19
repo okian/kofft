@@ -35,6 +35,10 @@ harness = false
 name = "waveform_cache"
 harness = false
 
+[[bench]]
+name = "stft_parallel"
+harness = false
+
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"
