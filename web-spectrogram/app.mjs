@@ -27,7 +27,9 @@ export class SpectrogramApp {
         const frame = this.computeFrame(input);
         if (!frame || frame.length === 0) return;
         const width = frame.length / 4;
-        this.canvas.width = width;
+        if (this.canvas.width !== width) {
+          this.canvas.width = width;
+        }
         const imageData = new ImageData(new Uint8ClampedArray(frame), width, 1);
         this.ctx.drawImage(
           this.canvas,
