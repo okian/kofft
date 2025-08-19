@@ -1,19 +1,26 @@
 {
   "name": "kofft",
   "version": "1.0.0",
-  "description": "[![Crates.io](https://img.shields.io/crates/v/kofft)](https://crates.io/crates/kofft) [![Documentation](https://docs.rs/kofft/badge.svg)](https://docs.rs/kofft) [![License](https://img.shields.io/crates/l/kofft)](https://github.com/kianostad/kofft/blob/main/LICENSE) [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org) [![codecov](https://codecov.io/github/okian/kofft/graph/badge.svg?token=51ZZSPJFB9)](https://codecov.io/github/okian/kofft)",
+  "description": "High-performance DSP library with WebAssembly demo",
   "main": "test_pwa.js",
   "directories": {
     "example": "examples",
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node web-spectrogram/server.mjs",
+    "test": "node web-spectrogram/app.test.mjs && node web-spectrogram/server.test.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "puppeteer": "^24.16.2"
+    "express": "^4.19.2",
+    "puppeteer": "^24.16.2",
+    "selfsigned": "^2.4.1"
+  },
+  "devDependencies": {
+    "c8": "^9.1.0",
+    "prettier": "^3.2.5"
   }
 }
