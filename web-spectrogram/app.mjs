@@ -68,7 +68,40 @@ function drawSpectrogramWebGL(gl, canvas, res) {
   const fs = gl.createShader(gl.FRAGMENT_SHADER);
   gl.shaderSource(
     fs,
-    "precision highp float; varying vec2 v; uniform sampler2D m; uniform float maxMag; const float FLOOR_DB=-80.0; vec3 rainbow(float t){ if(t<0.25){ float local=t/0.25; return mix(vec3(0.0,0.0,0.0), vec3(0.0,0.0,1.0), local);} else if(t<0.5){ float local=(t-0.25)/0.25; return mix(vec3(0.0,0.0,1.0), vec3(0.0,1.0,1.0), local);} else if(t<0.75){ float local=(t-0.5)/0.25; return mix(vec3(0.0,1.0,1.0), vec3(1.0,1.0,0.0), local);} else if(t<0.9){ float local=(t-0.75)/0.15; return mix(vec3(1.0,1.0,0.0), vec3(1.0,0.0,0.0), local);} float local=(t-0.9)/0.1; return mix(vec3(1.0,0.0,0.0), vec3(1.0,1.0,1.0), local);} void main(){ float mag=texture2D(m,v).r; float ratio=mag/maxMag; float db=20.0*log(max(ratio,1e-12)); float t=(db-FLOOR_DB)/(-FLOOR_DB); gl_FragColor=vec4(rainbow(clamp(t,0.0,1.0)),1.0); }",
+  const fragmentShaderSource = `
+    precision highp float;
+    varying vec2 v;
+    uniform sampler2D m;
+    uniform float maxMag;
+    const float FLOOR_DB = -80.0;
+    vec3 rainbow(float t) {
+      if (t < 0.25) {
+        float local = t / 0.25;
+        return mix(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), local);
+      } else if (t < 0.5) {
+        float local = (t - 0.25) / 0.25;
+        return mix(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 1.0), local);
+      } else if (t < 0.75) {
+        float local = (t - 0.5) / 0.25;
+        return mix(vec3(0.0, 1.0, 1.0), vec3(1.0, 1.0, 0.0), local);
+      } else if (t < 0.9) {
+        float local = (t - 0.75) / 0.15;
+        return mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), local);
+      }
+      float local = (t - 0.9) / 0.1;
+      return mix(vec3(1.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0), local);
+    }
+    void main() {
+      float mag = texture2D(m, v).r;
+      float ratio = mag / maxMag;
+      float db = 20.0 * log(max(ratio, 1e-12));
+      float t = (db - FLOOR_DB) / (-FLOOR_DB);
+      gl_FragColor = vec4(rainbow(clamp(t, 0.0, 1.0)), 1.0);
+    }
+  `;
+  gl.shaderSource(
+    fs,
+    fragmentShaderSource,
   );
   gl.compileShader(fs);
 
