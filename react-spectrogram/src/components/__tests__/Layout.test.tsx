@@ -28,9 +28,12 @@ vi.mock('../../stores/uiStore', () => ({
     metadataPanelOpen: false,
     playlistPanelOpen: true, // Playlist should be visible by default
     settingsPanelOpen: false,
+    shortcutsHelpOpen: false,
     setMetadataPanelOpen: vi.fn(),
     setPlaylistPanelOpen: vi.fn(),
     setSettingsPanelOpen: vi.fn(),
+    setShortcutsHelpOpen: vi.fn(),
+    toggleShortcutsHelp: vi.fn(),
   })
 }))
 
@@ -46,7 +49,7 @@ vi.mock('../../hooks/useKeyboardShortcuts', () => ({
 }))
 
 vi.mock('../../hooks/useScreenSize', () => ({
-  useScreenSize: vi.fn(),
+  useScreenSize: () => ({ isMobile: false, isTablet: false }),
 }))
 
 vi.mock('../../hooks/useAudioFile', () => ({

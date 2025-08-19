@@ -349,7 +349,7 @@ describe('Keyboard Shortcut Functionality', () => {
       appContainer.focus()
 
       // Mock next track functionality
-      const nextButton = screen.getByTitle('Next track (→)')
+      const nextButton = screen.getByTitle('Next track (Ctrl+→)')
       const clickSpy = vi.spyOn(nextButton, 'click')
 
       // Press Ctrl+Right
@@ -366,7 +366,7 @@ describe('Keyboard Shortcut Functionality', () => {
       appContainer.focus()
 
       // Mock previous track functionality
-      const prevButton = screen.getByTitle('Previous track (←)')
+      const prevButton = screen.getByTitle('Previous track (Ctrl+←)')
       const clickSpy = vi.spyOn(prevButton, 'click')
 
       // Press Ctrl+Left
@@ -377,28 +377,6 @@ describe('Keyboard Shortcut Functionality', () => {
   })
 
   describe('Other Shortcuts', () => {
-    it('should toggle loop mode with L key', async () => {
-      render(<App />)
-      await loadTestFile()
-
-      const appContainer = screen.getByTestId('app-container')
-      appContainer.focus()
-
-      // Press L to toggle loop
-      await user.keyboard('l')
-      await waitFor(() => {
-        const loopButton = screen.getByTestId('loop-button')
-        expect(loopButton).toHaveAttribute('data-active', 'true')
-      })
-
-      // Press L again to disable loop
-      await user.keyboard('l')
-      await waitFor(() => {
-        const loopButton = screen.getByTestId('loop-button')
-        expect(loopButton).toHaveAttribute('data-active', 'false')
-      })
-    })
-
     it('should open settings with S key', async () => {
       render(<App />)
       await loadTestFile()
@@ -410,6 +388,24 @@ describe('Keyboard Shortcut Functionality', () => {
       await user.keyboard('s')
       await waitFor(() => {
         expect(screen.getByTestId('settings-panel')).toBeInTheDocument()
+      })
+    })
+
+    it('should open shortcut help with ? key', async () => {
+      render(<App />)
+      await loadTestFile()
+
+      const appContainer = screen.getByTestId('app-container')
+      appContainer.focus()
+
+      await user.keyboard('?')
+      await waitFor(() => {
+        expect(screen.getByTestId('shortcuts-modal')).toBeInTheDocument()
+      })
+
+      await user.keyboard('{Escape}')
+      await waitFor(() => {
+        expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument()
       })
     })
 

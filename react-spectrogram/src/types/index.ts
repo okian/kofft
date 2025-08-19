@@ -146,6 +146,7 @@ export interface UIState {
   metadataPanelOpen: boolean;
   playlistPanelOpen: boolean;
   settingsPanelOpen: boolean;
+  shortcutsHelpOpen: boolean;
   isFullscreen: boolean;
   isMobile: boolean;
   isTablet: boolean;
@@ -171,6 +172,10 @@ export interface AudioState {
 // Keyboard shortcuts
 export interface KeyboardShortcuts {
   playPause: string;
+  seekBackward: string;
+  seekForward: string;
+  rewind: string;
+  fastForward: string;
   previousTrack: string;
   nextTrack: string;
   toggleMetadata: string;
@@ -180,6 +185,7 @@ export interface KeyboardShortcuts {
   volumeUp: string;
   volumeDown: string;
   mute: string;
+  help: string;
 }
 
 // WebGL and Canvas types

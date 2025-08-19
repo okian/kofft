@@ -71,6 +71,8 @@ const mockUseUIStore = vi.fn(() => ({
   togglePlaylist: vi.fn(),
   toggleSettings: vi.fn(),
   toggleFullscreen: vi.fn(),
+  shortcutsHelpOpen: false,
+  setShortcutsHelpOpen: vi.fn(),
 }))
 
 const mockUseSettingsStore = vi.fn(() => ({
@@ -144,8 +146,8 @@ describe('Integration Tests', () => {
       expect(screen.getByTitle('Open audio file (O)')).toBeInTheDocument()
       expect(screen.getByTitle('Play/Pause (Space)')).toBeInTheDocument()
       expect(screen.getByTitle('Stop (S)')).toBeInTheDocument()
-      expect(screen.getByTitle('Previous track (←)')).toBeInTheDocument()
-      expect(screen.getByTitle('Next track (→)')).toBeInTheDocument()
+      expect(screen.getByTitle('Previous track (Ctrl+←)')).toBeInTheDocument()
+      expect(screen.getByTitle('Next track (Ctrl+→)')).toBeInTheDocument()
       expect(screen.getByTitle('Settings (S)')).toBeInTheDocument()
     })
   })
