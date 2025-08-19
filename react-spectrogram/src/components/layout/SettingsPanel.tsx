@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { X, Palette, Sliders, Monitor, Zap, Key, Image, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { X, Palette, Sliders, Monitor, Zap, Key, Image, Check, AlertCircle, Loader2, Database } from 'lucide-react'
 import { SpectrogramSettings, Theme, AmplitudeScale, FrequencyScale, Resolution, RefreshRate } from '@/types'
 import { cn } from '@/utils/cn'
 import { directToast } from '@/utils/toast'
+import { MetadataStorePanel } from './MetadataStorePanel'
 
 interface SettingsPanelProps {
   settings: SpectrogramSettings
@@ -18,7 +19,7 @@ export function SettingsPanel({
   onSettingsChange,
 }: SettingsPanelProps) {
   const [validatingKeys, setValidatingKeys] = useState<{ [key: string]: boolean }>({})
-  const [activeTab, setActiveTab] = useState<'general' | 'artwork' | 'api'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'artwork' | 'api' | 'database'>('general')
 
   if (!isOpen) return null
 
@@ -176,6 +177,18 @@ export function SettingsPanel({
           >
             <Key size={16} className="inline mr-2" />
             API Keys
+          </button>
+          <button
+            onClick={() => setActiveTab('database')}
+            className={cn(
+              'flex-1 px-4 py-3 text-sm font-medium transition-colors',
+              activeTab === 'database'
+                ? 'text-accent-blue border-b-2 border-accent-blue'
+                : 'text-neutral-400 hover:text-neutral-200'
+            )}
+          >
+            <Database size={16} className="inline mr-2" />
+            Database
           </button>
         </div>
 
@@ -473,6 +486,10 @@ export function SettingsPanel({
                 </div>
               </div>
             </div>
+          )}
+
+          {activeTab === 'database' && (
+            <MetadataStorePanel />
           )}
         </div>
 

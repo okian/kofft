@@ -5,6 +5,9 @@ import { AudioTrack, AudioMetadata, ArtworkSource } from '@/types'
 import { extractMetadata, generateAmplitudeEnvelope } from '@/utils/wasm'
 import { extractArtwork } from '@/utils/artwork'
 import { conditionalToast } from '@/utils/toast'
+import { metadataStore } from '@/utils/metadataStore'
+import { optimisticMetadataStore, computeOptimisticKey } from '@/utils/optimisticMetadataStore'
+import { metadataVerificationWorker } from '@/utils/metadataVerificationWorker'
 
 // Utility to compute SHA-256 hash for a file buffer
 const hashArrayBuffer = async (buffer: ArrayBuffer): Promise<string> => {
@@ -12,64 +15,6 @@ const hashArrayBuffer = async (buffer: ArrayBuffer): Promise<string> => {
   return Array.from(new Uint8Array(hashBuffer))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
-}
-
-// Utility to convert Uint8Array to base64
-const uint8ToBase64 = (bytes: Uint8Array): string => {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(bytes).toString('base64')
-  }
-  let binary = ''
-  bytes.forEach(b => {
-    binary += String.fromCharCode(b)
-  })
-  return btoa(binary)
-}
-
-// Utility to convert base64 to Uint8Array
-const base64ToUint8 = (base64: string): Uint8Array => {
-  if (typeof Buffer !== 'undefined') {
-    return new Uint8Array(Buffer.from(base64, 'base64'))
-  }
-  const binary = atob(base64)
-  const len = binary.length
-  const bytes = new Uint8Array(len)
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return bytes
-}
-
-// Utility to clean up localStorage when it's getting full
-const cleanupLocalStorage = () => {
-  try {
-    const keys = Object.keys(localStorage)
-    const audioKeys = keys.filter(key => key.startsWith('audio-metadata-'))
-    
-    if (audioKeys.length > 20) {
-      // If we have more than 20 cached audio files, remove the oldest ones
-      const sortedKeys = audioKeys.sort((a, b) => {
-        try {
-          const aData = localStorage.getItem(a)
-          const bData = localStorage.getItem(b)
-          if (!aData || !bData) return 0
-          
-          const aTime = JSON.parse(aData).timestamp || 0
-          const bTime = JSON.parse(bData).timestamp || 0
-          return aTime - bTime
-        } catch {
-          return 0
-        }
-      })
-      
-      // Remove the oldest 5 entries
-      sortedKeys.slice(0, 5).forEach(key => {
-        localStorage.removeItem(key)
-      })
-    }
-  } catch (e) {
-    console.warn('Failed to cleanup localStorage:', e)
-  }
 }
 
 export const useAudioFile = () => {
@@ -151,6 +96,92 @@ export const useAudioFile = () => {
     }
   }, [])
 
+  // Start background verification for a track
+  const startBackgroundVerification = useCallback(async (file: File, optimisticKey: string, trackId: string) => {
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      
+      // Add to verification queue with high priority for currently loaded tracks
+      await metadataVerificationWorker.addVerificationTask(
+        file.name,
+        file.size,
+        arrayBuffer,
+        10 // High priority for currently loaded tracks
+      )
+      
+      console.log('🔄 [VERIFICATION] Added to verification queue:', optimisticKey)
+      
+      // Set up a listener for verification completion
+      const checkVerificationStatus = async () => {
+        try {
+          const result = await optimisticMetadataStore.getOptimisticMetadata(file.name, file.size)
+          if (result.metadata?.verified) {
+            console.log('✅ [VERIFICATION] Metadata verified for key:', optimisticKey)
+            
+            // Update track with verified metadata
+            const verifiedMetadata: AudioMetadata = {
+              title: result.metadata.title,
+              artist: result.metadata.artist,
+              album: result.metadata.album,
+              year: result.metadata.year,
+              genre: result.metadata.genre,
+              duration: result.metadata.duration,
+              bitrate: result.metadata.bitrate,
+              sample_rate: result.metadata.sample_rate,
+              channels: result.metadata.channels,
+              bit_depth: result.metadata.bit_depth,
+              format: result.metadata.format,
+              album_art: result.artwork?.data,
+              album_art_mime: result.artwork?.mime_type || result.metadata.album_art_mime
+            }
+
+            let artwork: ArtworkSource | undefined
+            if (result.artwork) {
+              artwork = {
+                type: 'embedded',
+                data: result.artwork.data,
+                mimeType: result.artwork.mime_type,
+                confidence: 1.0,
+                metadata: {
+                  artist: verifiedMetadata.artist,
+                  album: verifiedMetadata.album,
+                  title: verifiedMetadata.title
+                }
+              }
+            }
+
+            useAudioStore.getState().updateTrack(trackId, {
+              metadata: verifiedMetadata,
+              artwork
+            })
+            
+            conditionalToast.success(`Verified: ${verifiedMetadata.title}`)
+            return true
+          }
+        } catch (error) {
+          console.warn('⚠️ [VERIFICATION] Error checking verification status:', error)
+        }
+        return false
+      }
+
+      // Check verification status periodically
+      const verificationInterval = setInterval(async () => {
+        const verified = await checkVerificationStatus()
+        if (verified) {
+          clearInterval(verificationInterval)
+        }
+      }, 2000) // Check every 2 seconds
+
+      // Stop checking after 30 seconds
+      setTimeout(() => {
+        clearInterval(verificationInterval)
+      }, 30000)
+      
+    } catch (error) {
+      console.error('❌ [VERIFICATION] Failed to start background verification:', error)
+    }
+  }, [])
+
   // Validate audio file
   const validateAudioFile = useCallback((file: File): boolean => {
     const validTypes = [
@@ -173,7 +204,7 @@ export const useAudioFile = () => {
     return validTypes.includes(file.type) || !!file.name.match(/\.(mp3|wav|flac|ogg|m4a|aac|webm)$/i)
   }, [])
 
-  // Load single audio file
+  // Load single audio file with optimistic metadata
   const loadAudioFile = useCallback(async (file: File): Promise<AudioTrack> => {
     setIsLoading(true)
     setError(null)
@@ -184,6 +215,9 @@ export const useAudioFile = () => {
       }
 
       const id = crypto.randomUUID()
+      const startTime = performance.now()
+      
+      // Create placeholder track for immediate UI feedback
       const placeholder: AudioTrack = {
         id,
         file,
@@ -205,83 +239,163 @@ export const useAudioFile = () => {
         setCurrentTrack(placeholder)
       }
 
+      // Fast path: Try optimistic metadata lookup
+      const optimisticKey = computeOptimisticKey(file.name, file.size)
+      console.log('🚀 [OPTIMISTIC] Checking optimistic cache for key:', optimisticKey)
+      
+      try {
+        const optimisticResult = await optimisticMetadataStore.getOptimisticMetadata(file.name, file.size)
+        
+        if (optimisticResult.metadata && optimisticResult.trackIndex) {
+          const cacheHitTime = performance.now() - startTime
+          console.log(`⚡ [OPTIMISTIC] Cache hit in ${cacheHitTime.toFixed(2)}ms for key:`, optimisticKey)
+          
+          // Convert optimistic metadata to AudioMetadata format
+          const optimisticMetadata: AudioMetadata = {
+            title: optimisticResult.metadata.title,
+            artist: optimisticResult.metadata.artist,
+            album: optimisticResult.metadata.album,
+            year: optimisticResult.metadata.year,
+            genre: optimisticResult.metadata.genre,
+            duration: optimisticResult.metadata.duration,
+            bitrate: optimisticResult.metadata.bitrate,
+            sample_rate: optimisticResult.metadata.sample_rate,
+            channels: optimisticResult.metadata.channels,
+            bit_depth: optimisticResult.metadata.bit_depth,
+            format: optimisticResult.metadata.format,
+            album_art: optimisticResult.artwork?.data,
+            album_art_mime: optimisticResult.artwork?.mime_type || optimisticResult.metadata.album_art_mime
+          }
+
+          // Create artwork source if available
+          let artwork: ArtworkSource | undefined
+          if (optimisticResult.artwork) {
+            artwork = {
+              type: 'embedded',
+              data: optimisticResult.artwork.data,
+              mimeType: optimisticResult.artwork.mime_type,
+              confidence: optimisticResult.metadata.verified ? 1.0 : 0.8,
+              metadata: {
+                artist: optimisticMetadata.artist,
+                album: optimisticMetadata.album,
+                title: optimisticMetadata.title
+              }
+            }
+          }
+
+          // Update track with optimistic metadata immediately
+          useAudioStore.getState().updateTrack(id, {
+            metadata: optimisticMetadata,
+            duration: optimisticMetadata.duration || 0,
+            artwork,
+            isLoading: false,
+          })
+
+          // Show verification status if not verified
+          if (!optimisticResult.metadata.verified) {
+            conditionalToast.info(`Loaded: ${optimisticMetadata.title} (verifying...)`)
+          } else {
+            conditionalToast.success(`Loaded: ${optimisticMetadata.title}`)
+          }
+
+          // Start background verification if not already verified
+          if (!optimisticResult.metadata.verified) {
+            startBackgroundVerification(file, optimisticKey, id)
+          }
+
+          return placeholder
+        }
+      } catch (optimisticError) {
+        console.warn('⚠️ [OPTIMISTIC] Optimistic lookup failed, falling back to full extraction:', optimisticError)
+      }
+
+      // Fallback: Full metadata extraction
+      console.log('🔍 [METADATA] No optimistic cache hit, performing full extraction...')
+      
       ;(async () => {
         try {
           const arrayBuffer = await file.arrayBuffer()
           const hash = await hashArrayBuffer(arrayBuffer)
-          const cacheKey = `audio-metadata-${hash}`
           let metadata: AudioMetadata
           let artwork: ArtworkSource | undefined
 
-          const cached = localStorage.getItem(cacheKey)
-          if (cached) {
-            try {
-              const parsed = JSON.parse(cached)
+          // Try to get cached metadata from IndexedDB (legacy fallback)
+          try {
+            const cachedMetadata = await metadataStore.getMetadata(hash)
+            if (cachedMetadata) {
+              console.log('📦 [METADATA] Found cached metadata in IndexedDB')
+              
+              // Convert stored metadata back to AudioMetadata format
               metadata = {
-                ...parsed.metadata,
-                album_art: parsed.metadata.album_art ? base64ToUint8(parsed.metadata.album_art) : undefined,
+                title: cachedMetadata.title,
+                artist: cachedMetadata.artist,
+                album: cachedMetadata.album,
+                year: cachedMetadata.year,
+                genre: cachedMetadata.genre || '',
+                duration: cachedMetadata.duration,
+                bitrate: cachedMetadata.bitrate,
+                sample_rate: cachedMetadata.sample_rate,
+                channels: cachedMetadata.channels,
+                bit_depth: cachedMetadata.bit_depth,
+                format: cachedMetadata.format,
+                album_art: undefined, // Will be loaded separately if needed
+                album_art_mime: cachedMetadata.album_art_mime
               }
-              artwork = parsed.artwork
-                ? {
-                    ...parsed.artwork,
-                    data: parsed.artwork.data ? base64ToUint8(parsed.artwork.data) : undefined,
+
+              // Load album art if available
+              if (cachedMetadata.album_art_hash) {
+                const albumArt = await metadataStore.getAlbumArt(cachedMetadata.album_art_hash)
+                if (albumArt) {
+                  metadata.album_art = albumArt.data
+                  metadata.album_art_mime = albumArt.mime_type
+                  
+                  // Create artwork source for UI
+                  artwork = {
+                    type: 'embedded',
+                    data: albumArt.data,
+                    mimeType: albumArt.mime_type,
+                    confidence: 1.0,
+                    metadata: {
+                      artist: metadata.artist,
+                      album: metadata.album,
+                      title: metadata.title
+                    }
                   }
-                : undefined
-            } catch (parseError) {
-              console.error(`Failed to parse cached metadata for key "${cacheKey}":`, parseError);
+                }
+              }
+            } else {
+              // No cached metadata, extract it
+              console.log('🔍 [METADATA] No cached metadata found, extracting...')
               metadata = await parseMetadata(file)
               const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
               artwork = artworkResult.artwork
+
+              // Store in both legacy and optimistic stores
+              try {
+                console.log('💾 [METADATA] Storing metadata in IndexedDB...')
+                const { metadataId, albumArtId } = await metadataStore.storeMetadata(file, metadata, arrayBuffer)
+                console.log('✅ [METADATA] Metadata stored successfully:', { metadataId, albumArtId })
+                
+                // Also store in optimistic cache
+                await optimisticMetadataStore.storeOptimisticMetadata(file.name, file.size, metadata, arrayBuffer)
+                console.log('✅ [OPTIMISTIC] Metadata stored in optimistic cache')
+              } catch (storeError) {
+                console.error('❌ [METADATA] Failed to store metadata:', storeError)
+                // Continue without storing - metadata is still available for this session
+              }
             }
-          } else {
+          } catch (dbError) {
+            console.error('❌ [METADATA] IndexedDB error, falling back to extraction:', dbError)
+            // Fallback to extraction if IndexedDB fails
             metadata = await parseMetadata(file)
             const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
             artwork = artworkResult.artwork
-
-            const metadataToStore = {
-              ...metadata,
-              album_art: metadata.album_art ? uint8ToBase64(metadata.album_art) : undefined,
-            }
-            const artworkToStore = artwork
-              ? { ...artwork, data: artwork.data ? uint8ToBase64(artwork.data) : undefined }
-              : undefined
+            
+            // Store in optimistic cache
             try {
-              // Clean up old entries if we have too many
-              cleanupLocalStorage()
-              
-              // Check if we have enough space before storing
-              const dataToStore = JSON.stringify({ 
-                metadata: metadataToStore, 
-                artwork: artworkToStore,
-                timestamp: Date.now()
-              })
-              const estimatedSize = new Blob([dataToStore]).size
-              
-              // Estimate available space (localStorage is typically 5-10MB)
-              const testKey = 'storage_test'
-              const testData = 'x'.repeat(1024) // 1KB test
-              try {
-                localStorage.setItem(testKey, testData)
-                localStorage.removeItem(testKey)
-              } catch {
-                // If we can't even store 1KB, localStorage is full
-                console.warn('localStorage appears to be full, skipping metadata cache')
-                return
-              }
-              
-              // If estimated size is too large (>1MB), skip storing artwork
-              if (estimatedSize > 1024 * 1024) {
-                const metadataOnly = { 
-                  metadata: metadataToStore, 
-                  artwork: undefined,
-                  timestamp: Date.now()
-                }
-                localStorage.setItem(cacheKey, JSON.stringify(metadataOnly))
-              } else {
-                localStorage.setItem(cacheKey, dataToStore)
-              }
-            } catch (e) {
-              console.error('Failed to cache audio metadata in localStorage:', e);
+              await optimisticMetadataStore.storeOptimisticMetadata(file.name, file.size, metadata, arrayBuffer)
+            } catch (optimisticError) {
+              console.warn('⚠️ [OPTIMISTIC] Failed to store in optimistic cache:', optimisticError)
             }
           }
 
@@ -306,6 +420,9 @@ export const useAudioFile = () => {
             artwork,
             isLoading: false,
           })
+          
+          const totalTime = performance.now() - startTime
+          console.log(`✅ [METADATA] Full extraction completed in ${totalTime.toFixed(2)}ms`)
           conditionalToast.success(`Loaded: ${metadata.title || file.name.replace(/\.[^/.]+$/, '')}`)
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Failed to load audio file'
@@ -324,7 +441,7 @@ export const useAudioFile = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [validateAudioFile, parseMetadata, generateAmplitudeEnvelopeData, addToPlaylist, setCurrentTrack])
+  }, [validateAudioFile, parseMetadata, generateAmplitudeEnvelopeData, addToPlaylist, setCurrentTrack, startBackgroundVerification])
 
   // Load multiple audio files
   const loadAudioFiles = useCallback(async (files: FileList | File[]): Promise<AudioTrack[]> => {
@@ -456,6 +573,7 @@ export const useAudioFile = () => {
     getFrequencyData,
     getTimeData,
     cleanup,
-    initAudioContext
+    initAudioContext,
+    startBackgroundVerification
   }
 }
