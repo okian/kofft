@@ -48,7 +48,7 @@ vi.mock('../../hooks/useKeyboardShortcuts', () => ({
 }))
 
 vi.mock('../../hooks/useScreenSize', () => ({
-  useScreenSize: vi.fn()
+  useScreenSize: () => ({ isMobile: false, isTablet: false })
 }))
 
 // Mock the stores
@@ -98,15 +98,18 @@ vi.mock('../../stores/uiStore', () => ({
     isFullscreen: false,
     isMobile: false,
     isTablet: false,
+    shortcutsHelpOpen: false,
     setMetadataPanelOpen: vi.fn(),
     setPlaylistPanelOpen: vi.fn(),
     setSettingsPanelOpen: vi.fn(),
+    setShortcutsHelpOpen: vi.fn(),
     setFullscreen: vi.fn(),
     setMobile: vi.fn(),
     setTablet: vi.fn(),
     toggleMetadataPanel: vi.fn(),
     togglePlaylistPanel: vi.fn(),
     toggleSettingsPanel: vi.fn(),
+    toggleShortcutsHelp: vi.fn(),
     closeAllPanels: vi.fn(),
     updateScreenSize: vi.fn(),
   })

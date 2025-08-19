@@ -2,15 +2,20 @@ import { KeyboardShortcuts } from '@/types'
 
 export const DEFAULT_SHORTCUTS: KeyboardShortcuts = {
   playPause: ' ',
-  previousTrack: 'ArrowLeft',
-  nextTrack: 'ArrowRight',
-  toggleMetadata: 'm',
+  seekBackward: 'ArrowLeft',
+  seekForward: 'ArrowRight',
+  rewind: 'j',
+  fastForward: 'l',
+  previousTrack: 'Control+ArrowLeft',
+  nextTrack: 'Control+ArrowRight',
+  toggleMetadata: 'i',
   togglePlaylist: 'p',
   openSettings: 's',
   snapshot: 'Control+Shift+s',
   volumeUp: 'ArrowUp',
   volumeDown: 'ArrowDown',
   mute: 'm',
+  help: '?',
 }
 
 export function parseKeyCombo(combo: string): string[] {

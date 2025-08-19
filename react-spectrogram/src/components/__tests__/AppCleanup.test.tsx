@@ -26,9 +26,12 @@ vi.mock('../../stores/uiStore', () => ({
     metadataPanelOpen: false,
     playlistPanelOpen: false,
     settingsPanelOpen: false,
+    shortcutsHelpOpen: false,
     setMetadataPanelOpen: vi.fn(),
     setPlaylistPanelOpen: vi.fn(),
     setSettingsPanelOpen: vi.fn(),
+    setShortcutsHelpOpen: vi.fn(),
+    toggleShortcutsHelp: vi.fn(),
   })
 }))
 
