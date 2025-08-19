@@ -21,9 +21,7 @@ describe("ControlSection", () => {
     const titleScale = Number(
       container.style.getPropertyValue("--title-scale"),
     );
-    const metaScale = Number(
-      container.style.getPropertyValue("--meta-scale"),
-    );
+    const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
     expect(titleScale / metaScale).toBe(3);
   });
 
@@ -52,9 +50,7 @@ describe("ControlSection", () => {
     const titleScale = Number(
       container.style.getPropertyValue("--title-scale"),
     );
-    const metaScale = Number(
-      container.style.getPropertyValue("--meta-scale"),
-    );
+    const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
     const meta = screen.getByTestId("song-meta");
     expect(meta).toHaveTextContent("Coming Up Next");
     expect(metaScale / titleScale).toBe(3);
@@ -83,5 +79,36 @@ describe("ControlSection", () => {
     expect(container.style.getPropertyValue("--fade-duration")).toBe("200ms");
     await new Promise((r) => setTimeout(r, 210));
     await screen.findByText("Song 2");
+  });
+
+  it("animates album art when switching to next with a new album", async () => {
+    const { rerender } = render(
+      <ControlSection
+        art="art1.jpg"
+        title="Song"
+        artist="Artist"
+        album="Album1"
+        mode="now"
+      />,
+    );
+    rerender(
+      <ControlSection
+        art="art2.jpg"
+        title="Song2"
+        artist="Artist2"
+        album="Album2"
+        mode="next"
+      />,
+    );
+    const stack = screen
+      .getByTestId("control-section")
+      .querySelector(".art-stack");
+    expect(stack?.children.length).toBe(2);
+    const next = screen.getByTestId("next-art");
+    expect(next.className).toContain("animating");
+    await new Promise((r) => setTimeout(r, 310));
+    expect(screen.queryByTestId("next-art")).toBeNull();
+    const current = screen.getByTestId("current-art");
+    expect(current).toHaveAttribute("src", "art2.jpg");
   });
 });
