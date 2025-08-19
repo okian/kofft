@@ -139,6 +139,11 @@ pub mod cepstrum;
 /// Extended collection of window functions for specialized applications.
 pub mod window_more;
 
+/// Audio resampling utilities
+///
+/// Linear interpolation-based resampler with WASM bindings.
+pub mod resample;
+
 pub use fft::FftPlanner;
 pub use num::{Complex, Complex32, Complex64, Float};
 

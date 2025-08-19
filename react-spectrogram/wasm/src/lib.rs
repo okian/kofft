@@ -4,7 +4,7 @@ use console_error_panic_hook;
 use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
-use kofft::{dct, wavelet};
+use kofft::{dct, resample, wavelet};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -147,6 +147,11 @@ pub fn haar_forward(input: &[f32]) -> HaarResult {
 #[wasm_bindgen]
 pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Vec<f32> {
     wavelet::haar_inverse(avg, diff)
+}
+
+#[wasm_bindgen]
+pub fn resample_audio(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
+    resample::linear_resample(input, src_rate, dst_rate)
 }
 
 const WIN_LEN: usize = 1024;

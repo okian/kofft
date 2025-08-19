@@ -1,97 +1,172 @@
-import { describe, it, expect } from 'vitest'
-import { 
-  isAudioFile, 
-  formatDuration, 
-  formatFileSize, 
+import { describe, it, expect } from "vitest";
+import {
+  isAudioFile,
+  formatDuration,
+  formatFileSize,
   generateTrackId,
-  createAudioTrack 
-} from '../audio'
+  createAudioTrack,
+  resampleAudioData,
+  resampleAudioDataFallback,
+} from "../audio";
 
-describe('Audio Utils', () => {
-  describe('isAudioFile', () => {
-    it('returns true for valid audio files', () => {
-      const mp3File = new File([''], 'test.mp3', { type: 'audio/mpeg' })
-      const wavFile = new File([''], 'test.wav', { type: 'audio/wav' })
-      const flacFile = new File([''], 'test.flac', { type: 'audio/flac' })
-      
-      expect(isAudioFile(mp3File)).toBe(true)
-      expect(isAudioFile(wavFile)).toBe(true)
-      expect(isAudioFile(flacFile)).toBe(true)
-    })
+describe("Audio Utils", () => {
+  describe("isAudioFile", () => {
+    it("returns true for valid audio files", () => {
+      const mp3File = new File([""], "test.mp3", { type: "audio/mpeg" });
+      const wavFile = new File([""], "test.wav", { type: "audio/wav" });
+      const flacFile = new File([""], "test.flac", { type: "audio/flac" });
 
-    it('returns false for non-audio files', () => {
-      const textFile = new File([''], 'test.txt', { type: 'text/plain' })
-      const imageFile = new File([''], 'test.jpg', { type: 'image/jpeg' })
-      
-      expect(isAudioFile(textFile)).toBe(false)
-      expect(isAudioFile(imageFile)).toBe(false)
-    })
+      expect(isAudioFile(mp3File)).toBe(true);
+      expect(isAudioFile(wavFile)).toBe(true);
+      expect(isAudioFile(flacFile)).toBe(true);
+    });
 
-    it('handles files without MIME type', () => {
-      const mp3File = new File([''], 'test.mp3')
-      const txtFile = new File([''], 'test.txt')
-      
-      expect(isAudioFile(mp3File)).toBe(true)
-      expect(isAudioFile(txtFile)).toBe(false)
-    })
-  })
+    it("returns false for non-audio files", () => {
+      const textFile = new File([""], "test.txt", { type: "text/plain" });
+      const imageFile = new File([""], "test.jpg", { type: "image/jpeg" });
 
-  describe('formatDuration', () => {
-    it('formats seconds correctly', () => {
-      expect(formatDuration(0)).toBe('0:00')
-      expect(formatDuration(30)).toBe('0:30')
-      expect(formatDuration(65)).toBe('1:05')
-      expect(formatDuration(125)).toBe('2:05')
-    })
+      expect(isAudioFile(textFile)).toBe(false);
+      expect(isAudioFile(imageFile)).toBe(false);
+    });
 
-    it('formats hours correctly', () => {
-      expect(formatDuration(3600)).toBe('1:00:00')
-      expect(formatDuration(3661)).toBe('1:01:01')
-      expect(formatDuration(7325)).toBe('2:02:05')
-    })
-  })
+    it("handles files without MIME type", () => {
+      const mp3File = new File([""], "test.mp3");
+      const txtFile = new File([""], "test.txt");
 
-  describe('formatFileSize', () => {
-    it('formats bytes correctly', () => {
-      expect(formatFileSize(0)).toBe('0.0 B')
-      expect(formatFileSize(1024)).toBe('1.0 KB')
-      expect(formatFileSize(1048576)).toBe('1.0 MB')
-      expect(formatFileSize(1073741824)).toBe('1.0 GB')
-    })
+      expect(isAudioFile(mp3File)).toBe(true);
+      expect(isAudioFile(txtFile)).toBe(false);
+    });
+  });
 
-    it('handles decimal sizes', () => {
-      expect(formatFileSize(1536)).toBe('1.5 KB')
-      expect(formatFileSize(1572864)).toBe('1.5 MB')
-    })
-  })
+  describe("formatDuration", () => {
+    it("formats seconds correctly", () => {
+      expect(formatDuration(0)).toBe("0:00");
+      expect(formatDuration(30)).toBe("0:30");
+      expect(formatDuration(65)).toBe("1:05");
+      expect(formatDuration(125)).toBe("2:05");
+    });
 
-  describe('generateTrackId', () => {
-    it('generates unique IDs', () => {
-      const id1 = generateTrackId()
-      const id2 = generateTrackId()
-      
-      expect(id1).not.toBe(id2)
-      expect(id1).toMatch(/^track_\d+_[a-z0-9]+$/)
-      expect(id2).toMatch(/^track_\d+_[a-z0-9]+$/)
-    })
-  })
+    it("formats hours correctly", () => {
+      expect(formatDuration(3600)).toBe("1:00:00");
+      expect(formatDuration(3661)).toBe("1:01:01");
+      expect(formatDuration(7325)).toBe("2:02:05");
+    });
+  });
 
-  describe('createAudioTrack', () => {
-    it('creates track with correct properties', () => {
-      const file = new File([''], 'test.mp3', { type: 'audio/mpeg' })
+  describe("formatFileSize", () => {
+    it("formats bytes correctly", () => {
+      expect(formatFileSize(0)).toBe("0.0 B");
+      expect(formatFileSize(1024)).toBe("1.0 KB");
+      expect(formatFileSize(1048576)).toBe("1.0 MB");
+      expect(formatFileSize(1073741824)).toBe("1.0 GB");
+    });
+
+    it("handles decimal sizes", () => {
+      expect(formatFileSize(1536)).toBe("1.5 KB");
+      expect(formatFileSize(1572864)).toBe("1.5 MB");
+    });
+  });
+
+  describe("generateTrackId", () => {
+    it("generates unique IDs", () => {
+      const id1 = generateTrackId();
+      const id2 = generateTrackId();
+
+      expect(id1).not.toBe(id2);
+      expect(id1).toMatch(/^track_\d+_[a-z0-9]+$/);
+      expect(id2).toMatch(/^track_\d+_[a-z0-9]+$/);
+    });
+  });
+
+  describe("createAudioTrack", () => {
+    it("creates track with correct properties", () => {
+      const file = new File([""], "test.mp3", { type: "audio/mpeg" });
       const metadata = {
-        title: 'Test Song',
-        artist: 'Test Artist',
+        title: "Test Song",
+        artist: "Test Artist",
         duration: 120,
+      };
+
+      const track = createAudioTrack(file, metadata);
+
+      expect(track.id).toMatch(/^track_\d+_[a-z0-9]+$/);
+      expect(track.file).toBe(file);
+      expect(track.metadata).toBe(metadata);
+      expect(track.duration).toBe(120);
+      expect(track.url).toMatch(/^blob:/);
+    });
+  });
+
+  describe("resampleAudioData", () => {
+    it("falls back to TypeScript implementation when WASM unavailable", async () => {
+      const input = new Float32Array([0, 1, 0, -1]);
+      const expected = resampleAudioDataFallback(input, 8000, 4000);
+      const result = await resampleAudioData(input, 8000, 4000);
+      expect(Array.from(result)).toEqual(Array.from(expected));
+    });
+
+    it("linear interpolation yields lower error than nearest neighbor", () => {
+      const srcRate = 44100;
+      const dstRate = 48000;
+      const freq = 1000;
+      const length = srcRate;
+      const input = new Float32Array(length);
+      for (let i = 0; i < length; i++) {
+        input[i] = Math.sin((2 * Math.PI * freq * i) / srcRate);
       }
-      
-      const track = createAudioTrack(file, metadata)
-      
-      expect(track.id).toMatch(/^track_\d+_[a-z0-9]+$/)
-      expect(track.file).toBe(file)
-      expect(track.metadata).toBe(metadata)
-      expect(track.duration).toBe(120)
-      expect(track.url).toMatch(/^blob:/)
-    })
-  })
-})
+
+      const reference = new Float32Array(dstRate);
+      for (let i = 0; i < dstRate; i++) {
+        reference[i] = Math.sin((2 * Math.PI * freq * i) / dstRate);
+      }
+
+      const linear = resampleAudioDataFallback(input, dstRate, srcRate);
+      const nearest = (() => {
+        const ratio = srcRate / dstRate;
+        const newLength = Math.round(input.length / ratio);
+        const out = new Float32Array(newLength);
+        for (let i = 0; i < newLength; i++) {
+          const idx = Math.round(i * ratio);
+          out[i] = input[idx] || 0;
+        }
+        return out;
+      })();
+
+      const mse = (a: Float32Array, b: Float32Array): number => {
+        let err = 0;
+        const len = Math.min(a.length, b.length);
+        for (let i = 0; i < len; i++) {
+          const d = a[i] - b[i];
+          err += d * d;
+        }
+        return err / len;
+      };
+
+      const errLinear = mse(linear, reference);
+      const errNearest = mse(nearest, reference);
+      expect(errLinear).toBeLessThan(errNearest);
+    });
+
+    it("benchmarks resampler performance", () => {
+      const srcRate = 44100;
+      const dstRate = 48000;
+      const input = new Float32Array(srcRate * 2);
+      const startLinear = performance.now();
+      resampleAudioDataFallback(input, dstRate, srcRate);
+      const linearTime = performance.now() - startLinear;
+
+      const startNearest = performance.now();
+      const ratio = srcRate / dstRate;
+      const newLength = Math.round(input.length / ratio);
+      const out = new Float32Array(newLength);
+      for (let i = 0; i < newLength; i++) {
+        const idx = Math.round(i * ratio);
+        out[i] = input[idx] || 0;
+      }
+      const nearestTime = performance.now() - startNearest;
+
+      // Ensure linear resampler is within 2x of naive nearest implementation
+      expect(linearTime).toBeLessThan(nearestTime * 2);
+    });
+  });
+});
