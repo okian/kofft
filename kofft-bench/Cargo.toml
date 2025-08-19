@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-kofft = { path = "..", default-features = false, features = ["std", "slow"] }
+kofft = { path = "..", default-features = false, features = ["std", "slow", "waveform-cache", "simd", "wasm"] }
 criterion = { version = "0.7", features = ["html_reports"] }
 rustfft = "6"
 realfft = "3"
@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 once_cell = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rusqlite = { version = "0.29", features = ["bundled"] }
 
 [features]
 default = []
@@ -28,6 +29,10 @@ precomputed-twiddles = ["kofft/precomputed-twiddles"]
 
 [[bench]]
 name = "bench_fft"
+harness = false
+
+[[bench]]
+name = "waveform_cache"
 harness = false
 
 [[example]]

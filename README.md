@@ -19,11 +19,30 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 - **🌐 WebAssembly support**
 - **📱 Parallel processing** (optional)
 - **🎵 Hybrid song identification**: fast metadata lookup with BLAKE3 fallback
+- **💾 Waveform caching (opt-in)**: SQLite-backed waveform snapshots for faster startup
 
 ## Benchmarks
 
 See [benchmarks](benchmarks/README.md) for detailed benchmark results and data.
 
+## Waveform Caching
+
+The optional `waveform-cache` feature stores per-track waveform snapshots in a
+SQLite database. Loading a cached waveform avoids recomputation and can reduce
+startup latency, at the cost of additional disk usage proportional to the
+number of tracks. Each entry stores the waveform samples for a track in the
+`waveform_samples` table:
+
+```
+CREATE TABLE waveform_samples (
+    track_id TEXT PRIMARY KEY,
+    samples  BLOB NOT NULL
+);
+```
+
+Because caching increases storage requirements, the feature is **not enabled by
+default**. Opt in by enabling the `waveform-cache` Cargo feature when compiling
+`kofft` if faster startups are worth the space trade-off.
 ## Song Identification
 
 `kofft` includes an optional `media::index` module for lightweight song lookup.
