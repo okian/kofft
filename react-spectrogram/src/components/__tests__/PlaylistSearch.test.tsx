@@ -39,6 +39,19 @@ describe('PlaylistPanel search', () => {
       },
       duration: 200,
       url: 'url2'
+    },
+    {
+      id: '3',
+      file: new File(['test'], 'gamma.mp3', { type: 'audio/mp3' }),
+      metadata: {
+        title: 'Gamma Song',
+        artist: 'Artist3',
+        album: 'Album3',
+        genre: 'Jazz',
+        year: 2002
+      },
+      duration: 210,
+      url: 'url3'
     }
   ]
 
@@ -56,12 +69,15 @@ describe('PlaylistPanel search', () => {
     )
 
     const datalist = screen.getByTestId('playlist-search-suggestions')
-    const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
-    expect(options).toContain('Alpha Song')
-    expect(options).toContain('Artist2')
+    const options = Array.from(datalist.querySelectorAll('option'))
+    expect(options).toHaveLength(11)
+    const alphaOption = datalist.querySelector('option[value="Alpha Song"]')
+    expect(alphaOption?.getAttribute('label')).toBe('🎵 Alpha Song')
+    expect(options[options.length - 1].disabled).toBe(true)
+    expect(options[options.length - 1].textContent).toContain('more')
 
     const input = screen.getByTestId('playlist-search-input')
-    fireEvent.change(input, { target: { value: 'Artist2' } })
+    fireEvent.change(input, { target: { value: 'Art2' } })
     expect(screen.getByText('Beta Song')).toBeInTheDocument()
     expect(screen.queryByText('Alpha Song')).toBeNull()
 
