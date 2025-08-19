@@ -102,6 +102,12 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
           new Uint8Array(arrayBuffer),
           file.name,
         );
+        console.debug(
+          "[wasm] metadata extraction succeeded",
+          wasmMetadata && wasmMetadata.album_art
+            ? `album art bytes: ${wasmMetadata.album_art.length}`
+            : "no album art",
+        );
 
         if (wasmMetadata) {
           console.debug(
