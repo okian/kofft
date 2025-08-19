@@ -34,4 +34,5 @@ web-spectrogram/pkg/
 web-spectrogram/app/dist/
 
 react-spectrogram/wasm/target/
-react-spectrogram/src/wasm/
+react-spectrogram/src/wasm/*
+!react-spectrogram/src/wasm/.gitkeep

@@ -37,6 +37,14 @@ export const Footer: React.FC = () => {
   const { isMobile, isTablet } = useScreenSize();
   const audioFile = useAudioFile();
 
+  const hasUpcomingTrack =
+    currentTrackIndex >= 0 && currentTrackIndex < playlist.length - 1;
+  const upcomingTrack = hasUpcomingTrack
+    ? playlist[currentTrackIndex + 1]
+    : null;
+  const showNextInfo =
+    !!currentTrack && hasUpcomingTrack && duration - currentTime <= 10;
+
   // Format time for display
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -272,14 +280,28 @@ export const Footer: React.FC = () => {
               >
                 {currentTrack.metadata.title || currentTrack.file.name}
               </h4>
-              <AlternatingInfo
-                artist={currentTrack.metadata.artist || "Unknown Artist"}
-                album={currentTrack.metadata.album || "Unknown Album"}
-                className={cn(
-                  "text-neutral-400",
-                  isMobile ? "text-xs" : "text-xs",
-                )}
-              />
+              {showNextInfo && upcomingTrack ? (
+                <p
+                  className={cn(
+                    "text-neutral-400",
+                    isMobile ? "text-xs" : "text-xs",
+                  )}
+                  data-testid="upcoming-track-info"
+                >
+                  {`Coming up: ${
+                    upcomingTrack.metadata.title || upcomingTrack.file.name
+                  } by ${upcomingTrack.metadata.artist || "Unknown Artist"}`}
+                </p>
+              ) : (
+                <AlternatingInfo
+                  artist={currentTrack.metadata.artist || "Unknown Artist"}
+                  album={currentTrack.metadata.album || "Unknown Album"}
+                  className={cn(
+                    "text-neutral-400",
+                    isMobile ? "text-xs" : "text-xs",
+                  )}
+                />
+              )}
             </div>
           )}
         </div>

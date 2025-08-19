@@ -3,7 +3,7 @@ import { extractMetadata } from "../wasm";
 // import { AudioMetadata } from '@/types'
 
 // Mock the WASM module completely
-vi.mock("../../wasm/react_spectrogram_wasm", () => ({
+vi.mock("@wasm/react_spectrogram_wasm", () => ({
   default: {
     start: vi.fn(),
     MetadataExtractor: vi.fn(() => ({
@@ -82,5 +82,16 @@ describe("WASM Metadata Extraction", () => {
       album: "Unknown Album",
       format: "audio/mp3",
     });
+  });
+
+  it("returns null when WASM import fails", async () => {
+    vi.doMock("@wasm/react_spectrogram_wasm", () => {
+      throw new Error("Failed to load");
+    });
+    // Need to re-import module after overriding mock
+    vi.resetModules();
+    const { initWASM: init } = await import("../wasm");
+    const wasm = await init();
+    expect(wasm).toBeNull();
   });
 });

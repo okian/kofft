@@ -43,6 +43,13 @@ CREATE TABLE waveform_samples (
 Because caching increases storage requirements, the feature is **not enabled by
 default**. Opt in by enabling the `waveform-cache` Cargo feature when compiling
 `kofft` if faster startups are worth the space trade-off.
+## Song Identification
+
+`kofft` includes an optional `media::index` module for lightweight song lookup.
+It first tries to match a file by its name or metadata and only computes a
+hash if needed. When hashing is required, a fast BLAKE3 digest is used to
+confirm identity or add a new entry. This hybrid strategy avoids unnecessary
+hashing while still reliably identifying duplicate audio files.
 
 ## Quick Start
 
