@@ -114,13 +114,13 @@ describe("PlaybackEngine", () => {
       loopMode: "off",
     });
 
-    const nextSpy = vi
-      .spyOn(useAudioStore.getState(), "nextTrack")
+    const playSpy = vi
+      .spyOn(useAudioStore.getState(), "playTrack")
       .mockResolvedValue(undefined);
 
     (playbackEngine as any).handleEnded();
 
-    expect(nextSpy).toHaveBeenCalled();
+    expect(playSpy).toHaveBeenCalledWith(1);
   });
 
   it("stops when there is no next track", () => {
@@ -136,14 +136,14 @@ describe("PlaybackEngine", () => {
       loopMode: "off",
     });
 
-    const nextSpy = vi.spyOn(useAudioStore.getState(), "nextTrack");
+    const playSpy = vi.spyOn(useAudioStore.getState(), "playTrack");
     const setPlayingSpy = vi.spyOn(useAudioStore.getState(), "setPlaying");
     const setPausedSpy = vi.spyOn(useAudioStore.getState(), "setPaused");
     const setStoppedSpy = vi.spyOn(useAudioStore.getState(), "setStopped");
 
     (playbackEngine as any).handleEnded();
 
-    expect(nextSpy).not.toHaveBeenCalled();
+    expect(playSpy).not.toHaveBeenCalled();
     expect(setPlayingSpy).toHaveBeenCalledWith(false);
     expect(setPausedSpy).toHaveBeenCalledWith(false);
     expect(setStoppedSpy).toHaveBeenCalledWith(true);
@@ -184,10 +184,68 @@ describe("PlaybackEngine", () => {
       loopMode: "all",
     });
 
-    const nextSpy = vi
-      .spyOn(useAudioStore.getState(), "nextTrack")
+    const playSpy = vi
+      .spyOn(useAudioStore.getState(), "playTrack")
       .mockResolvedValue(undefined);
     (playbackEngine as any).handleEnded();
-    expect(nextSpy).toHaveBeenCalled();
+    expect(playSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("chooses a random next track when shuffle is enabled", () => {
+    const track1 = {
+      id: "1",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    const track2 = {
+      id: "2",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    const track3 = {
+      id: "3",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    useAudioStore.setState({
+      playlist: [track1, track2, track3],
+      currentTrackIndex: 0,
+      currentTrack: track1,
+      shuffle: true,
+      loopMode: "off",
+    });
+
+    vi.spyOn(Math, "random").mockReturnValue(0.7); // -> index 2
+    const playSpy = vi
+      .spyOn(useAudioStore.getState(), "playTrack")
+      .mockResolvedValue(undefined);
+
+    (playbackEngine as any).handleEnded();
+
+    expect(playSpy).toHaveBeenCalledWith(2);
+    (Math.random as any).mockRestore();
+  });
+
+  it("stops when shuffle is enabled but only one track exists", () => {
+    const track1 = {
+      id: "1",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    useAudioStore.setState({
+      playlist: [track1],
+      currentTrackIndex: 0,
+      currentTrack: track1,
+      shuffle: true,
+      loopMode: "off",
+    });
+
+    const playSpy = vi.spyOn(useAudioStore.getState(), "playTrack");
+    const setPlayingSpy = vi.spyOn(useAudioStore.getState(), "setPlaying");
+    const setPausedSpy = vi.spyOn(useAudioStore.getState(), "setPaused");
+    const setStoppedSpy = vi.spyOn(useAudioStore.getState(), "setStopped");
+
+    (playbackEngine as any).handleEnded();
+
+    expect(playSpy).not.toHaveBeenCalled();
+    expect(setPlayingSpy).toHaveBeenCalledWith(false);
+    expect(setPausedSpy).toHaveBeenCalledWith(false);
+    expect(setStoppedSpy).toHaveBeenCalledWith(true);
   });
 });

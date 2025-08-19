@@ -275,18 +275,50 @@ class PlaybackEngine {
       setPlaying,
       setPaused,
       setStopped,
-      nextTrack,
       loopMode,
+      shuffle,
     } = useAudioStore.getState();
 
-    if (loopMode === 'one') {
+    const playlistLength = playlist.length;
+    if (playlistLength === 0) {
+      this.notify();
+      setPlaying(false);
+      setPaused(false);
+      setStopped(true);
+      return;
+    }
+
+    if (loopMode === "one") {
       playTrack(currentTrackIndex);
       return;
     }
 
-    const isLastTrack = currentTrackIndex >= playlist.length - 1;
-    if (!isLastTrack || loopMode === 'all') {
-      nextTrack();
+    if (shuffle) {
+      if (playlistLength <= 1 && loopMode === "off") {
+        this.notify();
+        setPlaying(false);
+        setPaused(false);
+        setStopped(true);
+        return;
+      }
+      let nextIndex = currentTrackIndex;
+      if (playlistLength > 1) {
+        do {
+          nextIndex = Math.floor(Math.random() * playlistLength);
+        } while (nextIndex === currentTrackIndex);
+      }
+      playTrack(nextIndex);
+      return;
+    }
+
+    const isLastTrack = currentTrackIndex >= playlistLength - 1;
+    if (!isLastTrack) {
+      playTrack(currentTrackIndex + 1);
+      return;
+    }
+
+    if (loopMode === "all") {
+      playTrack(0);
       return;
     }
 
