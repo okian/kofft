@@ -28,3 +28,10 @@ node_modules/
 react-spectrogram/web-spectrogram/static/
 react-spectrogram/web-spectrogram/pkg/
 react-spectrogram/web-spectrogram/app/dist/
+
+web-spectrogram/static/
+web-spectrogram/pkg/
+web-spectrogram/app/dist/
+
+react-spectrogram/wasm/target/
+react-spectrogram/src/wasm/
