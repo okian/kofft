@@ -64,7 +64,6 @@ extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
 
-#[cfg(all(feature = "simd", feature = "wasm"))]
 fn apply_window(signal: &[f32], window: &[f32], start: usize, frame: &mut [Complex32]) {
     let win_len = window.len();
     for i in 0..win_len {
