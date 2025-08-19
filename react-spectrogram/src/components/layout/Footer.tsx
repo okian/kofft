@@ -39,6 +39,12 @@ export const Footer: React.FC = () => {
     currentTrack,
     playlist,
     currentTrackIndex,
+    shuffle,
+    loopMode,
+    setShuffle,
+    setLoopMode,
+    nextTrack: nextTrackAction,
+    previousTrack: previousTrackAction,
   } = useAudioStore();
 
   const { isMobile, isTablet } = useScreenSize();
@@ -129,6 +135,16 @@ export const Footer: React.FC = () => {
     audioFile.toggleMute();
   }, [audioFile]);
 
+  const toggleShuffle = useCallback(() => {
+    setShuffle(!shuffle);
+  }, [shuffle, setShuffle]);
+
+  const toggleLoopMode = useCallback(() => {
+    const next =
+      loopMode === "off" ? "all" : loopMode === "all" ? "one" : "off";
+    setLoopMode(next);
+  }, [loopMode, setLoopMode]);
+
   // Transport controls
   const togglePlayPause = useCallback(() => {
     if (isStopped) {
@@ -149,25 +165,12 @@ export const Footer: React.FC = () => {
   }, [audioFile]);
 
   const previousTrack = useCallback(() => {
-    if (playlist.length === 0) return;
-
-    const prevIndex =
-      currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1;
-    const prevTrack = playlist[prevIndex];
-    if (prevTrack) {
-      audioFile.playTrack(prevTrack);
-    }
-  }, [playlist, currentTrackIndex, audioFile]);
+    previousTrackAction();
+  }, [previousTrackAction]);
 
   const nextTrack = useCallback(() => {
-    if (playlist.length === 0) return;
-
-    const nextIndex = (currentTrackIndex + 1) % playlist.length;
-    const nextTrack = playlist[nextIndex];
-    if (nextTrack) {
-      audioFile.playTrack(nextTrack);
-    }
-  }, [playlist, currentTrackIndex, audioFile]);
+    nextTrackAction();
+  }, [nextTrackAction]);
 
   // Determine layout configuration based on screen size
   const layoutConfig = useMemo(() => {
@@ -458,27 +461,33 @@ export const Footer: React.FC = () => {
           {layoutConfig.showAdditionalControls && (
             <div className="flex items-center gap-1">
               <button
+                data-testid="shuffle-button"
                 className={cn(
                   "p-1 rounded transition-colors duration-200",
                   "hover:bg-neutral-800 active:bg-neutral-700",
                   "text-neutral-400 hover:text-neutral-200",
                   "min-w-[28px] min-h-[28px] flex items-center justify-center",
+                  shuffle && "text-neutral-200 bg-neutral-700",
                 )}
                 title="Shuffle"
                 aria-label="Shuffle playlist"
+                onClick={toggleShuffle}
               >
                 <Shuffle size={16} />
               </button>
 
               <button
+                data-testid="repeat-button"
                 className={cn(
                   "p-1 rounded transition-colors duration-200",
                   "hover:bg-neutral-800 active:bg-neutral-700",
                   "text-neutral-400 hover:text-neutral-200",
                   "min-w-[28px] min-h-[28px] flex items-center justify-center",
+                  loopMode !== "off" && "text-neutral-200 bg-neutral-700",
                 )}
                 title="Repeat"
                 aria-label="Repeat playlist"
+                onClick={toggleLoopMode}
               >
                 <Repeat size={16} />
               </button>

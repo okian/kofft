@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import App from '../../App'
+import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import App from "../../App";
 
 // Mock the audio hooks
-vi.mock('../../hooks/useAudioFile', () => ({
+vi.mock("../../hooks/useAudioFile", () => ({
   useAudioFile: () => ({
     isLoading: false,
     error: null,
@@ -19,10 +19,10 @@ vi.mock('../../hooks/useAudioFile', () => ({
     getTimeData: vi.fn(() => new Uint8Array(1024)),
     cleanup: vi.fn(),
     initAudioContext: vi.fn(),
-  })
-}))
+  }),
+}));
 
-vi.mock('../../hooks/useMicrophone', () => ({
+vi.mock("../../hooks/useMicrophone", () => ({
   useMicrophone: () => ({
     isInitialized: false,
     isRequestingPermission: false,
@@ -38,19 +38,19 @@ vi.mock('../../hooks/useMicrophone', () => ({
     stopAnalysis: vi.fn(),
     getInputLevel: vi.fn(),
     initAudioContext: vi.fn(),
-  })
-}))
+  }),
+}));
 
-vi.mock('../../hooks/useKeyboardShortcuts', () => ({
-  useKeyboardShortcuts: vi.fn()
-}))
+vi.mock("../../hooks/useKeyboardShortcuts", () => ({
+  useKeyboardShortcuts: vi.fn(),
+}));
 
-vi.mock('../../hooks/useScreenSize', () => ({
-  useScreenSize: () => ({ isMobile: false, isTablet: false })
-}))
+vi.mock("../../hooks/useScreenSize", () => ({
+  useScreenSize: () => ({ isMobile: false, isTablet: false }),
+}));
 
 // Mock the stores
-vi.mock('../../stores/audioStore', () => ({
+vi.mock("../../stores/audioStore", () => ({
   useAudioStore: () => ({
     isPlaying: false,
     isPaused: false,
@@ -65,6 +65,10 @@ vi.mock('../../stores/audioStore', () => ({
     isLive: false,
     isMicrophoneActive: false,
     inputDevice: null,
+    shuffle: false,
+    loopMode: "off",
+    setShuffle: vi.fn(),
+    setLoopMode: vi.fn(),
     addToPlaylist: vi.fn(),
     setCurrentTrack: vi.fn(),
     setPlaying: vi.fn(),
@@ -85,10 +89,10 @@ vi.mock('../../stores/audioStore', () => ({
     toggleMute: vi.fn(),
     seekTo: vi.fn(),
     updateVolume: vi.fn(),
-  })
-}))
+  }),
+}));
 
-vi.mock('../../stores/uiStore', () => ({
+vi.mock("../../stores/uiStore", () => ({
   useUIStore: () => ({
     metadataPanelOpen: false,
     playlistPanelOpen: false,
@@ -110,17 +114,17 @@ vi.mock('../../stores/uiStore', () => ({
     toggleShortcutsHelp: vi.fn(),
     closeAllPanels: vi.fn(),
     updateScreenSize: vi.fn(),
-  })
-}))
+  }),
+}));
 
-vi.mock('../../stores/settingsStore', () => ({
+vi.mock("../../stores/settingsStore", () => ({
   useSettingsStore: () => ({
-    theme: 'dark',
-    amplitudeScale: 'db',
-    frequencyScale: 'logarithmic',
-    resolution: 'medium',
+    theme: "dark",
+    amplitudeScale: "db",
+    frequencyScale: "logarithmic",
+    resolution: "medium",
     refreshRate: 60,
-    colormap: 'viridis',
+    colormap: "viridis",
     showLegend: true,
     setTheme: vi.fn(),
     setAmplitudeScale: vi.fn(),
@@ -133,39 +137,39 @@ vi.mock('../../stores/settingsStore', () => ({
     resetToDefaults: vi.fn(),
     loadFromStorage: vi.fn(),
     saveToStorage: vi.fn(),
-  })
-}))
+  }),
+}));
 
-describe('PlaybackControls', () => {
+describe("PlaybackControls", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
-  it('should render playback controls', async () => {
-    render(<App />)
-    
+  it("should render playback controls", async () => {
+    render(<App />);
+
     // Check that playback controls are present
-    expect(screen.getByTestId('play-pause-button')).toBeInTheDocument()
-    expect(screen.getByTestId('stop-button')).toBeInTheDocument()
-    expect(screen.getByTestId('previous-track-button')).toBeInTheDocument()
-    expect(screen.getByTestId('next-track-button')).toBeInTheDocument()
-    expect(screen.getByTestId('volume-slider')).toBeInTheDocument()
-    expect(screen.getByTestId('mute-button')).toBeInTheDocument()
-  })
+    expect(screen.getByTestId("play-pause-button")).toBeInTheDocument();
+    expect(screen.getByTestId("stop-button")).toBeInTheDocument();
+    expect(screen.getByTestId("previous-track-button")).toBeInTheDocument();
+    expect(screen.getByTestId("next-track-button")).toBeInTheDocument();
+    expect(screen.getByTestId("volume-slider")).toBeInTheDocument();
+    expect(screen.getByTestId("mute-button")).toBeInTheDocument();
+  });
 
-  it('should show time display', async () => {
-    render(<App />)
-    
+  it("should show time display", async () => {
+    render(<App />);
+
     // Check that time display is present
-    expect(screen.getByTestId('current-time')).toBeInTheDocument()
-    expect(screen.getByTestId('total-duration')).toBeInTheDocument()
-  })
+    expect(screen.getByTestId("current-time")).toBeInTheDocument();
+    expect(screen.getByTestId("total-duration")).toBeInTheDocument();
+  });
 
-  it('should show progress bar', async () => {
-    render(<App />)
-    
+  it("should show progress bar", async () => {
+    render(<App />);
+
     // Check that progress bar is present
-    expect(screen.getByTestId('progress-bar')).toBeInTheDocument()
-    expect(screen.getByTestId('progress-fill')).toBeInTheDocument()
-  })
-})
+    expect(screen.getByTestId("progress-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-fill")).toBeInTheDocument();
+  });
+});
