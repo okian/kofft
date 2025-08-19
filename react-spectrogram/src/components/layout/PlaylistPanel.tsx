@@ -5,6 +5,7 @@ import { cn } from '@/utils/cn'
 import { formatDuration } from '@/utils/audio'
 import { useAudioFile } from '@/hooks/useAudioFile'
 import { getFilesFromDataTransfer } from '@/utils/file'
+import { fuzzyMatch, fuzzyScore } from '@/utils/fuzzy'
 
 interface PlaylistPanelProps {
   tracks: AudioTrack[]
@@ -383,18 +384,49 @@ export function PlaylistPanel({
     [tracks]
   )
 
-  const suggestions = useMemo(() => {
-    const values = new Set<string>()
+  type SuggestionType = 'title' | 'artist' | 'album' | 'genre' | 'year'
+
+  const allSuggestions = useMemo(() => {
+    const map = new Map<string, { value: string; type: SuggestionType }>()
     tracks.forEach((track) => {
       const { title, artist, album, genre, year } = track.metadata
-      if (title) values.add(title)
-      if (artist) values.add(artist)
-      if (album) values.add(album)
-      if (genre) values.add(genre)
-      if (year) values.add(String(year))
+      if (title) map.set(`title-${title}`, { value: title, type: 'title' })
+      if (artist) map.set(`artist-${artist}`, { value: artist, type: 'artist' })
+      if (album) map.set(`album-${album}`, { value: album, type: 'album' })
+      if (genre) map.set(`genre-${genre}`, { value: genre, type: 'genre' })
+      if (year) map.set(`year-${year}`, { value: String(year), type: 'year' })
     })
-    return Array.from(values)
+    return Array.from(map.values())
   }, [tracks])
+
+  const { items: suggestions, hasMore: hasMoreSuggestions, moreCount } = useMemo(() => {
+    const limit = 10
+    if (!searchQuery.trim()) {
+      return {
+        items: allSuggestions.slice(0, limit),
+        hasMore: allSuggestions.length > limit,
+        moreCount: Math.max(allSuggestions.length - limit, 0),
+      }
+    }
+    const q = searchQuery.toLowerCase()
+    const scored = allSuggestions
+      .map((s) => ({ ...s, score: fuzzyScore(q, s.value) }))
+      .filter((s) => s.score !== Infinity)
+      .sort((a, b) => a.score - b.score)
+    return {
+      items: scored.slice(0, limit),
+      hasMore: scored.length > limit,
+      moreCount: Math.max(scored.length - limit, 0),
+    }
+  }, [allSuggestions, searchQuery])
+
+  const typeSymbols: Record<SuggestionType, string> = {
+    title: '🎵',
+    artist: '👤',
+    album: '💿',
+    genre: '🎼',
+    year: '📅',
+  }
 
   const filteredIndexes = useMemo(() => {
     if (!searchQuery.trim()) return searchIndex.map((item) => item.index)
@@ -402,11 +434,11 @@ export function PlaylistPanel({
     return searchIndex
       .filter(
         (item) =>
-          item.title.includes(q) ||
-          item.artist.includes(q) ||
-          item.album.includes(q) ||
-          item.genre.includes(q) ||
-          item.year.includes(q)
+          fuzzyMatch(q, item.title) ||
+          fuzzyMatch(q, item.artist) ||
+          fuzzyMatch(q, item.album) ||
+          fuzzyMatch(q, item.genre) ||
+          fuzzyMatch(q, item.year)
       )
       .map((item) => item.index)
   }, [searchIndex, searchQuery])
@@ -579,8 +611,16 @@ export function PlaylistPanel({
         />
         <datalist id="playlist-search-suggestions" data-testid="playlist-search-suggestions">
           {suggestions.map((s) => (
-            <option key={s} value={s} />
+            <option
+              key={`${s.type}-${s.value}`}
+              value={s.value}
+              label={`${typeSymbols[s.type]} ${s.value}`}
+              data-type={s.type}
+            />
           ))}
+          {hasMoreSuggestions && (
+            <option value="" disabled>{`+${moreCount} more`}</option>
+          )}
         </datalist>
       </div>
 
