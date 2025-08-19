@@ -3,6 +3,8 @@ import { X, Play, Trash2, FileAudio, Pause } from 'lucide-react'
 import { AudioTrack } from '@/types'
 import { cn } from '@/utils/cn'
 import { formatDuration } from '@/utils/audio'
+import { useAudioFile } from '@/hooks/useAudioFile'
+import { getFilesFromDataTransfer } from '@/utils/file'
 
 interface PlaylistPanelProps {
   tracks: AudioTrack[]
@@ -291,6 +293,26 @@ export function PlaylistPanel({
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
   const trackRefs = useRef<(HTMLDivElement | null)[]>([])
+  const { loadAudioFiles } = useAudioFile()
+
+  const handlePanelDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer.types.includes('Files')) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+  }
+
+  const handlePanelDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const files = await getFilesFromDataTransfer(event.dataTransfer)
+    if (files.length > 0) {
+      try {
+        await loadAudioFiles(files)
+      } catch {
+        // Ignore load errors
+      }
+    }
+  }
 
   const handleDragStart = (event: React.DragEvent, index: number) => {
     setDragIndex(index)
@@ -332,8 +354,13 @@ export function PlaylistPanel({
   }
 
   const handleDrop = (event: React.DragEvent, dropIndex: number) => {
+    if (event.dataTransfer.files.length > 0) {
+      return
+    }
     event.preventDefault()
-    const dragIndex = parseInt(event.dataTransfer.getData('text/plain'))
+    const data = event.dataTransfer.getData('text/plain')
+    if (!data) return
+    const dragIndex = parseInt(data, 10)
     if (dragIndex !== dropIndex) {
       onTrackReorder(dragIndex, dropIndex)
     }
@@ -459,7 +486,12 @@ export function PlaylistPanel({
   )
 
   return (
-    <div className="h-full flex flex-col" data-testid="playlist-panel">
+    <div
+      className="h-full flex flex-col"
+      data-testid="playlist-panel"
+      onDragOver={handlePanelDragOver}
+      onDrop={handlePanelDrop}
+    >
       {/* Header - More compact */}
       <div className="flex items-center justify-between py-0.5 px-1 border-b border-neutral-800">
         <h3 className="text-sm font-medium text-neutral-100">Playlist</h3>
