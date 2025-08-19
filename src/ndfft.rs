@@ -78,7 +78,8 @@ pub fn fft2d_inplace<T: Float>(
     fft: &ScalarFftImpl<T>,
     scratch_col: &mut [Complex<T>],
 ) -> Result<(), FftError> {
-    if rows * cols != data.len() {
+    let len = rows.checked_mul(cols).ok_or(FftError::Overflow)?;
+    if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
     if rows == 0 || cols == 0 {
@@ -119,7 +120,9 @@ pub fn fft3d_inplace<T: Float>(
     fft: &ScalarFftImpl<T>,
     scratch: &mut Fft3dScratch<'_, T>,
 ) -> Result<(), FftError> {
-    if depth * rows * cols != data.len() {
+    let rowcols = rows.checked_mul(cols).ok_or(FftError::Overflow)?;
+    let len = depth.checked_mul(rowcols).ok_or(FftError::Overflow)?;
+    if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
     if depth == 0 || rows == 0 || cols == 0 {
@@ -132,20 +135,20 @@ pub fn fft3d_inplace<T: Float>(
     for r in 0..rows {
         for c in 0..cols {
             let start = r * cols + c;
-            fft.fft_strided(&mut data[start..], rows * cols, scratch.tube)?;
+            fft.fft_strided(&mut data[start..], rowcols, scratch.tube)?;
         }
     }
     // FFT on rows (y axis)
     for d in 0..depth {
         for c in 0..cols {
-            let start = d * rows * cols + c;
+            let start = d * rowcols + c;
             fft.fft_strided(&mut data[start..], cols, scratch.row)?;
         }
     }
     // FFT on columns (x axis)
     for d in 0..depth {
         for r in 0..rows {
-            let start = d * rows * cols + r * cols;
+            let start = d * rowcols + r * cols;
             fft.fft(&mut data[start..start + cols])?;
         }
     }

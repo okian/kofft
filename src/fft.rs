@@ -448,6 +448,7 @@ pub enum FftError {
     EmptyInput,
     NonPowerOfTwoNoStd,
     MismatchedLengths,
+    Overflow,
     InvalidStride,
     InvalidHopSize,
     InvalidValue,
