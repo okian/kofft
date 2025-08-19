@@ -17,6 +17,7 @@ class PlaybackEngine {
 
   private audioContext: AudioContext | null = null
   private gainNode: GainNode | null = null
+  private analyser: AnalyserNode | null = null
   private source: AudioBufferSourceNode | null = null
   private currentBuffer: AudioBuffer | null = null
   private startTime = 0
@@ -61,8 +62,11 @@ class PlaybackEngine {
       const Ctx = window.AudioContext || (window as any).webkitAudioContext
       this.audioContext = new Ctx()
       this.gainNode = this.audioContext.createGain()
+      this.analyser = this.audioContext.createAnalyser()
+      this.analyser.fftSize = 2048
+      this.gainNode.connect(this.analyser)
+      this.analyser.connect(this.audioContext.destination)
       this.gainNode.gain.value = 1
-      this.gainNode.connect(this.audioContext.destination)
     }
     if (this.audioContext.state === 'suspended') {
       await this.audioContext.resume()
@@ -70,18 +74,11 @@ class PlaybackEngine {
     return this.audioContext
   }
 
+  async initializeAudioContext(): Promise<AudioContext> {
+    return this.initContext()
+  }
+
   private async abortable<T>(promise: Promise<T>, controller: AbortController): Promise<T> {
-    return await new Promise<T>((resolve, reject) => {
-      const onAbort = () => {
-        controller.signal.onabort = null
-        reject(new DOMException('Aborted', 'AbortError'))
-      }
-      controller.signal.onabort = onAbort
-      promise
-        .then(v => {
-          controller.signal.onabort = null
-          resolve(v)
-        })
     return await new Promise<T>((resolve, reject) => {
       let finished = false
       const onAbort = () => {
@@ -128,7 +125,8 @@ class PlaybackEngine {
       this.notify()
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        throw err
+        // Don't throw AbortError, just return silently
+        return
       }
       throw err
     }
@@ -273,6 +271,26 @@ class PlaybackEngine {
     return this.audioContext
   }
 
+  getFrequencyData(): Uint8Array | null {
+    if (!this.analyser) return null
+    
+    const bufferLength = this.analyser.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+    this.analyser.getByteFrequencyData(dataArray)
+    
+    return dataArray
+  }
+
+  getTimeData(): Uint8Array | null {
+    if (!this.analyser) return null
+    
+    const bufferLength = this.analyser.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+    this.analyser.getByteTimeDomainData(dataArray)
+    
+    return dataArray
+  }
+
   cleanup(): void {
     this.stop()
     if (this.audioContext) {
@@ -280,6 +298,7 @@ class PlaybackEngine {
       this.audioContext = null
     }
     this.gainNode = null
+    this.analyser = null
     this.currentBuffer = null
     this.callbacks.clear()
   }

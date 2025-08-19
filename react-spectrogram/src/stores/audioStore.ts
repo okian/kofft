@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { AudioState, AudioTrack } from '@/types'
 import { playbackEngine } from '@/utils/PlaybackEngine'
+import { audioPlayer } from '@/utils/audioPlayer'
 
 interface AudioStore extends AudioState {
   // Actions
@@ -129,8 +130,7 @@ export const useAudioStore = create<AudioStore>()(
           isStopped: false,
           currentTime: 0
         })
-        await playbackEngine.load(nextTrack)
-        playbackEngine.play()
+        await audioPlayer.playTrack(nextTrack)
       }
     },
 
@@ -149,8 +149,7 @@ export const useAudioStore = create<AudioStore>()(
           isStopped: false,
           currentTime: 0
         })
-        await playbackEngine.load(prevTrack)
-        playbackEngine.play()
+        await audioPlayer.playTrack(prevTrack)
       }
     },
 
@@ -167,38 +166,36 @@ export const useAudioStore = create<AudioStore>()(
         isStopped: false,
         currentTime: 0
       })
-      await playbackEngine.load(track)
-      playbackEngine.play()
+      await audioPlayer.playTrack(track)
     },
 
     stopPlayback: () => {
-      playbackEngine.stop()
+      audioPlayer.stopPlayback()
     },
 
     togglePlayPause: async () => {
       const { isPlaying, isStopped, currentTrack } = get()
       if (isStopped) {
         if (currentTrack) {
-          await playbackEngine.load(currentTrack)
-          playbackEngine.play()
+          await audioPlayer.playTrack(currentTrack)
         }
       } else if (isPlaying) {
-        playbackEngine.pause()
+        audioPlayer.pausePlayback()
       } else {
-        playbackEngine.resume()
+        audioPlayer.resumePlayback()
       }
     },
 
     toggleMute: () => {
-      playbackEngine.toggleMute()
+      audioPlayer.toggleMute()
     },
 
     seekTo: (time) => {
-      playbackEngine.seek(time)
+      audioPlayer.seekTo(time)
     },
 
     updateVolume: (volume) => {
-      playbackEngine.setVolume(volume)
+      audioPlayer.setVolume(volume)
     },
   }))
 )

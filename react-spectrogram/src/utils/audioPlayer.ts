@@ -21,8 +21,16 @@ export const audioPlayer = {
   },
 
   playTrack: async (track: AudioTrack, startAt = 0) => {
-    await playbackEngine.load(track)
-    playbackEngine.play(startAt)
+    try {
+      await playbackEngine.load(track)
+      playbackEngine.play(startAt)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        // Ignore abort errors - they happen when switching tracks quickly
+        return
+      }
+      throw error
+    }
   },
 
   pausePlayback: () => playbackEngine.pause(),
@@ -36,9 +44,10 @@ export const audioPlayer = {
   getCurrentTime: () => playbackEngine.getCurrentTime(),
   isPlaying: () => playbackEngine.isPlaying(),
   isStopped: () => playbackEngine.isStopped(),
+  getFrequencyData: () => playbackEngine.getFrequencyData(),
+  getTimeData: () => playbackEngine.getTimeData(),
   cleanup: () => playbackEngine.cleanup(),
   subscribe: playbackEngine.subscribe.bind(playbackEngine)
 }
-
 export type AudioPlayerState = PlaybackState
 export type AudioPlayerCallback = PlaybackCallback
