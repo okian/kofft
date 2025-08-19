@@ -11,7 +11,8 @@ interface AudioPlayerState {
   isMuted: boolean
 }
 
-type AudioPlayerCallback = (state: AudioPlayerState) => void
+type PlaybackEvent = 'statechange' | 'timeupdate'
+type PlaybackCallback = (state: AudioPlayerState) => void
 
 class AudioPlayerEngine {
   private static instance: AudioPlayerEngine | null = null
@@ -24,7 +25,11 @@ class AudioPlayerEngine {
   private pausedTime: number = 0
   private isPaused: boolean = false
   private animationFrameId: number | null = null
-  private callbacks: Set<AudioPlayerCallback> = new Set()
+  // Internal event bus
+  private listeners: Map<PlaybackEvent, Set<PlaybackCallback>> = new Map([
+    ['statechange', new Set()],
+    ['timeupdate', new Set()],
+  ])
   private currentTrack: any = null
   private currentTime: number = 0
   private playRequestId = 0
@@ -45,16 +50,18 @@ class AudioPlayerEngine {
     return AudioPlayerEngine.instance
   }
 
-  // Subscribe to state changes
-  subscribe(callback: AudioPlayerCallback): () => void {
-    this.callbacks.add(callback)
-    return () => {
-      this.callbacks.delete(callback)
-    }
+  // Subscribe/unsubscribe to internal events
+  subscribe(event: PlaybackEvent, callback: PlaybackCallback): () => void {
+    const set = this.listeners.get(event)!
+    set.add(callback)
+    return () => this.unsubscribe(event, callback)
   }
 
-  // Notify all subscribers of state changes
-  private notifySubscribers() {
+  unsubscribe(event: PlaybackEvent, callback: PlaybackCallback): void {
+    this.listeners.get(event)!.delete(callback)
+  }
+
+  private emit(event: PlaybackEvent) {
     const state: AudioPlayerState = {
       isPlaying: this.isPlaying(),
       isPaused: this.isPaused,
@@ -62,10 +69,15 @@ class AudioPlayerEngine {
       currentTime: this.getCurrentTime(),
       duration: this.getDuration(),
       volume: this.getVolume(),
-      isMuted: this.getMuted()
+      isMuted: this.getMuted(),
     }
-    
-    this.callbacks.forEach(callback => callback(state))
+    this.listeners.get(event)!.forEach(cb => cb(state))
+  }
+
+  // Notify listeners of both state and time updates
+  private notifySubscribers() {
+    this.emit('statechange')
+    this.emit('timeupdate')
   }
 
   // Initialize audio context - this is the ONLY place where AudioContext is created
@@ -284,7 +296,7 @@ class AudioPlayerEngine {
     
     if (this.isPaused) {
       this.pausedTime = clampedTime
-      this.notifySubscribers()
+      this.emit('timeupdate')
     } else if (this.source) {
       // Stop current playback and restart from new position
       this.stopCurrentPlayback()
@@ -301,9 +313,14 @@ class AudioPlayerEngine {
       
       this.source.start(0, clampedTime)
       this.updateTime()
-      
-      this.notifySubscribers()
+
+      this.emit('timeupdate')
     }
+  }
+
+  // Alias for external API
+  seek(time: number): void {
+    this.seekTo(time)
   }
 
   // Set volume
@@ -354,12 +371,12 @@ class AudioPlayerEngine {
     if (this.source && !this.isPaused && this.audioContext) {
       const currentTime = this.audioContext.currentTime - this.startTime
       this.currentTime = Math.min(currentTime, this.getDuration())
-      
+
       if (currentTime < this.getDuration()) {
         this.animationFrameId = requestAnimationFrame(this.updateTime)
       }
-      
-      this.notifySubscribers()
+
+      this.emit('timeupdate')
     }
   }
 
@@ -424,7 +441,7 @@ class AudioPlayerEngine {
     this.analyser = null
     this.currentBuffer = null
     this.currentTrack = null
-    this.callbacks.clear()
+    this.listeners.forEach(set => set.clear())
   }
 }
 
@@ -432,4 +449,4 @@ class AudioPlayerEngine {
 export const audioPlayer = AudioPlayerEngine.getInstance()
 
 // Export types
-export type { AudioPlayerState, AudioPlayerCallback }
+export type { AudioPlayerState, PlaybackEvent, PlaybackCallback }

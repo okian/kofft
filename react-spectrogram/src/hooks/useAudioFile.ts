@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
-import { audioPlayer, type AudioPlayerState } from '@/utils/audioPlayer'
+import { audioPlayer } from '@/utils/audioPlayer'
 import { AudioTrack, AudioMetadata } from '@/types'
 import { extractMetadata, generateAmplitudeEnvelope } from '@/utils/wasm'
 import { extractArtwork } from '@/utils/artwork'
@@ -9,38 +9,8 @@ import { conditionalToast } from '@/utils/toast'
 export const useAudioFile = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const unsubscribeRef = useRef<(() => void) | null>(null)
 
-  const {
-    setPlaying,
-    setPaused,
-    setStopped,
-    setCurrentTime,
-    setDuration,
-    setVolume,
-    setMuted,
-    setCurrentTrack,
-    addToPlaylist
-  } = useAudioStore()
-
-  // Subscribe to audio player state changes
-  useEffect(() => {
-    const unsubscribe = audioPlayer.subscribe((state: AudioPlayerState) => {
-      setPlaying(state.isPlaying)
-      setPaused(state.isPaused)
-      setStopped(state.isStopped)
-      setCurrentTime(state.currentTime)
-      setDuration(state.duration)
-      setVolume(state.volume)
-      setMuted(state.isMuted)
-    })
-
-    unsubscribeRef.current = unsubscribe
-
-    return () => {
-      unsubscribe()
-    }
-  }, [setPlaying, setPaused, setStopped, setCurrentTime, setDuration, setVolume, setMuted])
+  const { setCurrentTrack, addToPlaylist } = useAudioStore()
 
   // Parse metadata using WASM utility
   const parseMetadata = useCallback(async (file: File): Promise<AudioMetadata> => {

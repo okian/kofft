@@ -433,9 +433,6 @@ export const Footer: React.FC = () => {
       <div className="flex-1 px-4 pb-2">
         <WaveformSeekbar
           audioData={currentTrack?.audioData || null}
-          currentTime={currentTime}
-          duration={duration}
-          onSeek={(time) => audioFile.seekTo(time)}
           numBars={isMobile ? 150 : 300}
           barWidth={isMobile ? 1 : 2}
           barGap={isMobile ? 0.5 : 1}

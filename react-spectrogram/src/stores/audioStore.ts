@@ -193,11 +193,30 @@ export const useAudioStore = create<AudioStore>()(
     },
     
     seekTo: (time) => {
-      audioPlayer.seekTo(time)
+      audioPlayer.seek(time)
     },
     
-    updateVolume: (volume) => {
+  updateVolume: (volume) => {
       audioPlayer.setVolume(volume)
     },
   }))
 )
+
+// Mirror playback engine state into the store
+audioPlayer.subscribe('statechange', (state) => {
+  useAudioStore.setState({
+    isPlaying: state.isPlaying,
+    isPaused: state.isPaused,
+    isStopped: state.isStopped,
+    duration: state.duration,
+    volume: state.volume,
+    isMuted: state.isMuted,
+  })
+})
+
+audioPlayer.subscribe('timeupdate', (state) => {
+  useAudioStore.setState({
+    currentTime: state.currentTime,
+    duration: state.duration,
+  })
+})

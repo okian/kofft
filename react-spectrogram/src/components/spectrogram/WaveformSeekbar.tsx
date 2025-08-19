@@ -1,11 +1,10 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react'
 import { cn } from '@/utils/cn'
+import { useAudioStore } from '@/stores/audioStore'
+import { audioPlayer } from '@/utils/audioPlayer'
 
 interface WaveformSeekbarProps {
   audioData: Float32Array | null
-  currentTime: number
-  duration: number
-  onSeek: (time: number) => void
   className?: string
   numBars?: number
   barWidth?: number
@@ -17,9 +16,6 @@ interface WaveformSeekbarProps {
 
 export function WaveformSeekbar({
   audioData,
-  currentTime,
-  duration,
-  onSeek,
   className,
   numBars = 300,
   barWidth = 2,
@@ -28,6 +24,7 @@ export function WaveformSeekbar({
   disabled = false,
   bufferedTime = 0,
 }: WaveformSeekbarProps) {
+  const { currentTime, duration } = useAudioStore()
   const containerRef = useRef<HTMLDivElement>(null)
   const [isSeeking, setIsSeeking] = useState(false)
   const [seekPosition, setSeekPosition] = useState(0)
@@ -97,8 +94,8 @@ export function WaveformSeekbar({
     if (!isSeeking || disabled) return
     setIsSeeking(false)
     const seekTime = seekPosition * duration
-    onSeek(seekTime)
-  }, [isSeeking, disabled, seekPosition, duration, onSeek])
+    audioPlayer.seek(seekTime)
+  }, [isSeeking, disabled, seekPosition, duration])
 
   // Handle hover
   const handleMouseMove = useCallback((event: React.MouseEvent) => {
@@ -154,8 +151,8 @@ export function WaveformSeekbar({
         return
     }
 
-    onSeek(newTime)
-  }, [disabled, currentTime, duration, onSeek])
+    audioPlayer.seek(newTime)
+  }, [disabled, currentTime, duration])
 
   // Update seek position when current time changes
   useEffect(() => {

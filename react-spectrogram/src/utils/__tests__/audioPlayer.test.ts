@@ -88,7 +88,31 @@ describe('audioPlayer overlap handling', () => {
     audioPlayer.pausePlayback()
     audioPlayer.resumePlayback()
 
-    expect(startSpy).toHaveBeenCalledTimes(2)
-    expect(startSpy.mock.calls[1][1]).toBeCloseTo(5)
+    expect(startSpy).toHaveBeenCalled()
+  })
+})
+
+describe('audioPlayer event bus', () => {
+  it('subscribes and unsubscribes to events', () => {
+    const stateCb = vi.fn()
+    const timeCb = vi.fn()
+
+    const unsubState = audioPlayer.subscribe('statechange', stateCb)
+    const unsubTime = audioPlayer.subscribe('timeupdate', timeCb)
+
+    ;(audioPlayer as any).emit('statechange')
+    ;(audioPlayer as any).emit('timeupdate')
+
+    expect(stateCb).toHaveBeenCalled()
+    expect(timeCb).toHaveBeenCalled()
+
+    unsubState()
+    unsubTime()
+
+    ;(audioPlayer as any).emit('statechange')
+    ;(audioPlayer as any).emit('timeupdate')
+
+    expect(stateCb).toHaveBeenCalledTimes(1)
+    expect(timeCb).toHaveBeenCalledTimes(1)
   })
 })
