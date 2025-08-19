@@ -195,7 +195,8 @@ export const useAudioFile = () => {
                     data: parsed.artwork.data ? base64ToUint8(parsed.artwork.data) : undefined,
                   }
                 : undefined
-            } catch {
+            } catch (parseError) {
+              console.error(`Failed to parse cached metadata for key "${cacheKey}":`, parseError);
               metadata = await parseMetadata(file)
               const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
               artwork = artworkResult.artwork
