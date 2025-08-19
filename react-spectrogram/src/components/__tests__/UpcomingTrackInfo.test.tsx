@@ -41,41 +41,69 @@ vi.mock("../../components/spectrogram/CanvasWaveformSeekbar", () => ({
 
 describe("Upcoming track info", () => {
   beforeEach(() => {
-    const file1 = new File([""], "track1.mp3", { type: "audio/mpeg" });
-    const file2 = new File([""], "track2.mp3", { type: "audio/mpeg" });
-    const track1 = {
-      id: "1",
-      file: file1,
-      metadata: { title: "Track 1", artist: "Artist 1", album: "Album 1" },
-      duration: 60,
-      url: "track1",
-    };
-    const track2 = {
-      id: "2",
-      file: file2,
-      metadata: { title: "Track 2", artist: "Artist 2", album: "Album 2" },
-      duration: 60,
-      url: "track2",
-    };
-    mockState.currentTrack = track1;
-    mockState.playlist = [track1, track2];
-    mockState.currentTrackIndex = 0;
-    mockState.currentTime = 0;
+    mockState.currentTime = 55;
     mockState.duration = 60;
   });
 
-  it("shows next track when within last 10 seconds", () => {
-    mockState.currentTime = 55;
+  const createTrack = (
+    id: string,
+    title: string,
+    artist: string,
+    album: string,
+  ) => {
+    const file = new File([""], `${title}.mp3`, { type: "audio/mpeg" });
+    return {
+      id,
+      file,
+      metadata: { title, artist, album },
+      duration: 60,
+      url: id,
+    };
+  };
+
+  const setupPlaylist = (track1: any, track2: any) => {
+    mockState.currentTrack = track1;
+    mockState.playlist = [track1, track2];
+    mockState.currentTrackIndex = 0;
+  };
+
+  it("shows song when upcoming track has same artist and album", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album");
+    const track2 = createTrack("2", "Track 2", "Artist", "Album");
+    setupPlaylist(track1, track2);
     render(<Footer />);
-    expect(
-      screen.getByText("Coming up: Track 2 by Artist 2"),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2",
+    );
+  });
+
+  it("shows song and album when same artist different album", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album 1");
+    const track2 = createTrack("2", "Track 2", "Artist", "Album 2");
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2 from Album 2",
+    );
+  });
+
+  it("shows song and artist when different artist", () => {
+    const track1 = createTrack("1", "Track 1", "Artist 1", "Album 1");
+    const track2 = createTrack("2", "Track 2", "Artist 2", "Album 2");
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2 by Artist 2",
+    );
   });
 
   it("shows alternating info when not near end", () => {
+    const track1 = createTrack("1", "Track 1", "Artist 1", "Album 1");
+    const track2 = createTrack("2", "Track 2", "Artist 2", "Album 2");
+    setupPlaylist(track1, track2);
     mockState.currentTime = 30;
     render(<Footer />);
-    expect(screen.queryByText("Coming up: Track 2 by Artist 2")).toBeNull();
+    expect(screen.queryByTestId("upcoming-track-info")).toBeNull();
     expect(screen.getByTestId("alternating-info-text")).toHaveTextContent(
       "Artist 1",
     );

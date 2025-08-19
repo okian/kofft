@@ -50,7 +50,28 @@ export const Footer: React.FC = () => {
     ? playlist[currentTrackIndex + 1]
     : null;
   const showNextInfo =
-    !!currentTrack && hasUpcomingTrack && duration - currentTime <= NEXT_WINDOW_SEC;
+    !!currentTrack &&
+    hasUpcomingTrack &&
+    duration - currentTime <= NEXT_WINDOW_SEC;
+
+  const upcomingTrackInfo = useMemo(() => {
+    if (!currentTrack || !upcomingTrack) return "";
+
+    const song = upcomingTrack.metadata.title || upcomingTrack.file.name;
+    const currentArtist = currentTrack.metadata.artist;
+    const currentAlbum = currentTrack.metadata.album;
+    const upcomingArtist = upcomingTrack.metadata.artist;
+    const upcomingAlbum = upcomingTrack.metadata.album;
+
+    if (currentArtist === upcomingArtist) {
+      if (currentAlbum === upcomingAlbum) {
+        return song;
+      }
+      return `${song} from ${upcomingAlbum || "Unknown Album"}`;
+    }
+
+    return `${song} by ${upcomingArtist || "Unknown Artist"}`;
+  }, [currentTrack, upcomingTrack]);
 
   const trackInfoStyle = {
     width: `min(100%, ${INFO_MAX_CH}ch)`,
@@ -285,36 +306,29 @@ export const Footer: React.FC = () => {
           {layoutConfig.showAlbumArt && renderCurrentTrackAlbumArt()}
 
           {layoutConfig.showTrackInfo && currentTrack && (
-              <div
-                className={cn(
-                  "track-info-area",
-                  showNextInfo && "next-active",
-                )}
-                data-testid="track-info-area"
-                style={trackInfoStyle}
-              >
+            <div
+              className={cn("track-info-area", showNextInfo && "next-active")}
+              data-testid="track-info-area"
+              style={trackInfoStyle}
+            >
+              <MarqueeText
+                text={currentTrack.metadata.title || currentTrack.file.name}
+                className="track-title font-medium text-neutral-100"
+              />
+              {showNextInfo && upcomingTrack ? (
                 <MarqueeText
-                  text={currentTrack.metadata.title || currentTrack.file.name}
-                  className="track-title font-medium text-neutral-100"
+                  text={`Coming up: ${upcomingTrackInfo}`}
+                  className="next-info text-neutral-400"
+                  data-testid="upcoming-track-info"
                 />
-                {showNextInfo && upcomingTrack ? (
-                  <MarqueeText
-                    text={`Coming up: ${
-                      upcomingTrack.metadata.title || upcomingTrack.file.name
-                    } by ${
-                      upcomingTrack.metadata.artist || "Unknown Artist"
-                    }`}
-                    className="next-info text-neutral-400"
-                    data-testid="upcoming-track-info"
-                  />
-                ) : (
-                  <AlternatingInfo
-                    artist={currentTrack.metadata.artist || "Unknown Artist"}
-                    album={currentTrack.metadata.album || "Unknown Album"}
-                    className="text-neutral-400"
-                  />
-                )}
-              </div>
+              ) : (
+                <AlternatingInfo
+                  artist={currentTrack.metadata.artist || "Unknown Artist"}
+                  album={currentTrack.metadata.album || "Unknown Album"}
+                  className="text-neutral-400"
+                />
+              )}
+            </div>
           )}
         </div>
 
