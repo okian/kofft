@@ -1,3 +1,5 @@
+#![cfg(all(feature = "simd", feature = "wasm"))]
+
 use kofft::fft::{Complex32, ScalarFftImpl};
 use kofft::stft::{istft, IstftStream, StftStream};
 
