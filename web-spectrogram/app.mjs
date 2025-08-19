@@ -26,7 +26,7 @@ export class SpectrogramApp {
         const input = e.inputBuffer.getChannelData(0);
         const frame = this.computeFrame(input);
         if (!frame || frame.length === 0) return;
-        const width = frame.length / 4;
+        const width = frame.length / BYTES_PER_PIXEL;
         if (this.canvas.width !== width) {
           this.canvas.width = width;
         }
