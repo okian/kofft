@@ -34,6 +34,7 @@ num_cpus = { version = "1.16", optional = true }
 colorous = { version = "1", optional = true }
 blake3 = { version = "1.5", features = ["std"] }
 rusqlite = { version = "0.29", optional = true, features = ["bundled"] }
+log = { version = "0.4", optional = true }
 
 [features]
 default = ["std", "simd", "wasm"]
@@ -55,6 +56,7 @@ simd = []
 soa = []
 precomputed-twiddles = ["std"]
 waveform-cache = ["rusqlite", "std"]
+verbose-logging = ["log"]
 
 [dependencies.rayon]
 version = "1.7"
@@ -66,6 +68,7 @@ image = "0.24"
 xtask = { path = "xtask" }
 assert_cmd = "2"
 tempfile = "3"
+env_logger = "0.11"
 
 [[example]]
 name = "basic_usage"
@@ -101,3 +104,8 @@ required-features = ["parallel"]
 name = "print_threshold"
 path = "examples/print_threshold.rs"
 required-features = ["parallel", "internal-tests"]
+
+[[example]]
+name = "verbose_logging"
+path = "examples/verbose_logging.rs"
+required-features = ["verbose-logging"]

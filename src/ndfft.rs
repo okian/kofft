@@ -87,14 +87,37 @@ pub fn fft2d_inplace<T: Float>(
     if scratch_col.len() != rows {
         return Err(FftError::MismatchedLengths);
     }
+    #[cfg(feature = "verbose-logging")]
+    log::debug!(
+        "fft2d_inplace: rows={}, cols={}, len={}",
+        rows,
+        cols,
+        data.len()
+    );
     // FFT on rows
     for r in 0..rows {
         let start = r * cols;
         fft.fft(&mut data[start..start + cols])?;
     }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = data.first() {
+        log::debug!(
+            "fft2d_inplace: after rows first=({:?},{:?})",
+            first.re,
+            first.im
+        );
+    }
     // FFT on columns using strided transform
     for c in 0..cols {
         fft.fft_strided(&mut data[c..], cols, scratch_col)?;
+    }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = data.first() {
+        log::debug!(
+            "fft2d_inplace: after cols first=({:?},{:?})",
+            first.re,
+            first.im
+        );
     }
     Ok(())
 }
@@ -128,12 +151,28 @@ pub fn fft3d_inplace<T: Float>(
     if scratch.tube.len() != depth || scratch.row.len() != rows || scratch.col.len() != cols {
         return Err(FftError::MismatchedLengths);
     }
+    #[cfg(feature = "verbose-logging")]
+    log::debug!(
+        "fft3d_inplace: depth={}, rows={}, cols={}, len={}",
+        depth,
+        rows,
+        cols,
+        data.len()
+    );
     // FFT on depth (z axis)
     for r in 0..rows {
         for c in 0..cols {
             let start = r * cols + c;
             fft.fft_strided(&mut data[start..], rows * cols, scratch.tube)?;
         }
+    }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = data.first() {
+        log::debug!(
+            "fft3d_inplace: after depth first=({:?},{:?})",
+            first.re,
+            first.im
+        );
     }
     // FFT on rows (y axis)
     for d in 0..depth {
@@ -142,12 +181,28 @@ pub fn fft3d_inplace<T: Float>(
             fft.fft_strided(&mut data[start..], cols, scratch.row)?;
         }
     }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = data.first() {
+        log::debug!(
+            "fft3d_inplace: after rows first=({:?},{:?})",
+            first.re,
+            first.im
+        );
+    }
     // FFT on columns (x axis)
     for d in 0..depth {
         for r in 0..rows {
             let start = d * rows * cols + r * cols;
             fft.fft(&mut data[start..start + cols])?;
         }
+    }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = data.first() {
+        log::debug!(
+            "fft3d_inplace: after cols first=({:?},{:?})",
+            first.re,
+            first.im
+        );
     }
     Ok(())
 }

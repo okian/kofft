@@ -18,6 +18,14 @@ pub fn linear_resample(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> 
     let ratio = dst_rate / src_rate;
     let out_len = (input.len() as f32 * ratio).ceil() as usize;
     let mut output = Vec::with_capacity(out_len);
+    #[cfg(feature = "verbose-logging")]
+    log::debug!(
+        "linear_resample: in_len={}, src_rate={}, dst_rate={}, out_len={}",
+        input.len(),
+        src_rate,
+        dst_rate,
+        out_len
+    );
 
     for i in 0..out_len {
         let pos = i as f32 / ratio;
@@ -27,6 +35,10 @@ pub fn linear_resample(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> 
         let s0 = input[cmp::min(idx, last)];
         let s1 = input[cmp::min(idx + 1, last)];
         output.push(s0 + (s1 - s0) * frac);
+    }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = output.first() {
+        log::debug!("linear_resample: first_sample={:.3}", first);
     }
     output
 }

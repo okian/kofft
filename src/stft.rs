@@ -91,6 +91,14 @@ pub fn stft<Fft: FftImpl<f32>>(
         return Err(FftError::MismatchedLengths);
     }
     let win_len = window.len();
+    #[cfg(feature = "verbose-logging")]
+    log::debug!(
+        "stft: signal_len={}, window_len={}, hop_size={}, frames={}",
+        signal.len(),
+        win_len,
+        hop_size,
+        output.len()
+    );
     for (frame_idx, frame) in output.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
         frame.resize(win_len, Complex32::new(0.0, 0.0));
@@ -103,6 +111,16 @@ pub fn stft<Fft: FftImpl<f32>>(
             frame[i] = Complex32::new(x, 0.0);
         }
         fft.fft(frame)?;
+        #[cfg(feature = "verbose-logging")]
+        if let Some(first) = frame.first() {
+            log::debug!(
+                "stft: frame={} start={} first_coeff=({:.3},{:.3})",
+                frame_idx,
+                start,
+                first.re,
+                first.im
+            );
+        }
     }
     Ok(())
 }
@@ -132,6 +150,14 @@ pub fn istft<Fft: FftImpl<f32>>(
         return Err(FftError::MismatchedLengths);
     }
     let win_len = window.len();
+    #[cfg(feature = "verbose-logging")]
+    log::debug!(
+        "istft: frames={}, window_len={}, hop_size={}, output_len={}",
+        frames.len(),
+        win_len,
+        hop_size,
+        output.len()
+    );
     for x in scratch.iter_mut() {
         *x = 0.0;
     }
@@ -142,6 +168,15 @@ pub fn istft<Fft: FftImpl<f32>>(
             return Err(FftError::MismatchedLengths);
         }
         fft.ifft(frame)?;
+        #[cfg(feature = "verbose-logging")]
+        if let Some(first) = frame.first() {
+            log::debug!(
+                "istft: frame={} start={} first_sample={:.3}",
+                frame_idx,
+                start,
+                first.re
+            );
+        }
         for i in 0..win_len {
             if start + i < output.len() {
                 output[start + i] += frame[i].re * window[i];
@@ -154,6 +189,10 @@ pub fn istft<Fft: FftImpl<f32>>(
         if scratch[i] > 1e-8 {
             output[i] /= scratch[i];
         }
+    }
+    #[cfg(feature = "verbose-logging")]
+    if let Some(first) = output.first() {
+        log::debug!("istft: first_output_sample={:.3}", first);
     }
     Ok(())
 }

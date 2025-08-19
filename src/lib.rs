@@ -21,6 +21,7 @@
 //! - `sse`: Enable SSE optimizations for x86_64 without AVX2
 //! - `aarch64`: Enable AArch64 SIMD optimizations
 //! - `wasm`: Enable WebAssembly SIMD optimizations
+//! - `verbose-logging`: Emit `log::debug!` traces for troubleshooting
 //!
 //! SIMD backends are also activated automatically when compiling with the
 //! appropriate `target-feature` flags (e.g., `-C target-feature=+avx2`).

@@ -71,6 +71,7 @@ kofft = { version = "0.1.5", features = [
     # "compile-time-rfft",  # precompute real FFT tables at compile time
     # "slow",               # include naive reference algorithms
     # "internal-tests",     # enable proptest/rand for internal tests
+    # "verbose-logging",    # emit debug logs for troubleshooting
 ] }
 ```
 
@@ -99,6 +100,23 @@ fft.fft(&mut data)?;
 
 // Compute inverse FFT
 fft.ifft(&mut data)?;
+```
+
+## Verbose Logging
+
+Enable detailed `log::debug!` output for troubleshooting by compiling with the
+`verbose-logging` feature and supplying a logger implementation:
+
+```toml
+[dependencies]
+kofft = { version = "0.1.5", features = ["verbose-logging"] }
+env_logger = "0.11"
+```
+
+Run your application with a logger enabled:
+
+```bash
+RUST_LOG=kofft=debug cargo run --features verbose-logging --example verbose_logging
 ```
 
 ### Parallel FFT
