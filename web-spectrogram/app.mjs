@@ -7,7 +7,7 @@ export async function initWasmWithThreadPool(initFn, threadPoolFn) {
     return false;
   }
   await initFn();
-  const threads = navigator.hardwareConcurrency || 4;
+  const threads = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
   await threadPoolFn(threads);
   return true;
 }
