@@ -139,6 +139,10 @@ pub mod cepstrum;
 /// Extended collection of window functions for specialized applications.
 pub mod window_more;
 
+#[cfg(feature = "std")]
+/// Media utilities for song identification.
+pub mod media;
+
 pub use fft::FftPlanner;
 pub use num::{Complex, Complex32, Complex64, Float};
 

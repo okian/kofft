@@ -18,6 +18,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 - **🔄 Batch and multi-channel processing**
 - **🌐 WebAssembly support**
 - **📱 Parallel processing** (optional)
+- **🎵 Hybrid song identification** using metadata with BLAKE3 hashing fallback
 
 ## Benchmarks
 
@@ -72,6 +73,13 @@ fft.fft(&mut data)?;
 // Compute inverse FFT
 fft.ifft(&mut data)?;
 ```
+
+### Hybrid Song Identification
+
+The `media` module provides a lightweight index for audio files. Lookups first
+use filename or other metadata and compute a BLAKE3 hash only when necessary to
+confirm or populate missing entries. This hybrid strategy accelerates repeated
+lookups while retaining reliable hash-based identification.
 
 ### Parallel FFT
 
