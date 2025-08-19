@@ -3,7 +3,7 @@ import { extractMetadata } from "../wasm";
 // import { AudioMetadata } from '@/types'
 
 // Mock the WASM module completely
-vi.mock("../wasm/react_spectrogram_wasm", () => ({
+vi.mock("../../wasm/react_spectrogram_wasm", () => ({
   default: {
     start: vi.fn(),
     MetadataExtractor: vi.fn(() => ({
