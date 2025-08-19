@@ -261,11 +261,11 @@ export async function resampleAudio(
       try {
         return module.resample_audio(audioData, srcRate, dstRate);
       } catch (error) {
-        // WASM resampling failed
+        console.warn("WASM resampling failed, using fallback", error);
       }
     }
   } catch (error) {
-    // WASM module not available for resampling
+    console.warn("WASM module not available for resampling", error);
   }
   return null;
 }
