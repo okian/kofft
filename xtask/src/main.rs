@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use std::process::Command;
 #[cfg(not(test))]
 use xtask::*;
 
@@ -22,8 +21,6 @@ enum Commands {
     BenchLibs,
     #[command(name = "update-bench-readme")]
     UpdateBenchReadme,
-    #[command(name = "web-spectrogram")]
-    WebSpectrogram,
     Sanity {
         /// Path to input audio file
         input: String,
@@ -53,20 +50,6 @@ fn main() -> std::io::Result<()> {
         Commands::Benchmark => benchmark_command(&cfg).status(),
         Commands::BenchLibs => bench_libs_command(&cfg).status(),
         Commands::UpdateBenchReadme => update_bench_readme_command(&cfg).status(),
-        Commands::WebSpectrogram => {
-            match web_spectrogram_command() {
-                Ok(_) => {
-                    let mut cmd = Command::new("echo");
-                    cmd.arg("web-spectrogram completed successfully");
-                    cmd.status()
-                },
-                Err(e) => {
-                    eprintln!("web-spectrogram failed: {}", e);
-                    let mut cmd = Command::new("false");
-                    cmd.status()
-                }
-            }
-        },
         Commands::Sanity { input, output } => sanity_command(&input, &output).status(),
     }?;
 
@@ -78,10 +61,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_web_spectrogram_command() {
-        let cli = Cli::parse_from(["xtask", "web-spectrogram"]);
+    fn parse_build_command() {
+        let cli = Cli::parse_from(["xtask", "build"]);
         match cli.command {
-            Commands::WebSpectrogram => {}
+            Commands::Build => {}
             _ => panic!("parsed wrong command"),
         }
     }
