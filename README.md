@@ -541,5 +541,5 @@ cargo xtask sanity -- <path-to-flac>  # Run the sanity check example
 - [API Documentation](https://docs.rs/kofft)
 - [Repository](https://github.com/kianostad/kofft)
 - [Crates.io](https://crates.io/crates/kofft)
-- [Web Spectrogram Demo](web-spectrogram/README.md)
+- [React Spectrogram Demo](react-spectrogram/README.md)
 

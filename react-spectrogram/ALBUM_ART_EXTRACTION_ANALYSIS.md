@@ -29,7 +29,7 @@ I analyzed all test files in the project:
 #### WASM Album Art Extraction Logic
 
 ```rust
-// In web-spectrogram/src/lib.rs
+// In react-spectrogram/wasm/src/lib.rs
 if let Some(pic) = pick_cover_picture(tag.pictures()) {
     meta.album_art = Some(pic.data().to_vec());
     meta.album_art_mime = Some(picture_mime(&pic).to_string());
