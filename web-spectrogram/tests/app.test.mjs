@@ -5,6 +5,8 @@ import {
   drawSpectrogram,
   initApp,
   ensureBuffer,
+  startMic,
+  stopMic,
 } from "../app.mjs";
 
 test("magnitudeToDb converts correctly", () => {
@@ -83,7 +85,74 @@ test("polyfills Buffer when missing", async () => {
     assert.ok(global.Buffer);
     const buf = Buffer.from([1, 2, 3]);
     assert.ok(buf instanceof Uint8Array);
+    const buf2 = Buffer.from(new ArrayBuffer(1));
+    assert.ok(buf2 instanceof Uint8Array);
   } finally {
     global.Buffer = original;
   }
+});
+
+test("startMic processes audio and stopMic stops", async () => {
+  global.ImageData = class {
+    constructor(data) {
+      this.data = data;
+    }
+  };
+  const ctx = {
+    getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+    putImageData(img) {
+      this.last = img;
+    },
+  };
+  const canvas = { width: 2, height: 512, getContext: () => ctx };
+  let stopped = false;
+  Object.defineProperty(global, "navigator", {
+    value: {
+      mediaDevices: {
+        getUserMedia: () =>
+          Promise.resolve({
+            getTracks: () => [{ stop: () => (stopped = true) }],
+          }),
+      },
+    },
+    configurable: true,
+  });
+  const procRef = {};
+  global.AudioContext = class {
+    constructor() {
+      this.destination = {};
+    }
+    createMediaStreamSource() {
+      return { connect() {} };
+    }
+    createScriptProcessor() {
+      procRef.node = { connect() {}, disconnect() {}, onaudioprocess: null };
+      return procRef.node;
+    }
+    close() {
+      this.closed = true;
+    }
+  };
+  const ok = await startMic(canvas);
+  assert.ok(ok);
+  const samples = new Float32Array(1024).fill(1);
+  procRef.node.onaudioprocess({
+    inputBuffer: { getChannelData: () => samples },
+  });
+  assert.ok(ctx.last);
+  stopMic();
+  assert.ok(stopped);
+});
+
+test("startMic handles permission errors", async () => {
+  Object.defineProperty(global, "navigator", {
+    value: {
+      mediaDevices: {
+        getUserMedia: () => Promise.reject(new Error("denied")),
+      },
+    },
+    configurable: true,
+  });
+  const ok = await startMic({ getContext: () => ({}) });
+  assert.equal(ok, false);
 });
