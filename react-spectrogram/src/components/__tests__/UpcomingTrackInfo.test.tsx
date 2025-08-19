@@ -97,6 +97,82 @@ describe("Upcoming track info", () => {
     );
   });
 
+  it("shows only song when title matches upcoming artist", () => {
+    const track1 = createTrack("1", "Track 1", "Artist 1", "Album 1");
+    const track2 = createTrack(
+      "2",
+      "Black Sabbath",
+      "Black Sabbath",
+      "Album 2",
+    );
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Black Sabbath",
+    );
+  });
+
+  it("shows only song when title matches upcoming album", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album 1");
+    const track2 = createTrack("2", "Album 2", "Artist", "Album 2");
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Album 2",
+    );
+  });
+
+  it("ignores case and whitespace differences", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album");
+    const track2 = createTrack("2", "Track 2", " artist ", " album ");
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2",
+    );
+  });
+
+  it("normalizes album variants", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album");
+    const track2 = createTrack(
+      "2",
+      "Track 2",
+      "Artist",
+      "Album (Deluxe Edition)",
+    );
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2",
+    );
+  });
+
+  it("falls back to album when artist missing", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album 1");
+    const track2 = {
+      ...createTrack("2", "Track 2", "", "Album 2"),
+      metadata: { title: "Track 2", artist: "", album: "Album 2" },
+    };
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2 from Album 2",
+    );
+  });
+
+  it("falls back to song when album missing", () => {
+    const track1 = createTrack("1", "Track 1", "Artist", "Album 1");
+    const track2 = {
+      ...createTrack("2", "Track 2", "Artist", ""),
+      metadata: { title: "Track 2", artist: "Artist", album: "" },
+    };
+    setupPlaylist(track1, track2);
+    render(<Footer />);
+    expect(screen.getByTestId("upcoming-track-info")).toHaveTextContent(
+      "Coming up: Track 2",
+    );
+  });
+
   it("shows alternating info when not near end", () => {
     const track1 = createTrack("1", "Track 1", "Artist 1", "Album 1");
     const track2 = createTrack("2", "Track 2", "Artist 2", "Album 2");

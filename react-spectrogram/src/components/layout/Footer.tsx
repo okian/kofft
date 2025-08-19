@@ -63,14 +63,42 @@ export const Footer: React.FC = () => {
     const upcomingArtist = upcomingTrack.metadata.artist;
     const upcomingAlbum = upcomingTrack.metadata.album;
 
-    if (currentArtist === upcomingArtist) {
-      if (currentAlbum === upcomingAlbum) {
-        return song;
-      }
-      return `${song} from ${upcomingAlbum || "Unknown Album"}`;
+    const normalize = (s?: string | null) => s?.trim().toLowerCase() ?? "";
+    const normalizeAlbum = (s?: string | null) =>
+      normalize(
+        s
+          ?.replace(/\((?:deluxe|special|expanded|remastered)[^)]*\)/gi, "")
+          ?.replace(/\[(?:deluxe|special|expanded|remastered)[^\]]*\]/gi, "")
+          ?.replace(/-(?:deluxe|special|expanded|remastered)[^-]*$/gi, ""),
+      );
+
+    const nSong = normalize(song);
+    const nCurrentArtist = normalize(currentArtist);
+    const nCurrentAlbum = normalizeAlbum(currentAlbum);
+    const nUpcomingArtist = normalize(upcomingArtist);
+    const nUpcomingAlbum = normalizeAlbum(upcomingAlbum);
+
+    const sameArtist =
+      nCurrentArtist && nUpcomingArtist && nCurrentArtist === nUpcomingArtist;
+    const sameAlbum =
+      nCurrentAlbum && nUpcomingAlbum && nCurrentAlbum === nUpcomingAlbum;
+
+    if (
+      (nSong && nSong === nUpcomingArtist) ||
+      (nSong && nSong === nUpcomingAlbum)
+    ) {
+      return song;
     }
 
-    return `${song} by ${upcomingArtist || "Unknown Artist"}`;
+    if (sameArtist) {
+      if (sameAlbum) return song;
+      if (upcomingAlbum) return `${song} from ${upcomingAlbum}`;
+      return song;
+    }
+
+    if (upcomingArtist) return `${song} by ${upcomingArtist}`;
+    if (upcomingAlbum) return `${song} from ${upcomingAlbum}`;
+    return song;
   }, [currentTrack, upcomingTrack]);
 
   const trackInfoStyle = {
