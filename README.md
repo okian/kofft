@@ -24,6 +24,14 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 See [benchmarks](benchmarks/README.md) for detailed benchmark results and data.
 
+## Song Identification
+
+`kofft` includes an optional `media::index` module for lightweight song lookup.
+It first tries to match a file by its name or metadata and only computes a
+hash if needed. When hashing is required, a fast BLAKE3 digest is used to
+confirm identity or add a new entry. This hybrid strategy avoids unnecessary
+hashing while still reliably identifying duplicate audio files.
+
 ## Quick Start
 
 ### Add to Cargo.toml
