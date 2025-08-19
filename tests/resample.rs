@@ -46,6 +46,13 @@ fn linear_has_lower_error_than_nearest() {
 }
 
 #[test]
+fn linear_resample_handles_trailing_sample() {
+    let input = vec![0.0, 1.0, 0.0];
+    let output = linear_resample(&input, 3.0, 6.0);
+    assert_eq!(output.last().copied(), input.last().copied());
+}
+
+#[test]
 fn benchmark_linear_resampler() {
     let src_rate = 44_100.0;
     let dst_rate = 48_000.0;

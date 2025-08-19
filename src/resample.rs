@@ -23,8 +23,9 @@ pub fn linear_resample(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> 
         let pos = i as f32 / ratio;
         let idx = pos.floor() as usize;
         let frac = pos - idx as f32;
-        let s0 = *input.get(idx).unwrap_or(&input[input.len() - 1]);
-        let s1 = *input.get(cmp::min(idx + 1, input.len() - 1)).unwrap_or(&s0);
+        let last = input.len() - 1;
+        let s0 = input[cmp::min(idx, last)];
+        let s1 = input[cmp::min(idx + 1, last)];
         output.push(s0 + (s1 - s0) * frac);
     }
     output
