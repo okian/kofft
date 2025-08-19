@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { conditionalToast } from "@/utils/toast";
+import { AlternatingInfo } from "./AlternatingInfo";
 
 export const Footer: React.FC = () => {
   const volumeSliderRef = useRef<HTMLInputElement>(null);
@@ -271,14 +272,14 @@ export const Footer: React.FC = () => {
               >
                 {currentTrack.metadata.title || currentTrack.file.name}
               </h4>
-              <p
+              <AlternatingInfo
+                artist={currentTrack.metadata.artist || "Unknown Artist"}
+                album={currentTrack.metadata.album || "Unknown Album"}
                 className={cn(
-                  "text-neutral-400 truncate",
+                  "text-neutral-400",
                   isMobile ? "text-xs" : "text-xs",
                 )}
-              >
-                {currentTrack.metadata.artist || "Unknown Artist"}
-              </p>
+              />
             </div>
           )}
         </div>
