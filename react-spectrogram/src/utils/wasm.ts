@@ -1,10 +1,18 @@
-import { AudioMetadata } from "@/types";
+import { AudioMetadata, WasmAudioMetadata } from "@/types";
 import { audioPlayer } from "./audioPlayer";
 
 // WASM module types
+interface WasmMetadataExtractor {
+  extract_metadata: (
+    data: Uint8Array,
+    filename: string,
+  ) => WasmAudioMetadata | null;
+  free: () => void;
+}
+
 interface WASMModule {
   init_panic_hook: () => void;
-  parse_metadata: (bytes: Uint8Array) => any;
+  MetadataExtractor?: new () => WasmMetadataExtractor;
   generate_waveform: (audioData: Float32Array, numBars: number) => Float32Array;
   generate_amplitude_envelope: (
     audioData: Float32Array,
@@ -80,10 +88,21 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
     // Try to extract metadata using WASM
     const module = await initWASM();
 
-    if (module && module.parse_metadata) {
+    if (module && module.MetadataExtractor) {
+      let extractor: WasmMetadataExtractor | null = null;
       try {
         const arrayBuffer = await file.arrayBuffer();
-        const wasmMetadata = module.parse_metadata(new Uint8Array(arrayBuffer));
+        extractor = new module.MetadataExtractor();
+        const wasmMetadata = extractor.extract_metadata(
+          new Uint8Array(arrayBuffer),
+          file.name,
+        );
+        console.debug(
+          "[wasm] metadata extraction succeeded",
+          wasmMetadata && wasmMetadata.album_art
+            ? `album art bytes: ${wasmMetadata.album_art.length}`
+            : "no album art",
+        );
 
         if (wasmMetadata) {
           metadata.title = wasmMetadata.title || metadata.title;
@@ -108,11 +127,19 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
           return metadata;
         }
       } catch (error) {
-        // WASM metadata extraction failed, falling back to other methods
+        console.error("[wasm] metadata extraction failed", error);
+      } finally {
+        try {
+          extractor?.free();
+        } catch {
+          /* ignore */
+        }
       }
+    } else {
+      console.warn("[wasm] MetadataExtractor not available; using fallback");
     }
   } catch (error) {
-    // WASM module not available for metadata extraction
+    console.error("[wasm] failed to initialize module", error);
   }
 
   // Fallback: Use HTML5 audio element for basic metadata
