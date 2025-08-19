@@ -1,10 +1,12 @@
 let wasm: any | null = null;
-try {
-  // @ts-ignore -- dynamic import of generated wasm bindings
-  wasm = await import(/* @vite-ignore */ "../wasm/react_spectrogram_wasm.js");
-} catch {
-  wasm = null;
-}
+// @ts-ignore -- dynamic import of generated wasm bindings
+import(/* @vite-ignore */ "../wasm/react_spectrogram_wasm.js")
+  .then((m) => {
+    wasm = m;
+  })
+  .catch(() => {
+    wasm = null;
+  });
 
 function levenshtein(a: string, b: string): number {
   const m = a.length;
@@ -37,6 +39,9 @@ export function fuzzyMatch(pattern: string, text: string): boolean {
 }
 
 export function fuzzyScores(pattern: string, candidates: string[]): number[] {
+  if (!candidates.every((c) => typeof c === "string")) {
+    throw new TypeError("All candidates must be strings");
+  }
   if (wasm?.fuzzy_scores) {
     const arr: Uint32Array = wasm.fuzzy_scores(pattern, candidates);
     return Array.from(arr);

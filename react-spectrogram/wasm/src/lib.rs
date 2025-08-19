@@ -377,13 +377,15 @@ pub fn fuzzy_match(pattern: &str, text: &str) -> bool {
 }
 
 #[wasm_bindgen]
-pub fn fuzzy_scores(pattern: &str, candidates: Array) -> Uint32Array {
+pub fn fuzzy_scores(pattern: &str, candidates: Array) -> Result<Uint32Array, JsValue> {
     let mut scores = Vec::with_capacity(candidates.length() as usize);
     for cand in candidates.iter() {
-        let s = cand.as_string().unwrap_or_default();
+        let s = cand
+            .as_string()
+            .ok_or_else(|| JsValue::from_str("candidate is not a string"))?;
         scores.push(fuzzy::fuzzy_score(pattern, &s) as u32);
     }
-    Uint32Array::from(scores.as_slice())
+    Ok(Uint32Array::from(scores.as_slice()))
 }
 
 #[cfg(test)]

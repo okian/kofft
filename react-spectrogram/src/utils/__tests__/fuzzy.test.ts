@@ -18,4 +18,8 @@ describe("fuzzy utils", () => {
     expect(batch.length).toBe(candidates.length);
     expect(batch).toEqual(seq);
   });
+
+  it("throws on non-string candidates", () => {
+    expect(() => fuzzyScores("abc", ["abc", 123 as any])).toThrow();
+  });
 });

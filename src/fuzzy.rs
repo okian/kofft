@@ -3,20 +3,26 @@ use alloc::{string::String, vec, vec::Vec};
 /// Compute the Levenshtein distance between two strings.
 /// Lower scores indicate closer matches.
 pub fn fuzzy_score(pattern: &str, text: &str) -> usize {
-    let mut prev: Vec<usize> = (0..=text.chars().count()).collect();
-    let mut curr = vec![0; text.chars().count() + 1];
-    for (i, pc) in pattern.chars().enumerate() {
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    let text_chars: Vec<char> = text.chars().collect();
+    let text_len = text_chars.len();
+
+    let mut prev: Vec<usize> = (0..=text_len).collect();
+    let mut curr = vec![0; text_len + 1];
+
+    for (i, &pc) in pattern_chars.iter().enumerate() {
         curr[0] = i + 1;
-        for (j, tc) in text.chars().enumerate() {
+        for (j, &tc) in text_chars.iter().enumerate() {
             let cost = if pc == tc { 0 } else { 1 };
             let insertion = curr[j] + 1;
             let deletion = prev[j + 1] + 1;
             let substitution = prev[j] + cost;
             curr[j + 1] = insertion.min(deletion).min(substitution);
         }
-        prev.clone_from_slice(&curr);
+        core::mem::swap(&mut prev, &mut curr);
     }
-    prev[text.chars().count()]
+
+    prev[text_len]
 }
 
 /// Determine if two strings match within half the pattern length.
