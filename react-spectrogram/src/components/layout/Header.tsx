@@ -127,7 +127,7 @@ export const Header: React.FC = () => {
               'text-neutral-400 hover:text-neutral-200',
               'min-w-[44px] min-h-[44px] flex items-center justify-center'
             )}
-            title="Track info (M)"
+            title="Track info (I)"
             data-testid="mobile-info-button"
             aria-label="Show track information"
           >
@@ -185,7 +185,7 @@ export const Header: React.FC = () => {
                 ? 'text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20' 
                 : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 active:bg-neutral-700'
             )}
-            title="Toggle microphone (M)"
+            title="Toggle microphone"
             data-testid="microphone-button"
             aria-label={isMicrophoneActive ? "Disable microphone" : "Enable microphone"}
             aria-pressed={isMicrophoneActive}
@@ -242,7 +242,7 @@ export const Header: React.FC = () => {
                 : 'text-neutral-400 hover:text-neutral-200',
               'min-w-[44px] min-h-[44px] flex items-center justify-center'
             )}
-            title="Toggle metadata panel (M)"
+            title="Toggle metadata panel (I)"
             data-testid="metadata-panel-button"
             aria-label="Toggle metadata panel"
             aria-pressed={metadataPanelOpen}

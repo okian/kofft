@@ -6,6 +6,7 @@ import { SpectrogramView } from '@/components/spectrogram/SpectrogramView'
 import { MetadataPanel } from '@/components/layout/MetadataPanel'
 import { PlaylistPanel } from '@/components/layout/PlaylistPanel'
 import { SettingsPanel } from '@/components/layout/SettingsPanel'
+import { ShortcutsModal } from '@/components/layout/ShortcutsModal'
 import { useAudioStore } from '@/stores/audioStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -18,15 +19,17 @@ import { cn } from '@/utils/cn'
 function App() {
   const settingsStore = useSettingsStore()
   const { theme, updateSettings, loadFromStorage } = settingsStore
-  const { 
-    isMobile, 
-    isTablet, 
-    metadataPanelOpen, 
-    playlistPanelOpen, 
-    settingsPanelOpen, 
-    setMetadataPanelOpen, 
-    setPlaylistPanelOpen, 
-    setSettingsPanelOpen 
+  const {
+    isMobile,
+    isTablet,
+    metadataPanelOpen,
+    playlistPanelOpen,
+    settingsPanelOpen,
+    setMetadataPanelOpen,
+    setPlaylistPanelOpen,
+    setSettingsPanelOpen,
+    shortcutsHelpOpen,
+    setShortcutsHelpOpen
   } = useUIStore()
   const { currentTrack, playlist, currentTrackIndex, playTrack, removeFromPlaylist, reorderPlaylist } = useAudioStore()
   
@@ -201,13 +204,19 @@ function App() {
           )}
         </>
       )}
-      
+
       {/* Settings Panel (Modal) */}
-      <SettingsPanel 
+      <SettingsPanel
         settings={settingsStore}
         isOpen={settingsPanelOpen}
         onClose={() => setSettingsPanelOpen(false)}
         onSettingsChange={updateSettings}
+      />
+
+      {/* Keyboard Shortcuts Modal */}
+      <ShortcutsModal
+        isOpen={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
       />
       
       {/* Toast Notifications */}
