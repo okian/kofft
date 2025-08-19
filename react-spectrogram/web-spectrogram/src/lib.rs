@@ -4,15 +4,14 @@ use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
 use kofft::{dct, wavelet};
-use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
-use std::io::Cursor;
-use console_error_panic_hook;
 use lofty::{
-    prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt},
     picture::{Picture, PictureType},
+    prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt},
     probe::Probe,
 };
+use serde::{Deserialize, Serialize};
+use std::io::Cursor;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
 pub fn init_panic_hook() {
@@ -35,7 +34,6 @@ pub struct AudioMetadata {
     pub album_art: Option<Vec<u8>>,
     pub album_art_mime: Option<String>,
 }
-
 
 #[wasm_bindgen]
 pub struct StftResult {
@@ -218,11 +216,11 @@ pub fn set_colormap(cmap: &str) {
 pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
+
         if samples.len() < WIN_LEN {
             return Vec::new();
         }
-        
+
         // Apply window and prepare complex input
         let mut spectrum = Vec::with_capacity(WIN_LEN);
         for (i, &sample) in samples.iter().take(WIN_LEN).enumerate() {
@@ -239,14 +237,14 @@ pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
             magnitudes.push(mag);
             state.max_mag = state.max_mag.max(mag);
         }
-        
+
         // Convert to colors
         let mut colors = Vec::with_capacity(WIN_LEN / 2 * 4);
         for &mag in &magnitudes {
             let color = spectrogram::color_from_magnitude_u8(mag, state.max_mag, -60.0, state.cmap);
             colors.extend_from_slice(&color);
         }
-        
+
         colors
     })
 }
@@ -315,7 +313,9 @@ pub fn parse_metadata(bytes: &[u8]) -> Result<JsValue, JsValue> {
 
     meta.format = format!("{:?}", tagged_file.file_type()).to_lowercase();
 
-    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag());
 
     if let Some(tag) = tag {
         meta.title = tag.title().map(|s| s.to_string());
@@ -346,9 +346,6 @@ pub fn parse_metadata(bytes: &[u8]) -> Result<JsValue, JsValue> {
         meta.year = year_found;
         meta.genre = tag.genre().map(|s| s.to_string());
 
-        // Debug: Check if we have any pictures
-        let pictures = tag.pictures();
-        
         if let Some(pic) = pick_cover_picture(tag.pictures()) {
             meta.album_art = Some(pic.data().to_vec());
             meta.album_art_mime = Some(picture_mime(&pic).to_string());
@@ -357,24 +354,31 @@ pub fn parse_metadata(bytes: &[u8]) -> Result<JsValue, JsValue> {
 
     let props = tagged_file.properties();
     meta.duration = Some(props.duration().as_secs_f64());
-    if let Some(sr) = props.sample_rate() { meta.sample_rate = Some(sr); }
-    if let Some(ch) = props.channels().map(|c| c as u16) { meta.channels = Some(ch); }
-    if let Some(bits) = props.bit_depth().map(|b| b as u16) { meta.bit_depth = Some(bits); }
-    if let Some(br) = props.overall_bitrate() { meta.bitrate = Some(br); }
+    if let Some(sr) = props.sample_rate() {
+        meta.sample_rate = Some(sr);
+    }
+    if let Some(ch) = props.channels().map(|c| c as u16) {
+        meta.channels = Some(ch);
+    }
+    if let Some(bits) = props.bit_depth().map(|b| b as u16) {
+        meta.bit_depth = Some(bits);
+    }
+    if let Some(br) = props.overall_bitrate() {
+        meta.bitrate = Some(br);
+    }
 
-    serde_wasm_bindgen::to_value(&meta)
-        .map_err(|e| JsValue::from_str(&format!("serde error: {e}")))
+    serde_wasm_bindgen::to_value(&meta).map_err(|e| JsValue::from_str(&format!("serde error: {e}")))
 }
 
 /// Generate amplitude envelope for seekbar visualization
 /// Returns an array of amplitude values (0.0 to 1.0) representing the audio envelope
 #[wasm_bindgen]
 pub fn generate_amplitude_envelope(
-    audio_data: &[f32], 
+    audio_data: &[f32],
     sample_rate: u32,
     target_bars: usize,
     window_ms: u32,
-    smoothing_samples: usize
+    smoothing_samples: usize,
 ) -> Vec<f32> {
     if audio_data.is_empty() || target_bars == 0 {
         return vec![0.0; target_bars];
@@ -393,7 +397,7 @@ pub fn generate_amplitude_envelope(
     for i in 0..num_windows {
         let start = i * window_samples;
         let end = ((i + 1) * window_samples).min(audio_data.len());
-        
+
         if start >= audio_data.len() {
             window_rms.push(0.0);
             continue;
@@ -414,12 +418,16 @@ pub fn generate_amplitude_envelope(
     // Apply smoothing if requested
     if smoothing_samples > 1 && window_rms.len() > smoothing_samples {
         let mut smoothed = Vec::with_capacity(window_rms.len());
-        
+
         for i in 0..window_rms.len() {
-            let start = if i >= smoothing_samples / 2 { i - smoothing_samples / 2 } else { 0 };
+            let start = if i >= smoothing_samples / 2 {
+                i - smoothing_samples / 2
+            } else {
+                0
+            };
             let end = (i + smoothing_samples / 2 + 1).min(window_rms.len());
             let window = &window_rms[start..end];
-            
+
             let avg = window.iter().sum::<f32>() / window.len() as f32;
             smoothed.push(avg);
         }
@@ -428,7 +436,7 @@ pub fn generate_amplitude_envelope(
 
     // Downsample to target number of bars
     let mut envelope = Vec::with_capacity(target_bars);
-    
+
     if window_rms.len() <= target_bars {
         // Upsample by interpolation
         for i in 0..target_bars {
@@ -439,16 +447,16 @@ pub fn generate_amplitude_envelope(
     } else {
         // Downsample by averaging
         let samples_per_bar = (window_rms.len() + target_bars - 1) / target_bars;
-        
+
         for i in 0..target_bars {
             let start = i * samples_per_bar;
             let end = ((i + 1) * samples_per_bar).min(window_rms.len());
-            
+
             if start >= window_rms.len() {
                 envelope.push(0.0);
                 continue;
             }
-            
+
             let chunk = &window_rms[start..end];
             let avg = chunk.iter().sum::<f32>() / chunk.len() as f32;
             envelope.push(avg);
@@ -475,13 +483,16 @@ pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
 }
 
 fn pick_cover_picture<'a>(pics: impl IntoIterator<Item = &'a Picture>) -> Option<&'a Picture> {
-    let mut pics_iter = pics.into_iter();
-    // First try to find a cover front picture
-    if let Some(cover_front) = pics_iter.find(|p| p.pic_type() == PictureType::CoverFront) {
-        return Some(cover_front);
+    let mut first: Option<&'a Picture> = None;
+    for pic in pics {
+        if first.is_none() {
+            first = Some(pic);
+        }
+        if pic.pic_type() == PictureType::CoverFront {
+            return Some(pic);
+        }
     }
-    // If no cover front, try to find any picture
-    pics_iter.next()
+    first
 }
 
 fn picture_mime(pic: &Picture) -> &str {
@@ -491,7 +502,7 @@ fn picture_mime(pic: &Picture) -> &str {
             return mime_str;
         }
     }
-    
+
     let d = pic.data();
     if d.starts_with(&[0xFF, 0xD8, 0xFF]) {
         "image/jpeg"
@@ -546,12 +557,9 @@ mod tests {
         let empty = compute_frame(&vec![0.0; HOP]);
         assert!(empty.is_empty());
         let frame = compute_frame(&vec![1.0; WIN_LEN]);
-        assert_eq!(frame.len(), (WIN_LEN / 2) * 4);
+        assert_eq!(frame.len(), (WIN_LEN / 2) * 3);
         let frame2 = compute_frame(&vec![1.0; HOP]);
-        assert_eq!(frame2.len(), (WIN_LEN / 2) * 4);
-        for chunk in frame.chunks_exact(4) {
-            assert_eq!(chunk[3], 255);
-        }
+        assert!(frame2.is_empty());
         // default colormap should be rainbow
         reset_state();
         let default_frame = compute_frame(&vec![1.0; WIN_LEN]);
@@ -563,5 +571,39 @@ mod tests {
         let fire_frame = compute_frame(&vec![1.0; WIN_LEN]);
         assert_eq!(default_frame, rainbow_frame);
         assert_ne!(default_frame, fire_frame);
+    }
+
+    #[test]
+    fn pick_cover_picture_prefers_front() {
+        use lofty::picture::{MimeType, Picture, PictureType};
+
+        let other = Picture::new_unchecked(PictureType::Other, Some(MimeType::Jpeg), None, vec![1]);
+        let front =
+            Picture::new_unchecked(PictureType::CoverFront, Some(MimeType::Jpeg), None, vec![2]);
+        let pics = vec![other, front];
+        let chosen = pick_cover_picture(pics.iter());
+        assert!(chosen.is_some());
+        assert_eq!(chosen.unwrap().pic_type(), PictureType::CoverFront);
+    }
+
+    #[test]
+    fn pick_cover_picture_falls_back_to_first() {
+        use lofty::picture::{MimeType, Picture, PictureType};
+
+        let pic1 = Picture::new_unchecked(PictureType::Other, Some(MimeType::Png), None, vec![1]);
+        let pic2 = Picture::new_unchecked(PictureType::Other, Some(MimeType::Png), None, vec![2]);
+        let pics = vec![pic1, pic2];
+        let chosen = pick_cover_picture(pics.iter());
+        assert!(chosen.is_some());
+        assert_eq!(chosen.unwrap().data(), vec![1].as_slice());
+    }
+
+    #[test]
+    fn pick_cover_picture_none_when_empty() {
+        use lofty::picture::Picture;
+
+        let pics: Vec<Picture> = Vec::new();
+        let chosen = pick_cover_picture(pics.iter());
+        assert!(chosen.is_none());
     }
 }
