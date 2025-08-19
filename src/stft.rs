@@ -430,6 +430,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         }
         if window.len() != win_len {
             return Err(FftError::MismatchedLengths);
+        if window.len() != win_len {
+            return Err(FftError::MismatchedLengths);
+        }
+        if hop == 0 {
+            return Err(FftError::InvalidHopSize);
         }
         let buffer = vec![0.0f32; win_len + hop * 2];
         let norm_buf = vec![0.0f32; win_len + hop * 2];
