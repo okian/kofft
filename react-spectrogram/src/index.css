@@ -124,6 +124,84 @@
     @apply min-h-[4rem];
   }
 
+  .track-info-area {
+    width: min(100%, var(--info-max-ch));
+    min-width: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    --title-size: calc(var(--base-title-size) + var(--title-font-step));
+    --next-size: var(--base-title-size);
+  }
+
+  .track-info-area.next-active {
+    --title-size: var(--base-title-size);
+    --next-size: calc(var(--base-title-size) + var(--title-font-step));
+  }
+
+  .track-title {
+    font-size: var(--title-size);
+    transition: font-size var(--size-swap-duration) ease-in-out;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .next-info {
+    font-size: var(--next-size);
+    transition: font-size var(--size-swap-duration) ease-in-out;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .marquee-container {
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .marquee-text {
+    display: inline-block;
+    white-space: nowrap;
+  }
+
+  .marquee-active {
+    animation: marquee var(--marquee-duration) linear infinite;
+    padding-right: 2ch;
+  }
+
+  .marquee-active::after {
+    content: attr(data-text);
+    padding-left: 2ch;
+  }
+
+  .marquee-container:hover .marquee-active,
+  .marquee-container:focus-within .marquee-active {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-active {
+      animation: none;
+    }
+
+    .track-title,
+    .next-info {
+      transition: none;
+    }
+  }
+
   /* Responsive layout utilities */
   .mobile-layout {
     @apply flex-col;
@@ -471,4 +549,67 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+/* Control section styles */
+.control-section {
+  display: flex;
+  gap: 0.25rem;
+  align-items: stretch;
+  --art-size: clamp(3rem, 20vw, 6rem);
+  --base-size: clamp(0.5rem, 2vw, 0.875rem);
+  --title-scale: 3;
+  --meta-scale: 1;
+  --gap: 0.125rem;
+  --transition: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.control-section.coming-up {
+  --title-scale: 1;
+  --meta-scale: 3;
+  --gap: 0.0625rem;
+}
+
+.control-section .album-art {
+  width: var(--art-size);
+  height: var(--art-size);
+  object-fit: cover;
+  transition: transform 300ms var(--transition);
+}
+
+.control-section.coming-up .album-art {
+  transform: scale(1.05);
+}
+
+.control-section .text-stack {
+  display: flex;
+  flex-direction: column;
+  height: var(--art-size);
+}
+
+.control-section .song-title {
+  font-size: calc(var(--base-size) * var(--title-scale));
+  line-height: 1;
+  margin-bottom: var(--gap);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: font-size 300ms var(--transition), line-height 300ms var(--transition),
+    letter-spacing 300ms var(--transition), transform 300ms var(--transition);
+}
+
+.control-section .song-meta {
+  font-size: calc(var(--base-size) * var(--meta-scale));
+  line-height: 1;
+  margin-top: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: font-size 300ms var(--transition), line-height 300ms var(--transition),
+    letter-spacing 300ms var(--transition), transform 300ms var(--transition);
+}
+
+.control-section.fading .song-title,
+.control-section.fading .song-meta {
+  opacity: 0;
+  transition: opacity var(--fade-duration) var(--transition);
 }

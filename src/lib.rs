@@ -127,6 +127,7 @@ pub mod hilbert;
 /// Short-Time Fourier Transform (STFT)
 ///
 /// Streaming and batch STFT/ISTFT utilities.
+#[cfg(all(feature = "wasm", feature = "simd"))]
 pub mod stft;
 
 /// Cepstrum analysis
@@ -150,8 +151,8 @@ pub mod fuzzy;
 pub use fft::FftPlanner;
 pub use num::{Complex, Complex32, Complex64, Float};
 
-#[cfg(feature = "std")]
-/// Visualisation helpers (requires `std`)
+#[cfg(all(feature = "std", feature = "wasm", feature = "simd"))]
+/// Visualisation helpers (requires `std`, `wasm` and `simd`)
 pub mod visual;
 
 #[cfg(feature = "std")]

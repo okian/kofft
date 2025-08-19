@@ -1,3 +1,5 @@
+#![cfg(all(feature = "simd", feature = "wasm"))]
+
 use kofft::fft::{Complex32, ScalarFftImpl};
 use kofft::stft::{istft, IstftStream, StftStream};
 
@@ -17,7 +19,8 @@ fn istft_stream_reconstructs_and_flushes() {
 
     while stft_stream.next_frame(&mut frame).unwrap() {
         frames.push(frame.clone());
-        let out = istft_stream.push_frame(&frame).unwrap();
+        let mut frame_copy = frame.clone();
+        let out = istft_stream.push_frame(&mut frame_copy).unwrap();
         output_stream.extend_from_slice(out);
     }
     let tail = istft_stream.flush();

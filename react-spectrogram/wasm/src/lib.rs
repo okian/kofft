@@ -151,8 +151,13 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Vec<f32> {
 }
 
 #[wasm_bindgen]
-pub fn resample_audio(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
+pub fn resample_audio(
+    input: &[f32],
+    src_rate: f32,
+    dst_rate: f32,
+) -> Result<Vec<f32>, JsValue> {
     resample::linear_resample(input, src_rate, dst_rate)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 const WIN_LEN: usize = 1024;

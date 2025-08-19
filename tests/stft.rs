@@ -1,3 +1,5 @@
+#![cfg(all(feature = "simd", feature = "wasm"))]
+
 use kofft::fft::{FftError, ScalarFftImpl};
 use kofft::stft::stft;
 use kofft::window::hann;

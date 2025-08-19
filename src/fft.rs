@@ -329,6 +329,13 @@ pub fn split_to_complex32(split: &SplitComplex<'_, f32>, out: &mut [Complex32]) 
 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
+#[cfg(feature = "precomputed-twiddles")]
+fn arc_cast<A, B>(arc: Arc<[A]>) -> Arc<[B]> {
+    assert_eq!(core::mem::size_of::<A>(), core::mem::size_of::<B>());
+    assert_eq!(core::mem::align_of::<A>(), core::mem::align_of::<B>());
+    unsafe { Arc::from_raw(Arc::into_raw(arc) as *const [B]) }
+}
+
 pub struct FftPlanner<T: Float> {
     /// Cache of per-stage twiddle tables. Each entry contains the twiddle
     /// factors for a particular butterfly size (`len`), stored contiguously so
@@ -372,39 +379,40 @@ impl<T: Float> FftPlanner<T> {
         {
             if TypeId::of::<T>() == TypeId::of::<f32>() {
                 if let Some(tab) = lookup_f32(n) {
-                    // SAFETY: We just checked T == f32
-                    let arc = unsafe {
-                        core::mem::transmute::<Arc<[crate::num::Complex32]>, Arc<[Complex<T>]>>(tab)
-                    };
-                    return arc;
+                    log::debug!("Retrieved precomputed twiddle table for n={}", n);
+                    return arc_cast::<crate::num::Complex32, Complex<T>>(tab);
                 }
             } else if TypeId::of::<T>() == TypeId::of::<f64>() {
                 if let Some(tab) = lookup_f64(n) {
-                    let arc = unsafe {
-                        core::mem::transmute::<Arc<[crate::num::Complex64]>, Arc<[Complex<T>]>>(tab)
-                    };
-                    return arc;
+                    log::debug!("Retrieved precomputed twiddle table for n={}", n);
+                    return arc_cast::<crate::num::Complex64, Complex<T>>(tab);
                 }
             }
         }
 
-        if !self.cache.contains_key(&n) {
-            let half = n / 2;
-            let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
-            let (sin_step, cos_step) = angle.sin_cos();
-
-            let mut table: Vec<Complex<T>> = Vec::with_capacity(half);
-            let mut w_re = T::one();
-            let mut w_im = T::zero();
-            for _ in 0..half {
-                table.push(Complex::new(w_re, w_im));
-                let tmp = w_re;
-                w_re = w_re.mul_add(cos_step, -(w_im * sin_step));
-                w_im = w_im.mul_add(cos_step, tmp * sin_step);
+        match self.cache.entry(n) {
+            hashbrown::hash_map::Entry::Occupied(entry) => {
+                log::debug!("Retrieved cached twiddle table for n={}", n);
+                Arc::clone(entry.get())
             }
-            self.cache.insert(n, Arc::from(table));
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                log::debug!("Generated twiddle table for n={}", n);
+                let half = n / 2;
+                let angle = -T::from_f32(2.0) * T::pi() / T::from_f32(n as f32);
+                let (sin_step, cos_step) = angle.sin_cos();
+
+                let mut table: Vec<Complex<T>> = Vec::with_capacity(half);
+                let mut w_re = T::one();
+                let mut w_im = T::zero();
+                for _ in 0..half {
+                    table.push(Complex::new(w_re, w_im));
+                    let tmp = w_re;
+                    w_re = w_re.mul_add(cos_step, -(w_im * sin_step));
+                    w_im = w_im.mul_add(cos_step, tmp * sin_step);
+                }
+                Arc::clone(entry.insert(Arc::from(table)))
+            }
         }
-        Arc::clone(self.cache.get(&n).unwrap())
     }
 
     #[cfg(feature = "std")]
@@ -448,9 +456,11 @@ pub enum FftError {
     EmptyInput,
     NonPowerOfTwoNoStd,
     MismatchedLengths,
+    Overflow,
     InvalidStride,
     InvalidHopSize,
     InvalidValue,
+    LengthOverflow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

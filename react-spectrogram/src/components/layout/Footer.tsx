@@ -18,6 +18,13 @@ import {
 import { cn } from "@/utils/cn";
 import { conditionalToast } from "@/utils/toast";
 import { AlternatingInfo } from "./AlternatingInfo";
+import { MarqueeText } from "@/components/common/MarqueeText";
+import {
+  TITLE_FONT_STEP,
+  INFO_MAX_CH,
+  NEXT_WINDOW_SEC,
+  SIZE_SWAP_DURATION_MS,
+} from "@/config";
 
 export const Footer: React.FC = () => {
   const volumeSliderRef = useRef<HTMLInputElement>(null);
@@ -43,7 +50,14 @@ export const Footer: React.FC = () => {
     ? playlist[currentTrackIndex + 1]
     : null;
   const showNextInfo =
-    !!currentTrack && hasUpcomingTrack && duration - currentTime <= 10;
+    !!currentTrack && hasUpcomingTrack && duration - currentTime <= NEXT_WINDOW_SEC;
+
+  const trackInfoStyle = {
+    width: `min(100%, ${INFO_MAX_CH}ch)`,
+    "--base-title-size": isMobile ? "0.75rem" : "0.875rem",
+    "--title-font-step": `${TITLE_FONT_STEP}rem`,
+    "--size-swap-duration": `${SIZE_SWAP_DURATION_MS}ms`,
+  } as React.CSSProperties;
 
   // Format time for display
   const formatTime = (seconds: number): string => {
@@ -267,42 +281,40 @@ export const Footer: React.FC = () => {
       {/* Single row layout with all controls */}
       <div className="flex items-center justify-between w-full h-full px-4 gap-3">
         {/* Left side - Album art and track info */}
-        <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           {layoutConfig.showAlbumArt && renderCurrentTrackAlbumArt()}
 
           {layoutConfig.showTrackInfo && currentTrack && (
-            <div className="min-w-0 flex-shrink-0">
-              <h4
+              <div
                 className={cn(
-                  "font-medium text-neutral-100 truncate",
-                  isMobile ? "text-xs" : "text-sm",
+                  "track-info-area",
+                  showNextInfo && "next-active",
                 )}
+                data-testid="track-info-area"
+                style={trackInfoStyle}
               >
-                {currentTrack.metadata.title || currentTrack.file.name}
-              </h4>
-              {showNextInfo && upcomingTrack ? (
-                <p
-                  className={cn(
-                    "text-neutral-400",
-                    isMobile ? "text-xs" : "text-xs",
-                  )}
-                  data-testid="upcoming-track-info"
-                >
-                  {`Coming up: ${
-                    upcomingTrack.metadata.title || upcomingTrack.file.name
-                  } by ${upcomingTrack.metadata.artist || "Unknown Artist"}`}
-                </p>
-              ) : (
-                <AlternatingInfo
-                  artist={currentTrack.metadata.artist || "Unknown Artist"}
-                  album={currentTrack.metadata.album || "Unknown Album"}
-                  className={cn(
-                    "text-neutral-400",
-                    isMobile ? "text-xs" : "text-xs",
-                  )}
+                <MarqueeText
+                  text={currentTrack.metadata.title || currentTrack.file.name}
+                  className="track-title font-medium text-neutral-100"
                 />
-              )}
-            </div>
+                {showNextInfo && upcomingTrack ? (
+                  <MarqueeText
+                    text={`Coming up: ${
+                      upcomingTrack.metadata.title || upcomingTrack.file.name
+                    } by ${
+                      upcomingTrack.metadata.artist || "Unknown Artist"
+                    }`}
+                    className="next-info text-neutral-400"
+                    data-testid="upcoming-track-info"
+                  />
+                ) : (
+                  <AlternatingInfo
+                    artist={currentTrack.metadata.artist || "Unknown Artist"}
+                    album={currentTrack.metadata.album || "Unknown Album"}
+                    className="text-neutral-400"
+                  />
+                )}
+              </div>
           )}
         </div>
 
