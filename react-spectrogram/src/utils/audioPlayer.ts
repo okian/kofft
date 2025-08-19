@@ -41,6 +41,7 @@ class AudioPlayerEngine {
     }
   }
 
+
   // Notify all subscribers of state changes
   private notifySubscribers() {
     const state: AudioPlayerState = {
@@ -444,3 +445,4 @@ export const audioPlayer = AudioPlayerEngine.getInstance()
 
 // Export types
 export type { AudioPlayerState, AudioPlayerCallback }
+
