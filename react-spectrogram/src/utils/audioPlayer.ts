@@ -8,7 +8,17 @@ import {
 // Legacy wrapper mapping old AudioPlayer API to PlaybackEngine
 
 export const audioPlayer = {
-  initAudioContext: () => playbackEngine.getAudioContext() ?? (playbackEngine as any).initContext?.(),
+  initAudioContext: async () => {
+    if (typeof playbackEngine.initializeAudioContext === 'function') {
+      return await playbackEngine.initializeAudioContext();
+    }
+    // Fallback to getAudioContext if no async initializer is available
+    const ctx = playbackEngine.getAudioContext();
+    if (!ctx) {
+      throw new Error('AudioContext could not be initialized.');
+    }
+    return ctx;
+  },
 
   playTrack: async (track: AudioTrack, startAt = 0) => {
     await playbackEngine.load(track)
