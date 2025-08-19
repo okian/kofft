@@ -144,6 +144,9 @@ pub mod window_more;
 /// Linear interpolation-based resampler with WASM bindings.
 pub mod resample;
 
+/// Fuzzy string matching utilities
+pub mod fuzzy;
+
 pub use fft::FftPlanner;
 pub use num::{Complex, Complex32, Complex64, Float};
 

@@ -1,10 +1,11 @@
 use std::cell::RefCell;
 
 use console_error_panic_hook;
+use js_sys::{Array, Uint32Array};
 use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
-use kofft::{dct, resample, wavelet};
+use kofft::{dct, resample, fuzzy, wavelet};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -405,6 +406,7 @@ pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     // Use the new amplitude envelope function with default parameters
     generate_amplitude_envelope(audio_data, 44100, num_bars, 20, 3)
 }
+
 
 #[cfg(test)]
 mod tests {
