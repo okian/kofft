@@ -215,7 +215,9 @@ export const useAudioFile = () => {
               : undefined
             try {
               localStorage.setItem(cacheKey, JSON.stringify({ metadata: metadataToStore, artwork: artworkToStore }))
-            } catch {}
+            } catch (e) {
+              console.error('Failed to cache audio metadata in localStorage:', e);
+            }
           }
 
           const audioData = await generateAmplitudeEnvelopeData(file, metadata, arrayBuffer)
