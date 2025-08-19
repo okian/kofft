@@ -164,7 +164,13 @@ impl HaarResult {
 
     #[wasm_bindgen(getter)]
     pub fn diff(&self) -> Vec<f32> {
-        self.diff.clone()
+    pub fn avg(&self) -> Array {
+        self.avg.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn diff(&self) -> Array {
+        self.diff.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
     }
 }
 
