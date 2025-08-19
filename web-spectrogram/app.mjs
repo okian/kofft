@@ -166,7 +166,6 @@ export function drawSpectrogram(
       drawSpectrogramCanvas(canvas, res, colorFn, colormap);
       return;
     }
-  }
   drawSpectrogramCanvas(canvas, res, colorFn, colormap);
 }
 
