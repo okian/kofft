@@ -18,6 +18,7 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 - **🔄 Batch and multi-channel processing**
 - **🌐 WebAssembly support**
 - **📱 Parallel processing** (optional)
+- **🎵 Hybrid song identification**: fast metadata lookup with BLAKE3 fallback
 
 ## Benchmarks
 

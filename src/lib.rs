@@ -146,6 +146,10 @@ pub use num::{Complex, Complex32, Complex64, Float};
 /// Visualisation helpers (requires `std`)
 pub mod visual;
 
+#[cfg(feature = "std")]
+/// Media utilities such as song identification (requires `std`)
+pub mod media;
+
 /// Simple addition function for testing purposes
 ///
 /// This function is used in tests to verify basic functionality.
