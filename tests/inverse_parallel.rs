@@ -135,4 +135,7 @@ fn inverse_parallel_large_batch_allocation() {
     inverse_parallel(&frames, &window, hop, &mut out, &fft).unwrap();
     let per_frame = allocs() as f32 / frames_count as f32;
     assert!(per_frame < 3.5);
-}
+    // The threshold of 3.5 allocations per frame is chosen empirically.
+    // It allows for a small number of allocations per frame due to internal buffering
+    // or scratch space, but ensures that allocation behavior remains efficient.
+    assert!(per_frame < 3.5);
