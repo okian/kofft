@@ -89,7 +89,6 @@ fn apply_window(signal: &[f32], window: &[f32], start: usize, frame: &mut [Compl
     }
 }
 
-#[cfg(all(feature = "simd", feature = "wasm"))]
 fn overlap_add(
     frame: &[Complex32],
     window: &[f32],
