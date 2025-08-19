@@ -49,11 +49,11 @@ function computeWaveformPeaksJS(
 
   for (let i = 0; i < numBars; i++) {
     const start = i * samplesPerBar;
-    if (start >= audioData.length) {
+    const end = Math.min(start + samplesPerBar, audioData.length);
+    if (start >= end) {
       peaks[i] = 0;
       continue;
     }
-    const end = Math.min(start + samplesPerBar, audioData.length);
     let min = 1.0;
     let max = -1.0;
 

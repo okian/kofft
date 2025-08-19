@@ -222,7 +222,7 @@ pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
         let mut colors = Vec::with_capacity(WIN_LEN / 2 * 4);
         for &mag in &magnitudes {
             let color = spectrogram::color_from_magnitude_u8(mag, state.max_mag, -60.0, state.cmap);
-            colors.extend_from_slice(&color);
+            colors.extend_from_slice(&[color[0], color[1], color[2], 255]);
         }
 
         colors
@@ -441,11 +441,11 @@ mod tests {
     fn streaming_compute_frame_and_colormap() {
         reset_state();
         let empty = compute_frame(&vec![0.0; HOP]);
-        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
         let frame = compute_frame(&vec![1.0; WIN_LEN]);
-        assert_eq!(frame.len(), (WIN_LEN / 2) * 3);
+        assert_eq!(frame.len(), (WIN_LEN / 2) * 4);
         let frame2 = compute_frame(&vec![1.0; HOP]);
-        assert!(frame2.is_empty());
+        assert_eq!(frame2.len(), 0);
         // default colormap should be rainbow
         reset_state();
         let default_frame = compute_frame(&vec![1.0; WIN_LEN]);
