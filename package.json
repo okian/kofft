@@ -8,17 +8,11 @@
     "test": "tests"
   },
   "scripts": {
-    "start": "node web-spectrogram/server.mjs",
-    "test": "node web-spectrogram/app.test.mjs && node web-spectrogram/server.test.mjs"
+    "test": "cargo test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "express": "^4.19.2",
-    "puppeteer": "^24.16.2",
-    "selfsigned": "^2.4.1"
-  },
   "devDependencies": {
     "c8": "^9.1.0",
     "prettier": "^3.2.5"
