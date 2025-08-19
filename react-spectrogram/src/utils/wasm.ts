@@ -97,14 +97,14 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
           new Uint8Array(arrayBuffer),
           file.name,
         );
-        console.debug(
-          "[wasm] metadata extraction succeeded",
-          wasmMetadata && wasmMetadata.album_art
-            ? `album art bytes: ${wasmMetadata.album_art.length}`
-            : "no album art",
-        );
 
         if (wasmMetadata) {
+          console.debug(
+            "[wasm] metadata extraction succeeded",
+            wasmMetadata.album_art
+              ? `album art bytes: ${wasmMetadata.album_art.length}`
+              : "no album art",
+          );
           metadata.title = wasmMetadata.title || metadata.title;
           metadata.artist = wasmMetadata.artist || metadata.artist;
           metadata.album = wasmMetadata.album || metadata.album;
@@ -117,14 +117,19 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
           metadata.bit_depth = wasmMetadata.bit_depth || metadata.bit_depth;
           metadata.bitrate = wasmMetadata.bitrate || metadata.bitrate;
           // Convert album art data to Uint8Array if it's a regular array
-          if (wasmMetadata.album_art && Array.isArray(wasmMetadata.album_art)) {
-            metadata.album_art = new Uint8Array(wasmMetadata.album_art);
+          if (wasmMetadata.album_art) {
+            const art: unknown = wasmMetadata.album_art as unknown;
+            metadata.album_art = Array.isArray(art)
+              ? new Uint8Array(art as number[])
+              : (art as Uint8Array);
           } else {
-            metadata.album_art = wasmMetadata.album_art || undefined;
+            metadata.album_art = undefined;
           }
           metadata.album_art_mime = wasmMetadata.album_art_mime || undefined;
 
           return metadata;
+        } else {
+          console.debug("[wasm] metadata extraction returned null");
         }
       } catch (error) {
         console.error("[wasm] metadata extraction failed", error);
