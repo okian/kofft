@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, Mock } from 'vitest'
-import { WasmAudioMetadata } from '@/types'
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
+import { WasmAudioMetadata } from '@/types';
 
 vi.mock('@wasm/react_spectrogram_wasm', () => ({
   __esModule: true,

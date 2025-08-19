@@ -24,7 +24,7 @@ export interface AudioMetadata {
 }
 
 export interface WasmAudioMetadata extends Partial<AudioMetadata> {
-  album_art?: Uint8Array | number[];
+  album_art?: Uint8Array;
 }
 
 // API Keys and external services
