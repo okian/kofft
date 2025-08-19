@@ -69,7 +69,7 @@ describe('PlaylistPanel artwork visibility', () => {
         this.cb([{ isIntersecting, target: this.el! }])
       }
     }
-    ;(globalThis as any).IntersectionObserver = MockIO
+    (globalThis as any).IntersectionObserver = MockIO
 
     render(
       <PlaylistPanel
