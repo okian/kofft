@@ -1,16 +1,4 @@
-// Singleton Audio Player Engine
-// This ensures only one audio context and source is active at any time
-
-interface AudioPlayerState {
-  isPlaying: boolean
-  isPaused: boolean
-  isStopped: boolean
-  currentTime: number
-  duration: number
-  volume: number
-  isMuted: boolean
-}
-
+import type { AudioTrack } from '@/types'
 type AudioPlayerCallback = (state: AudioPlayerState) => void
 
 class AudioPlayerEngine {

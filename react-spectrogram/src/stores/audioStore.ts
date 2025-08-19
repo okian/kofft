@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { AudioState, AudioTrack } from '@/types'
+import { playbackEngine } from '@/utils/PlaybackEngine'
 import { audioPlayer } from '@/utils/audioPlayer'
 
 interface AudioStore extends AudioState {
@@ -117,11 +118,11 @@ export const useAudioStore = create<AudioStore>()(
     nextTrack: async () => {
       const { playlist, currentTrackIndex } = get()
       if (playlist.length === 0) return
-      
+
       const nextIndex = (currentTrackIndex + 1) % playlist.length
       const nextTrack = playlist[nextIndex]
       if (nextTrack) {
-        set({ 
+        set({
           currentTrackIndex: nextIndex,
           currentTrack: nextTrack,
           isPlaying: true,
@@ -133,15 +134,14 @@ export const useAudioStore = create<AudioStore>()(
         await audioPlayer.playTrack(nextTrack)
       }
     },
-    
     previousTrack: async () => {
       const { playlist, currentTrackIndex } = get()
       if (playlist.length === 0) return
-      
+
       const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
       const prevTrack = playlist[prevIndex]
       if (prevTrack) {
-        set({ 
+        set({
           currentTrackIndex: prevIndex,
           currentTrack: prevTrack,
           isPlaying: true,
@@ -153,13 +153,12 @@ export const useAudioStore = create<AudioStore>()(
         await audioPlayer.playTrack(prevTrack)
       }
     },
-    
     playTrack: async (index) => {
       const { playlist } = get()
       if (index < 0 || index >= playlist.length) return
-      
+
       const track = playlist[index]
-      set({ 
+      set({
         currentTrackIndex: index,
         currentTrack: track,
         isPlaying: true,
@@ -170,11 +169,10 @@ export const useAudioStore = create<AudioStore>()(
       // Actually play the track
       await audioPlayer.playTrack(track)
     },
-    
+
     stopPlayback: () => {
       audioPlayer.stopPlayback()
     },
-    
     togglePlayPause: async () => {
       const { isPlaying, isStopped, currentTrack } = get()
       if (isStopped) {
@@ -187,15 +185,15 @@ export const useAudioStore = create<AudioStore>()(
         await audioPlayer.resumePlayback()
       }
     },
-    
+
     toggleMute: () => {
       audioPlayer.toggleMute()
     },
-    
+
     seekTo: (time) => {
       audioPlayer.seekTo(time)
     },
-    
+
     updateVolume: (volume) => {
       audioPlayer.setVolume(volume)
     },
