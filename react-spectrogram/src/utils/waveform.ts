@@ -37,6 +37,10 @@ export function computeWaveformPeaks(
 
   for (let i = 0; i < numBars; i++) {
     const start = i * samplesPerBar;
+    if (start >= audioData.length) {
+      peaks[i] = 0;
+      continue;
+    }
     const end = Math.min(start + samplesPerBar, audioData.length);
     let min = 1.0;
     let max = -1.0;
@@ -47,7 +51,7 @@ export function computeWaveformPeaks(
       if (sample > max) max = sample;
     }
 
-    peaks[i] = Math.max(Math.abs(min), Math.abs(max));
+    peaks[i] = start < end ? Math.max(Math.abs(min), Math.abs(max)) : 0;
   }
 
   cacheForBuffer.set(numBars, peaks);
