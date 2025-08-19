@@ -1,4 +1,4 @@
-use kofft::resample::linear_resample;
+use kofft::resample::{linear_resample, ResampleError};
 use std::time::Instant;
 
 fn naive_nearest(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
@@ -36,7 +36,7 @@ fn linear_has_lower_error_than_nearest() {
         .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / dst_rate).sin())
         .collect();
 
-    let linear = linear_resample(&input, src_rate, dst_rate);
+    let linear = linear_resample(&input, src_rate, dst_rate).unwrap();
     let nearest = naive_nearest(&input, src_rate, dst_rate);
 
     let err_linear = mse(&linear, &expected);
@@ -48,7 +48,7 @@ fn linear_has_lower_error_than_nearest() {
 #[test]
 fn linear_resample_handles_trailing_sample() {
     let input = vec![0.0, 1.0, 0.0];
-    let output = linear_resample(&input, 3.0, 6.0);
+    let output = linear_resample(&input, 3.0, 6.0).unwrap();
     assert_eq!(output.last().copied(), input.last().copied());
 }
 
@@ -59,7 +59,7 @@ fn benchmark_linear_resampler() {
     let input = vec![0.0f32; (src_rate * 2.0) as usize];
 
     let start = Instant::now();
-    let _ = linear_resample(&input, src_rate, dst_rate);
+    let _ = linear_resample(&input, src_rate, dst_rate).unwrap();
     let linear_time = start.elapsed();
 
     let start = Instant::now();
@@ -70,4 +70,39 @@ fn benchmark_linear_resampler() {
 
     // Ensure the linear resampler is within 2x of the naive nearest neighbour
     assert!(linear_time <= nearest_time * 2);
+}
+
+#[test]
+fn linear_resample_errors_on_zero_rates() {
+    let input = vec![0.0, 1.0, 0.0];
+    assert_eq!(
+        linear_resample(&input, 0.0, 1.0).unwrap_err(),
+        ResampleError::InvalidSrcRate
+    );
+    assert_eq!(
+        linear_resample(&input, 1.0, 0.0).unwrap_err(),
+        ResampleError::InvalidDstRate
+    );
+}
+
+#[test]
+fn linear_resample_errors_on_negative_rates() {
+    let input = vec![0.0, 1.0, 0.0];
+    assert_eq!(
+        linear_resample(&input, -1.0, 1.0).unwrap_err(),
+        ResampleError::InvalidSrcRate
+    );
+    assert_eq!(
+        linear_resample(&input, 1.0, -1.0).unwrap_err(),
+        ResampleError::InvalidDstRate
+    );
+}
+
+#[test]
+fn linear_resample_errors_on_empty_input() {
+    let input: Vec<f32> = Vec::new();
+    assert_eq!(
+        linear_resample(&input, 1.0, 2.0).unwrap_err(),
+        ResampleError::EmptyInput
+    );
 }
