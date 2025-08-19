@@ -6,7 +6,6 @@ use kofft::fft::{Complex32, ScalarFftImpl};
 use kofft::stft::IstftStream;
 #[cfg(target_os = "linux")]
 use procfs::process::Process;
-#[cfg(target_os = "linux")]
 use std::hint::black_box;
 
 #[cfg(target_os = "linux")]
