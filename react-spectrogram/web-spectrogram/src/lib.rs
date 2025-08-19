@@ -189,7 +189,7 @@ impl From<Colormap> for KColormap {
         match cmap {
             Colormap::Rainbow => KColormap::Rainbow,
             Colormap::Fire => KColormap::Fire,
-            Colormap::Grayscale => KColormap::Grayscale,
+            Colormap::Grayscale => KColormap::Gray,
         }
     }
 }
@@ -208,7 +208,7 @@ pub fn set_colormap(cmap: &str) {
         let mut state = state.borrow_mut();
         state.cmap = match cmap {
             "fire" => KColormap::Fire,
-            "grayscale" => KColormap::Grayscale,
+            "grayscale" => KColormap::Gray,
             _ => KColormap::Rainbow,
         };
     });
@@ -223,20 +223,19 @@ pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
             return Vec::new();
         }
         
-        // Apply window
-        let mut windowed = Vec::with_capacity(WIN_LEN);
+        // Apply window and prepare complex input
+        let mut spectrum = Vec::with_capacity(WIN_LEN);
         for (i, &sample) in samples.iter().take(WIN_LEN).enumerate() {
-            windowed.push(sample * state.window[i]);
+            spectrum.push(Complex32::new(sample * state.window[i], 0.0));
         }
-        
-        // Compute FFT
-        let mut spectrum = vec![Complex32::new(0.0, 0.0); WIN_LEN];
-        state.fft.forward(&windowed, &mut spectrum);
-        
+        state.fft.fft(&mut spectrum).ok();
+
         // Compute magnitudes
         let mut magnitudes = Vec::with_capacity(WIN_LEN / 2);
         for i in 0..WIN_LEN / 2 {
-            let mag = (spectrum[i].norm() / WIN_LEN as f32).sqrt();
+            let mag = ((spectrum[i].re * spectrum[i].re + spectrum[i].im * spectrum[i].im)
+                / WIN_LEN as f32)
+                .sqrt();
             magnitudes.push(mag);
             state.max_mag = state.max_mag.max(mag);
         }
@@ -268,7 +267,7 @@ impl State {
     fn new() -> Self {
         Self {
             buf: Vec::new(),
-            fft: new_fft_impl(WIN_LEN).unwrap(),
+            fft: new_fft_impl(),
             window: hann(WIN_LEN),
             cmap: KColormap::Rainbow,
             max_mag: 0.0,

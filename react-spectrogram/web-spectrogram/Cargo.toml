@@ -20,7 +20,9 @@ web-sys = { version = "0.3", features = ["console"] }
 lofty = "0.22"
 
 # DSP library for waveform generation
-kofft = "0.1"
+kofft = { path = "../../" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[workspace]
