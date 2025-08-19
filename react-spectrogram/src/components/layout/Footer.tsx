@@ -547,7 +547,16 @@ export const Footer: React.FC = () => {
           audioData={currentTrack?.audioData || null}
           currentTime={currentTime}
           duration={duration}
-          onSeek={(time) => audioFile.seekTo(time)}
+          onSeek={(time) => {
+            audioFile.seekTo(time);
+            if (!isPlaying) {
+              if (isStopped && currentTrack) {
+                audioFile.playTrack(currentTrack);
+              } else {
+                audioFile.resumePlayback();
+              }
+            }
+          }}
           numBars={isMobile ? 150 : 300}
           barWidth={isMobile ? 1 : 2}
           barGap={isMobile ? 0.5 : 1}
