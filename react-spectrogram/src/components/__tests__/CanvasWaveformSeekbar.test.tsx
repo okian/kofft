@@ -14,9 +14,16 @@ describe("CanvasWaveformSeekbar", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
       mockCtx,
     );
+    (global as any).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+    vi
+      .spyOn(window, "getComputedStyle")
+      .mockReturnValue({ getPropertyValue: () => "" } as any);
   });
 
-  it("renders waveform bars on canvas", () => {
+  it("renders waveform bars centered on canvas", () => {
     const audioData = new Float32Array(1000);
     render(
       <CanvasWaveformSeekbar
@@ -27,6 +34,9 @@ describe("CanvasWaveformSeekbar", () => {
       />,
     );
     expect(mockCtx.fillRect).toHaveBeenCalled();
+    const firstCall = mockCtx.fillRect.mock.calls[0];
+    expect(firstCall[1]).toBe(19); // y position centered for barHeight 2
+    expect(firstCall[3]).toBe(2); // barHeight
   });
 
   it("handles click to seek", () => {
@@ -54,8 +64,8 @@ describe("CanvasWaveformSeekbar", () => {
       toJSON: () => {},
     });
 
-    fireEvent.mouseDown(bar, { clientX: 50 });
-    fireEvent.mouseUp(bar, { clientX: 50 });
+    fireEvent.pointerDown(bar, { clientX: 50 });
+    fireEvent.pointerUp(bar, { clientX: 50 });
 
     expect(onSeek).toHaveBeenCalledWith(50);
   });
@@ -76,5 +86,44 @@ describe("CanvasWaveformSeekbar", () => {
     bar.focus();
     fireEvent.keyDown(bar, { key: "ArrowRight" });
     expect(onSeek).toHaveBeenCalledWith(11);
+  });
+
+  it("debounces rapid seeking", () => {
+    vi.useFakeTimers();
+    const audioData = new Float32Array(1000);
+    const onSeek = vi.fn();
+    const { getByTestId } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={100}
+        onSeek={onSeek}
+      />,
+    );
+
+    const bar = getByTestId("progress-bar");
+    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 100,
+      top: 0,
+      height: 10,
+      bottom: 10,
+      right: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    fireEvent.pointerDown(bar, { clientX: 0 });
+    for (let i = 1; i < 5; i++) {
+      fireEvent.pointerMove(bar, { clientX: i * 10 });
+    }
+    expect(onSeek).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(250);
+    fireEvent.pointerMove(bar, { clientX: 60 });
+    expect(onSeek).toHaveBeenCalled();
+    fireEvent.pointerUp(bar, { clientX: 80 });
+    expect(onSeek).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
