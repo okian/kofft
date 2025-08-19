@@ -39,13 +39,26 @@ function App() {
     loadFromStorage()
   }, [loadFromStorage])
 
-  // Apply theme to body
+  // Apply theme to body without clobbering existing classes
   useEffect(() => {
-    document.body.className = `theme-${theme}`
+    const className = `theme-${theme}`
+    const bodyClassList = document.body.classList
+
+    // Remove any existing theme classes before applying the new one
+    bodyClassList.remove('theme-dark', 'theme-light')
+    bodyClassList.add(className)
+
     // Set theme color for mobile browser UI
     const metaThemeColor = document.querySelector('meta[name="theme-color"]')
     if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#ffffff')
+      metaThemeColor.setAttribute(
+        'content',
+        theme === 'dark' ? '#0a0a0a' : '#ffffff'
+      )
+    }
+
+    return () => {
+      bodyClassList.remove(className)
     }
   }, [theme])
 

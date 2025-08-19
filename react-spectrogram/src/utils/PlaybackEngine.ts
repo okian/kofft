@@ -19,6 +19,7 @@ class PlaybackEngine {
   private gainNode: GainNode | null = null
   private analyser: AnalyserNode | null = null
   private source: AudioBufferSourceNode | null = null
+  private micSource: MediaStreamAudioSourceNode | null = null
   private currentBuffer: AudioBuffer | null = null
   private startTime = 0
   private pausedAt = 0
@@ -198,6 +199,30 @@ class PlaybackEngine {
     }
   }
 
+  async startMicrophone(stream: MediaStream): Promise<boolean> {
+    const context = await this.initContext()
+    this.stopSource()
+    try {
+      this.micSource?.disconnect()
+    } catch {}
+    this.micSource = context.createMediaStreamSource(stream)
+    this.micSource.connect(this.gainNode!)
+    this.currentBuffer = null
+    this.isPaused = false
+    this.playRequestId++
+    this.notify()
+    return true
+  }
+
+  stopMicrophone(): boolean {
+    if (this.micSource) {
+      try { this.micSource.disconnect() } catch {}
+      this.micSource = null
+      this.notify()
+    }
+    return true
+  }
+
   setVolume(v: number): void {
     if (this.gainNode) {
       this.gainNode.gain.value = Math.max(0, Math.min(1, v))
@@ -293,6 +318,7 @@ class PlaybackEngine {
 
   cleanup(): void {
     this.stop()
+    this.stopMicrophone()
     if (this.audioContext) {
       this.audioContext.close()
       this.audioContext = null
