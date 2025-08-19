@@ -69,7 +69,13 @@ export const useMicrophone = () => {
     try {
       // Initialize audio context if needed
       await initAudioContext()
-      
+
+      // Stop any existing stream
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop())
+        mediaStreamRef.current = null
+      }
+
       // Request permission and get stream
       const stream = await requestPermission()
 
@@ -98,8 +104,10 @@ export const useMicrophone = () => {
     try {
       // Use the shared audio player to stop microphone
       const success = audioPlayer.stopMicrophone()
-      
+
       if (success) {
+        mediaStreamRef.current?.getTracks().forEach(t => t.stop())
+        mediaStreamRef.current = null
         // Update state
         setMicrophoneActive(false)
         setLive(false)
@@ -226,9 +234,10 @@ export const useMicrophone = () => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      stopAnalysis()
       stopMicrophone()
     }
-  }, [stopMicrophone])
+  }, [stopMicrophone, stopAnalysis])
 
   return {
     isInitialized,
