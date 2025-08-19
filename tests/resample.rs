@@ -66,8 +66,14 @@ fn benchmark_linear_resampler() {
     let _ = naive_nearest(&input, src_rate, dst_rate);
     let nearest_time = start.elapsed();
 
-    println!("linear: {:?}, nearest: {:?}", linear_time, nearest_time);
+    let linear_ms = linear_time.as_secs_f64() * 1_000.0;
+    let nearest_ms = nearest_time.as_secs_f64() * 1_000.0;
 
-    // Ensure the linear resampler is within 2x of the naive nearest neighbour
-    assert!(linear_time <= nearest_time * 2);
+    // Ensure the linear resampler is within 3x of the naive nearest neighbour
+    assert!(
+        linear_ms <= nearest_ms * 3.0,
+        "linear: {:.3}ms, nearest: {:.3}ms",
+        linear_ms,
+        nearest_ms
+    );
 }

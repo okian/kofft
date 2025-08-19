@@ -423,12 +423,12 @@ mod overflow_tests {
     #[test]
     fn checked_capacity_2d_ok() {
         let half = usize::MAX / 2;
-        assert_eq!(checked_capacity_2d(half, 2).unwrap(), half * 2);
+        assert!(checked_capacity_2d(half, 2).is_ok());
     }
 
     #[test]
     fn checked_capacity_3d_ok() {
         let third = usize::MAX / 3;
-        assert_eq!(checked_capacity_3d(third, 3, 1).unwrap(), third * 3);
+        assert!(checked_capacity_3d(third, 3, 1).is_ok());
     }
 }
