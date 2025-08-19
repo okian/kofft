@@ -1,10 +1,44 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
 import { audioPlayer, type AudioPlayerState } from '@/utils/audioPlayer'
-import { AudioTrack, AudioMetadata } from '@/types'
+import { AudioTrack, AudioMetadata, ArtworkSource } from '@/types'
 import { extractMetadata, generateAmplitudeEnvelope } from '@/utils/wasm'
 import { extractArtwork } from '@/utils/artwork'
 import { conditionalToast } from '@/utils/toast'
+
+// Utility to compute SHA-256 hash for a file buffer
+const hashArrayBuffer = async (buffer: ArrayBuffer): Promise<string> => {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+// Utility to convert Uint8Array to base64
+const uint8ToBase64 = (bytes: Uint8Array): string => {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64')
+  }
+  let binary = ''
+  bytes.forEach(b => {
+    binary += String.fromCharCode(b)
+  })
+  return btoa(binary)
+}
+
+// Utility to convert base64 to Uint8Array
+const base64ToUint8 = (base64: string): Uint8Array => {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(base64, 'base64'))
+  }
+  const binary = atob(base64)
+  const len = binary.length
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
 
 export const useAudioFile = () => {
   const [isLoading, setIsLoading] = useState(false)
@@ -57,31 +91,33 @@ export const useAudioFile = () => {
   }, [])
 
   // Generate amplitude envelope using WASM utility
-  const generateAmplitudeEnvelopeData = useCallback(async (file: File): Promise<Float32Array> => {
+  const generateAmplitudeEnvelopeData = useCallback(async (
+    file: File,
+    metadata: AudioMetadata,
+    arrayBuffer?: ArrayBuffer
+  ): Promise<Float32Array> => {
     try {
-      // Get audio metadata first to get sample rate
-      const metadata = await parseMetadata(file)
       const sampleRate = metadata.sample_rate || 44100
-      
+
       // Use the shared audio context to decode audio data
       const context = await audioPlayer.initAudioContext()
-      const arrayBuffer = await file.arrayBuffer()
-      const audioBuffer = await context.decodeAudioData(arrayBuffer)
-      
+      const buffer = arrayBuffer ?? (await file.arrayBuffer())
+      const audioBuffer = await context.decodeAudioData(buffer)
+
       // Get first channel data
       const channelData = audioBuffer.getChannelData(0)
       const audioData = new Float32Array(channelData.length)
       audioData.set(channelData)
-      
+
       // Generate envelope
       const envelope = await generateAmplitudeEnvelope(audioData, sampleRate, 1000, 20, 3)
-      
+
       return envelope
     } catch (error) {
       // Return empty array as fallback
       return new Float32Array(0)
     }
-  }, [parseMetadata])
+  }, [])
 
   // Validate audio file
   const validateAudioFile = useCallback((file: File): boolean => {
@@ -139,12 +175,50 @@ export const useAudioFile = () => {
 
       ;(async () => {
         try {
-          const [metadata, audioData, arrayBuffer] = await Promise.all([
-            parseMetadata(file),
-            generateAmplitudeEnvelopeData(file),
-            file.arrayBuffer(),
-          ])
-          const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
+          const arrayBuffer = await file.arrayBuffer()
+          const hash = await hashArrayBuffer(arrayBuffer)
+          const cacheKey = `audio-metadata-${hash}`
+          let metadata: AudioMetadata
+          let artwork: ArtworkSource | undefined
+
+          const cached = localStorage.getItem(cacheKey)
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached)
+              metadata = {
+                ...parsed.metadata,
+                album_art: parsed.metadata.album_art ? base64ToUint8(parsed.metadata.album_art) : undefined,
+              }
+              artwork = parsed.artwork
+                ? {
+                    ...parsed.artwork,
+                    data: parsed.artwork.data ? base64ToUint8(parsed.artwork.data) : undefined,
+                  }
+                : undefined
+            } catch {
+              metadata = await parseMetadata(file)
+              const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
+              artwork = artworkResult.artwork
+            }
+          } else {
+            metadata = await parseMetadata(file)
+            const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
+            artwork = artworkResult.artwork
+
+            const metadataToStore = {
+              ...metadata,
+              album_art: metadata.album_art ? uint8ToBase64(metadata.album_art) : undefined,
+            }
+            const artworkToStore = artwork
+              ? { ...artwork, data: artwork.data ? uint8ToBase64(artwork.data) : undefined }
+              : undefined
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify({ metadata: metadataToStore, artwork: artworkToStore }))
+            } catch {}
+          }
+
+          const audioData = await generateAmplitudeEnvelopeData(file, metadata, arrayBuffer)
+
           useAudioStore.getState().updateTrack(id, {
             metadata: {
               title: metadata.title || file.name.replace(/\.[^/.]+$/, ''),
@@ -161,7 +235,7 @@ export const useAudioFile = () => {
             },
             duration: metadata.duration || 0,
             audioData,
-            artwork: artworkResult.artwork,
+            artwork,
             isLoading: false,
           })
           conditionalToast.success(`Loaded: ${metadata.title || file.name.replace(/\.[^/.]+$/, '')}`)
