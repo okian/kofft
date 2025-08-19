@@ -311,6 +311,22 @@
   }
 }
 
+/* Marquee animation for overflowing text */
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 8s linear infinite;
+}
+
 @layer utilities {
   /* Override py-1 to remove padding */
   .py-1 {
