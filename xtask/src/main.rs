@@ -21,8 +21,6 @@ enum Commands {
     BenchLibs,
     #[command(name = "update-bench-readme")]
     UpdateBenchReadme,
-    #[command(name = "web-spectrogram")]
-    WebSpectrogram,
     Sanity {
         /// Path to input audio file
         input: String,
@@ -52,7 +50,6 @@ fn main() -> std::io::Result<()> {
         Commands::Benchmark => benchmark_command(&cfg).status(),
         Commands::BenchLibs => bench_libs_command(&cfg).status(),
         Commands::UpdateBenchReadme => update_bench_readme_command(&cfg).status(),
-        Commands::WebSpectrogram => web_spectrogram_command().status(),
         Commands::Sanity { input, output } => sanity_command(&input, &output).status(),
     }?;
 
@@ -64,10 +61,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_web_spectrogram_command() {
-        let cli = Cli::parse_from(["xtask", "web-spectrogram"]);
+    fn parse_build_command() {
+        let cli = Cli::parse_from(["xtask", "build"]);
         match cli.command {
-            Commands::WebSpectrogram => {}
+            Commands::Build => {}
             _ => panic!("parsed wrong command"),
         }
     }

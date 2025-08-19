@@ -189,15 +189,6 @@ pub fn sanity_command(input: &str, output: &str) -> Command {
     cmd
 }
 
-pub fn web_spectrogram_command() -> Command {
-    let mut cmd = Command::new("sh");
-    cmd.args([
-        "-c",
-        "cd web-spectrogram && wasm-pack build --target web && rm -rf static && mkdir -p static/pkg && cp -r pkg/* static/pkg/ && cp index.html app.mjs manifest.json sw.js static/ && cargo run -p web-spectrogram",
-    ]);
-    cmd
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,18 +286,6 @@ mod tests {
         assert!(args.contains(&"sanity-check".to_string()));
         assert!(args.contains(&"in.flac".to_string()));
         assert!(args.contains(&"out.png".to_string()));
-        let wcmd = web_spectrogram_command();
-        assert_eq!(wcmd.get_program(), "sh");
-        let wargs: Vec<_> = wcmd
-            .get_args()
-            .map(|a| a.to_str().unwrap().to_string())
-            .collect();
-        assert!(wargs.contains(&"-c".to_string()));
-        assert!(wargs
-            .iter()
-            .any(|a| a.contains("wasm-pack build --target web")));
-        assert!(wargs.iter().all(|a| !a.contains("npm")));
-        assert!(wargs.iter().any(|a| a.contains("cp index.html")));
     }
 
     #[test]

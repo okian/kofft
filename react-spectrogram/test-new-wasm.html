@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New WASM Metadata Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #1a1a1a;
+        color: #ffffff;
+      }
+      .test-section {
+        background: #2a2a2a;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+      }
+      .success {
+        color: #4ade80;
+      }
+      .error {
+        color: #f87171;
+      }
+      .info {
+        color: #60a5fa;
+      }
+      .warning {
+        color: #fbbf24;
+      }
+      pre {
+        background: #1a1a1a;
+        padding: 10px;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      .album-art {
+        max-width: 200px;
+        max-height: 200px;
+        border-radius: 8px;
+        margin: 10px 0;
+      }
+      button {
+        background: #3b82f6;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #2563eb;
+      }
+      input[type="file"] {
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🎵 New Rust WASM Metadata Extraction Test</h1>
+
+    <div class="test-section">
+      <h2>📁 Test with Audio Files</h2>
+      <p>
+        Select an audio file to test the new Rust-based metadata extraction:
+      </p>
+      <input type="file" id="audioFile" accept="audio/*" />
+      <button onclick="testSelectedFile()">Test Selected File</button>
+
+      <div id="results"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>🧪 Test with Sample Files</h2>
+      <p>Test with the provided sample audio files:</p>
+      <button onclick="testSampleFile('adele-skyfall-30s.m4a')">
+        Test Adele - Skyfall (M4A)
+      </button>
+      <button onclick="testSampleFile('perfect-circle-passive-30s.mp3')">
+        Test Perfect Circle (MP3)
+      </button>
+      <button onclick="testSampleFile('adele-skyfall.flac')">
+        Test Adele - Skyfall (FLAC)
+      </button>
+      <button onclick="testSampleFile('perfect-circle-passive.flac')">
+        Test Perfect Circle (FLAC)
+      </button>
+    </div>
+
+    <script type="module">
+      let wasmModule = null;
+      let extractor = null;
+
+      async function initWASM() {
+        try {
+          console.log("🔧 Initializing new Rust WASM module...");
+
+          // Import the WASM module
+          const module = await import("./wasm/react_spectrogram_wasm.js");
+
+          // Initialize the module
+          module.start();
+
+          wasmModule = module;
+          extractor = new module.MetadataExtractor();
+
+          console.log("✅ New Rust WASM module initialized successfully");
+          return true;
+        } catch (error) {
+          console.error("❌ Failed to initialize new Rust WASM module:", error);
+          return false;
+        }
+      }
+
+      async function extractMetadata(file) {
+        if (!extractor) {
+          const success = await initWASM();
+          if (!success) {
+            throw new Error("Failed to initialize new Rust WASM module");
+          }
+        }
+
+        try {
+          const fileData = new Uint8Array(await file.arrayBuffer());
+          const metadata = extractor.extract_metadata(fileData, file.name);
+          return metadata;
+        } catch (error) {
+          console.error("❌ New Rust metadata extraction failed:", error);
+          throw error;
+        }
+      }
+
+      function displayResults(file, metadata) {
+        const resultsDiv = document.getElementById("results");
+
+        let html = `
+                <h3 class="success">✅ New Rust WASM Metadata Extracted Successfully</h3>
+                <p><strong>File:</strong> ${file.name}</p>
+                <p><strong>Size:</strong> ${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p><strong>Type:</strong> ${file.type}</p>
+                
+                <h4>📋 Metadata:</h4>
+                <pre>${JSON.stringify(metadata, null, 2)}</pre>
+            `;
+
+        if (metadata.album_art) {
+          html += `
+                    <h4 class="success">🎨 Album Art Found!</h4>
+                    <p><strong>Size:</strong> ${metadata.album_art.length} bytes</p>
+                    <p><strong>MIME Type:</strong> ${metadata.album_art_mime || "unknown"}</p>
+                `;
+
+          try {
+            const blob = new Blob([metadata.album_art], {
+              type: metadata.album_art_mime || "image/jpeg",
+            });
+            const url = URL.createObjectURL(blob);
+            html += `<img src="${url}" alt="Album Art" class="album-art" />`;
+          } catch (error) {
+            html += `<p class="error">❌ Failed to display album art: ${error.message}</p>`;
+          }
+        } else {
+          html += `<p class="warning">⚠️ No album art found in this file</p>`;
+        }
+
+        resultsDiv.innerHTML = html;
+      }
+
+      async function testFile(file) {
+        try {
+          console.log(`📁 Testing file with new Rust WASM: ${file.name}`);
+
+          const metadata = await extractMetadata(file);
+          console.log("📋 New Rust metadata:", metadata);
+
+          displayResults(file, metadata);
+        } catch (error) {
+          const resultsDiv = document.getElementById("results");
+          resultsDiv.innerHTML = `
+                    <h3 class="error">❌ New Rust Test Failed</h3>
+                    <p><strong>File:</strong> ${file.name}</p>
+                    <p class="error">Error: ${error.message}</p>
+                `;
+        }
+      }
+
+      async function testSampleFile(filename) {
+        try {
+          console.log(`📁 Testing sample file with new Rust WASM: ${filename}`);
+
+          const response = await fetch(`./test-fixtures/${filename}`);
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch ${filename}: ${response.statusText}`,
+            );
+          }
+
+          const blob = await response.blob();
+          const file = new File([blob], filename, { type: blob.type });
+
+          await testFile(file);
+        } catch (error) {
+          const resultsDiv = document.getElementById("results");
+          resultsDiv.innerHTML = `
+                    <h3 class="error">❌ New Rust Sample File Test Failed</h3>
+                    <p><strong>File:</strong> ${filename}</p>
+                    <p class="error">Error: ${error.message}</p>
+                `;
+        }
+      }
+
+      // Global functions for button clicks
+      window.testSelectedFile = function () {
+        const fileInput = document.getElementById("audioFile");
+        const file = fileInput.files[0];
+        if (file) {
+          testFile(file);
+        } else {
+          alert("Please select a file first");
+        }
+      };
+
+      window.testSampleFile = testSampleFile;
+
+      // Initialize WASM on page load
+      window.addEventListener("load", async () => {
+        console.log("🚀 Page loaded, initializing new Rust WASM...");
+        await initWASM();
+      });
+    </script>
+  </body>
+</html>

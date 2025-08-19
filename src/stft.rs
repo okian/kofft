@@ -51,7 +51,7 @@
 //! let hop = 1;
 //! let fft = ScalarFftImpl::<f32>::default();
 //! let mut stft_stream = StftStream::new(&signal, &window, hop, &fft).unwrap();
-//! let mut istft_stream = IstftStream::new(window.len(), hop, window.clone(), &fft).unwrap();
+//! let mut istft_stream = IstftStream::new(window.len(), hop, &window, &fft).unwrap();
 //! let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
 //! let mut out = Vec::new();
 //! while stft_stream.next_frame(&mut frame).unwrap() {
@@ -59,6 +59,9 @@
 //! }
 //! out.extend_from_slice(istft_stream.flush());
 //! ```
+
+#[cfg(not(all(feature = "wasm", feature = "simd")))]
+compile_error!("stft requires `wasm` and `simd` features to be enabled");
 
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
@@ -407,7 +410,7 @@ pub fn inverse_frame<Fft: FftImpl<f32>>(
 pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
     win_len: usize,
     hop: usize,
-    window: alloc::vec::Vec<f32>,
+    window: &'a [f32],
     fft: &'a Fft,
     buffer: alloc::vec::Vec<f32>,
     /// Buffer storing the sum of squared window values for normalization.
@@ -422,11 +425,14 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     pub fn new(
         win_len: usize,
         hop: usize,
-        window: alloc::vec::Vec<f32>,
+        window: &'a [f32],
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
         if hop == 0 {
             return Err(FftError::InvalidHopSize);
+        }
+        if window.len() != win_len {
+            return Err(FftError::MismatchedLengths);
         }
         let buffer = vec![0.0f32; win_len + hop * 2];
         let norm_buf = vec![0.0f32; win_len + hop * 2];
@@ -680,7 +686,7 @@ mod edge_case_tests {
         let hop = 2;
         let window = vec![1.0f32; win_len];
         let fft = ScalarFftImpl::<f32>::default();
-        let mut istft_stream = IstftStream::new(win_len, hop, window.clone(), &fft).unwrap();
+        let mut istft_stream = IstftStream::new(win_len, hop, &window, &fft).unwrap();
         let frame = vec![Complex32::new(0.0, 0.0); win_len - 1];
         let res = istft_stream.push_frame(&frame);
         assert!(matches!(res, Err(FftError::MismatchedLengths)));
@@ -752,7 +758,7 @@ mod edge_case_tests {
         let fft = ScalarFftImpl::<f32>::default();
         let signal: [f32; 0] = [];
         let mut stft_stream = StftStream::new(&signal, &window, hop, &fft).unwrap();
-        let mut istft_stream = IstftStream::new(win_len, hop, window.clone(), &fft).unwrap();
+        let mut istft_stream = IstftStream::new(win_len, hop, &window, &fft).unwrap();
         let mut output = Vec::new();
         let mut frame = vec![Complex32::new(0.0, 0.0); win_len];
         while stft_stream.next_frame(&mut frame).unwrap() {

@@ -1,0 +1,447 @@
+{
+  "summary": {
+    "totalTests": 46,
+    "totalPassed": 34,
+    "totalFailed": 12,
+    "overallPassRate": 74
+  },
+  "deviceSummary": {
+    "laptop": {
+      "passed": 13,
+      "failed": 3,
+      "total": 16
+    },
+    "ipad": {
+      "passed": 13,
+      "failed": 3,
+      "total": 16
+    },
+    "iphone": {
+      "passed": 8,
+      "failed": 6,
+      "total": 14
+    }
+  },
+  "detailedResults": [
+    {
+      "device": "laptop",
+      "test": "Initial Load",
+      "passed": {
+        "handle": {}
+      },
+      "details": "All main elements loaded successfully",
+      "timestamp": "2025-08-17T13:52:29.364Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Theme Application",
+      "passed": true,
+      "details": "Theme applied: theme-dark",
+      "timestamp": "2025-08-17T13:52:29.366Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Header Buttons",
+      "passed": true,
+      "details": "Found 4 header buttons",
+      "timestamp": "2025-08-17T13:52:29.432Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Footer Controls",
+      "passed": {
+        "handle": {}
+      },
+      "details": "All footer controls present",
+      "timestamp": "2025-08-17T13:52:29.436Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Spectrogram Canvas",
+      "passed": true,
+      "details": "Canvas size: 866x658",
+      "timestamp": "2025-08-17T13:52:29.436Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Metadata Loading",
+      "passed": false,
+      "details": "No metadata loaded",
+      "timestamp": "2025-08-17T13:52:32.443Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Playlist Update",
+      "passed": true,
+      "details": "Playlist items: 1",
+      "timestamp": "2025-08-17T13:52:32.446Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Play Button",
+      "passed": true,
+      "details": "Play button clicked successfully",
+      "timestamp": "2025-08-17T13:52:33.501Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Volume Control",
+      "passed": true,
+      "details": "Volume slider interactive",
+      "timestamp": "2025-08-17T13:52:33.514Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Seek Bar",
+      "passed": true,
+      "details": "Seek bar clickable",
+      "timestamp": "2025-08-17T13:52:33.517Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Metadata Sidebar",
+      "passed": true,
+      "details": "Metadata sidebar toggleable",
+      "timestamp": "2025-08-17T13:52:34.249Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Sidebars",
+      "passed": false,
+      "details": "Error: Node is either not clickable or not an Element",
+      "timestamp": "2025-08-17T13:52:34.256Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Settings Modal",
+      "passed": false,
+      "details": "Settings modal opens",
+      "timestamp": "2025-08-17T13:52:34.766Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Keyboard Shortcuts",
+      "passed": true,
+      "details": "Keyboard shortcuts tested",
+      "timestamp": "2025-08-17T13:52:36.840Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Responsive Layout",
+      "passed": true,
+      "details": "Header: 50px, Footer: 60px, Spectrogram: 658px",
+      "timestamp": "2025-08-17T13:52:36.843Z"
+    },
+    {
+      "device": "laptop",
+      "test": "Sidebar Responsiveness",
+      "passed": true,
+      "details": "Sidebars respond correctly to screen size",
+      "timestamp": "2025-08-17T13:52:36.844Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Initial Load",
+      "passed": {
+        "handle": {}
+      },
+      "details": "All main elements loaded successfully",
+      "timestamp": "2025-08-17T13:52:40.594Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Theme Application",
+      "passed": true,
+      "details": "Theme applied: theme-dark",
+      "timestamp": "2025-08-17T13:52:40.594Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Header Buttons",
+      "passed": true,
+      "details": "Found 4 header buttons",
+      "timestamp": "2025-08-17T13:52:40.700Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Footer Controls",
+      "passed": {
+        "handle": {}
+      },
+      "details": "All footer controls present",
+      "timestamp": "2025-08-17T13:52:40.702Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Spectrogram Canvas",
+      "passed": true,
+      "details": "Canvas size: 1048x1316",
+      "timestamp": "2025-08-17T13:52:40.703Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Metadata Loading",
+      "passed": false,
+      "details": "No metadata loaded",
+      "timestamp": "2025-08-17T13:52:43.709Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Playlist Update",
+      "passed": true,
+      "details": "Playlist items: 1",
+      "timestamp": "2025-08-17T13:52:43.715Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Play Button",
+      "passed": true,
+      "details": "Play button clicked successfully",
+      "timestamp": "2025-08-17T13:52:44.800Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Volume Control",
+      "passed": true,
+      "details": "Volume slider interactive",
+      "timestamp": "2025-08-17T13:52:44.816Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Seek Bar",
+      "passed": true,
+      "details": "Seek bar clickable",
+      "timestamp": "2025-08-17T13:52:44.824Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Metadata Sidebar",
+      "passed": true,
+      "details": "Metadata sidebar toggleable",
+      "timestamp": "2025-08-17T13:52:45.407Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Sidebars",
+      "passed": false,
+      "details": "Error: Node is either not clickable or not an Element",
+      "timestamp": "2025-08-17T13:52:45.413Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Settings Modal",
+      "passed": false,
+      "details": "Settings modal opens",
+      "timestamp": "2025-08-17T13:52:45.927Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Keyboard Shortcuts",
+      "passed": true,
+      "details": "Keyboard shortcuts tested",
+      "timestamp": "2025-08-17T13:52:48.051Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Responsive Layout",
+      "passed": true,
+      "details": "Header: 50px, Footer: 60px, Spectrogram: 658px",
+      "timestamp": "2025-08-17T13:52:48.056Z"
+    },
+    {
+      "device": "ipad",
+      "test": "Sidebar Responsiveness",
+      "passed": true,
+      "details": "Sidebars respond correctly to screen size",
+      "timestamp": "2025-08-17T13:52:48.058Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Initial Load",
+      "passed": false,
+      "details": "Error: Waiting failed: 15000ms exceeded",
+      "timestamp": "2025-08-17T13:53:06.726Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Header Buttons",
+      "passed": true,
+      "details": "Found 4 header buttons",
+      "timestamp": "2025-08-17T13:53:06.741Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Footer Controls",
+      "passed": {
+        "handle": {}
+      },
+      "details": "All footer controls present",
+      "timestamp": "2025-08-17T13:53:06.747Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Spectrogram Canvas",
+      "passed": true,
+      "details": "Canvas size: 300x150",
+      "timestamp": "2025-08-17T13:53:06.748Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Metadata Loading",
+      "passed": false,
+      "details": "No metadata loaded",
+      "timestamp": "2025-08-17T13:53:09.757Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Playlist Update",
+      "passed": false,
+      "details": "Playlist items: 0",
+      "timestamp": "2025-08-17T13:53:09.760Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Play Button",
+      "passed": true,
+      "details": "Play button clicked successfully",
+      "timestamp": "2025-08-17T13:53:10.836Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Volume Control",
+      "passed": true,
+      "details": "Volume slider interactive",
+      "timestamp": "2025-08-17T13:53:10.844Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Seek Bar",
+      "passed": true,
+      "details": "Seek bar clickable",
+      "timestamp": "2025-08-17T13:53:10.848Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Sidebars",
+      "passed": false,
+      "details": "Error: Node is either not clickable or not an Element",
+      "timestamp": "2025-08-17T13:53:10.933Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Settings Modal",
+      "passed": false,
+      "details": "Settings modal opens",
+      "timestamp": "2025-08-17T13:53:11.449Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Keyboard Shortcuts",
+      "passed": true,
+      "details": "Keyboard shortcuts tested",
+      "timestamp": "2025-08-17T13:53:13.530Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Responsive Layout",
+      "passed": true,
+      "details": "Header: 40px, Footer: 80px, Spectrogram: 547px",
+      "timestamp": "2025-08-17T13:53:13.532Z"
+    },
+    {
+      "device": "iphone",
+      "test": "Sidebar Responsiveness",
+      "passed": false,
+      "details": "Sidebars respond correctly to screen size",
+      "timestamp": "2025-08-17T13:53:13.534Z"
+    }
+  ],
+  "screenshots": [
+    {
+      "device": "laptop",
+      "test": "initial-load",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-laptop-initial-load.png"
+    },
+    {
+      "device": "laptop",
+      "test": "file-loaded",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-laptop-file-loaded.png"
+    },
+    {
+      "device": "laptop",
+      "test": "playback-controls",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-laptop-playback-controls.png"
+    },
+    {
+      "device": "laptop",
+      "test": "settings-test",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-laptop-settings-test.png"
+    },
+    {
+      "device": "laptop",
+      "test": "responsive-layout",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-laptop-responsive-layout.png"
+    },
+    {
+      "device": "laptop",
+      "test": "final-state",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-laptop-final-state.png"
+    },
+    {
+      "device": "ipad",
+      "test": "initial-load",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-ipad-initial-load.png"
+    },
+    {
+      "device": "ipad",
+      "test": "file-loaded",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-ipad-file-loaded.png"
+    },
+    {
+      "device": "ipad",
+      "test": "playback-controls",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-ipad-playback-controls.png"
+    },
+    {
+      "device": "ipad",
+      "test": "settings-test",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-ipad-settings-test.png"
+    },
+    {
+      "device": "ipad",
+      "test": "responsive-layout",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-ipad-responsive-layout.png"
+    },
+    {
+      "device": "ipad",
+      "test": "final-state",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-ipad-final-state.png"
+    },
+    {
+      "device": "iphone",
+      "test": "file-loaded",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-iphone-file-loaded.png"
+    },
+    {
+      "device": "iphone",
+      "test": "playback-controls",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-iphone-playback-controls.png"
+    },
+    {
+      "device": "iphone",
+      "test": "settings-test",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-iphone-settings-test.png"
+    },
+    {
+      "device": "iphone",
+      "test": "responsive-layout",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-iphone-responsive-layout.png"
+    },
+    {
+      "device": "iphone",
+      "test": "final-state",
+      "path": "/Users/kianostad/projects/kofft/test-screenshots/screenshot-iphone-final-state.png"
+    }
+  ],
+  "timestamp": "2025-08-17T13:53:13.697Z"
+}

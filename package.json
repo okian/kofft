@@ -1,0 +1,20 @@
+{
+  "name": "kofft",
+  "version": "1.0.0",
+  "description": "High-performance DSP library with WebAssembly demo",
+  "main": "test_pwa.js",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "cargo test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "c8": "^9.1.0",
+    "prettier": "^3.2.5"
+  }
+}
