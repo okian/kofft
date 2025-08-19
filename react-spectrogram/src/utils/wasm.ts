@@ -2,17 +2,8 @@ import { AudioMetadata, WasmAudioMetadata } from "@/types";
 import { audioPlayer } from "./audioPlayer";
 
 // WASM module types
-interface WasmMetadataExtractor {
-  extract_metadata: (
-    data: Uint8Array,
-    filename: string,
-  ) => WasmAudioMetadata | null;
-  free: () => void;
-}
-
 interface WASMModule {
   init_panic_hook: () => void;
-  MetadataExtractor?: new () => WasmMetadataExtractor;
   generate_waveform: (audioData: Float32Array, numBars: number) => Float32Array;
   generate_amplitude_envelope: (
     audioData: Float32Array,
@@ -30,6 +21,12 @@ interface WASMModule {
     srcRate: number,
     dstRate: number,
   ) => Float32Array;
+}
+
+// Metadata extraction module types
+interface MetadataWASMModule {
+  init_panic_hook: () => void;
+  parse_metadata: (bytes: Uint8Array) => any;
 }
 
 let wasmModule: WASMModule | null = null;
@@ -91,17 +88,17 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
 
   try {
     // Try to extract metadata using WASM
-    const module = await initWASM();
-
-    if (module && module.MetadataExtractor) {
-      let extractor: WasmMetadataExtractor | null = null;
+    console.log('🔍 [METADATA] Attempting WASM metadata extraction');
+    
+    // Import the metadata extraction module
+    const metadataModule: any = await import("@wasm/web_spectrogram");
+    
+    if (metadataModule && metadataModule.parse_metadata) {
       try {
+        console.log('🔍 [METADATA] WASM metadata module found, parsing metadata');
         const arrayBuffer = await file.arrayBuffer();
-        extractor = new module.MetadataExtractor();
-        const wasmMetadata = extractor.extract_metadata(
-          new Uint8Array(arrayBuffer),
-          file.name,
-        );
+        const wasmMetadata = metadataModule.parse_metadata(new Uint8Array(arrayBuffer));
+        
         console.debug(
           "[wasm] metadata extraction succeeded",
           wasmMetadata && wasmMetadata.album_art
@@ -138,24 +135,19 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
           }
           metadata.album_art_mime = wasmMetadata.album_art_mime || undefined;
 
+          console.log('🔍 [METADATA] Successfully extracted rich metadata from WASM');
           return metadata;
         } else {
           console.debug("[wasm] metadata extraction returned null");
         }
       } catch (error) {
         console.error("[wasm] metadata extraction failed", error);
-      } finally {
-        try {
-          extractor?.free();
-        } catch {
-          /* ignore */
-        }
       }
     } else {
-      console.warn("[wasm] MetadataExtractor not available; using fallback");
+      console.warn("[wasm] parse_metadata not available; using fallback");
     }
   } catch (error) {
-    console.error("[wasm] failed to initialize module", error);
+    console.error("[wasm] failed to initialize metadata module", error);
   }
 
   // Fallback: Use HTML5 audio element for basic metadata
