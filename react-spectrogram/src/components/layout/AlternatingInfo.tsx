@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/utils/cn";
+import { MarqueeText } from "@/components/common/MarqueeText";
 
 interface AlternatingInfoProps {
   artist: string;
@@ -17,9 +18,6 @@ export const AlternatingInfo: React.FC<AlternatingInfoProps> = ({
   className,
 }) => {
   const [showArtist, setShowArtist] = useState(true);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isOverflow, setIsOverflow] = useState(false);
-
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
     const switchInfo = () => {
@@ -30,43 +28,26 @@ export const AlternatingInfo: React.FC<AlternatingInfoProps> = ({
     return () => clearTimeout(timeout);
   }, [interval]);
 
-  const checkOverflow = () => {
-    const container = containerRef.current;
-    const span = container?.firstElementChild as HTMLElement | null;
-    if (container && span) {
-      setIsOverflow(span.scrollWidth > container.clientWidth);
-    }
-  };
-
-  useEffect(() => {
-    checkOverflow();
-    window.addEventListener("resize", checkOverflow);
-    return () => window.removeEventListener("resize", checkOverflow);
-    // Depend on values that can change text size
-  }, [artist, album, showArtist]);
-
   const content = showArtist ? artist : album;
   const fallback = showArtist ? "Unknown Artist" : "Unknown Album";
   const displayText = content || fallback;
 
   return (
-    <div ref={containerRef} className="relative min-w-0 overflow-hidden">
+    <div className="relative min-w-0 overflow-hidden">
       <AnimatePresence mode="wait">
-        <motion.span
+        <motion.div
           key={showArtist ? "artist" : "album"}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.5 }}
-          className={cn(
-            className,
-            "block",
-            isOverflow ? "marquee" : "truncate",
-          )}
-          data-testid="alternating-info-text"
         >
-          {displayText}
-        </motion.span>
+          <MarqueeText
+            text={displayText}
+            className={cn(className, "block")}
+            data-testid="alternating-info-text"
+          />
+        </motion.div>
       </AnimatePresence>
     </div>
   );

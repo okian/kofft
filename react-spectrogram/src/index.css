@@ -124,6 +124,84 @@
     @apply min-h-[4rem];
   }
 
+  .track-info-area {
+    width: min(100%, var(--info-max-ch));
+    min-width: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    --title-size: calc(var(--base-title-size) + var(--title-font-step));
+    --next-size: var(--base-title-size);
+  }
+
+  .track-info-area.next-active {
+    --title-size: var(--base-title-size);
+    --next-size: calc(var(--base-title-size) + var(--title-font-step));
+  }
+
+  .track-title {
+    font-size: var(--title-size);
+    transition: font-size var(--size-swap-duration) ease-in-out;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .next-info {
+    font-size: var(--next-size);
+    transition: font-size var(--size-swap-duration) ease-in-out;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .marquee-container {
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .marquee-text {
+    display: inline-block;
+    white-space: nowrap;
+  }
+
+  .marquee-active {
+    animation: marquee var(--marquee-duration) linear infinite;
+    padding-right: 2ch;
+  }
+
+  .marquee-active::after {
+    content: attr(data-text);
+    padding-left: 2ch;
+  }
+
+  .marquee-container:hover .marquee-active,
+  .marquee-container:focus-within .marquee-active {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-active {
+      animation: none;
+    }
+
+    .track-title,
+    .next-info {
+      transition: none;
+    }
+  }
+
   /* Responsive layout utilities */
   .mobile-layout {
     @apply flex-col;
