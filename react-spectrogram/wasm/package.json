@@ -1,19 +1,19 @@
 {
-  "name": "web-spectrogram",
+  "name": "react-spectrogram-wasm",
   "type": "module",
   "collaborators": [
     "Kian Ostad <c@kianostad.com>"
   ],
-  "description": "WebAssembly-powered spectrogram PWA using kofft DSP library",
+  "description": "WebAssembly bundle for the React Spectrogram application",
   "version": "0.1.0",
   "license": "MIT OR Apache-2.0",
   "files": [
-    "web_spectrogram_bg.wasm",
-    "web_spectrogram.js",
-    "web_spectrogram.d.ts"
+    "react_spectrogram_wasm_bg.wasm",
+    "react_spectrogram_wasm.js",
+    "react_spectrogram_wasm.d.ts"
   ],
-  "main": "web_spectrogram.js",
-  "types": "web_spectrogram.d.ts",
+  "main": "react_spectrogram_wasm.js",
+  "types": "react_spectrogram_wasm.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]
