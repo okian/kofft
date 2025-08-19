@@ -95,6 +95,6 @@ describe('PlaylistPanel artwork visibility', () => {
     observer.trigger(true)
     expect(img.getAttribute('src')).toContain('blob:')
 
-    ;(globalThis as any).IntersectionObserver = OriginalIO
+    (globalThis as any).IntersectionObserver = OriginalIO
   })
 })
