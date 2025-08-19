@@ -39,7 +39,7 @@ name = "waveform_cache"
 harness = false
 
 [[bench]]
-name = "memory_usage"
+name = "stft_parallel"
 harness = false
 
 [[example]]

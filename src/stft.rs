@@ -239,29 +239,41 @@ pub fn parallel<Fft: FftImpl<f32>>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    use crate::fft::ScalarFftImpl;
     use rayon::prelude::*;
-    let _ = fft;
     if hop_size == 0 {
         return Err(FftError::InvalidHopSize);
     }
     let win_len = window.len();
+    // Pre-size frames to avoid repeated allocations in the parallel loop
+    for frame in output.iter_mut() {
+        frame.resize(win_len, Complex32::zero());
+    }
+    let fft_ptr = fft as *const Fft as usize;
     output
         .par_iter_mut()
         .enumerate()
         .try_for_each(|(frame_idx, frame)| {
             let start = frame_idx * hop_size;
-            frame.clear();
             for i in 0..win_len {
                 let x = if start + i < signal.len() {
                     signal[start + i] * window[i]
                 } else {
                     0.0
                 };
-                frame.push(Complex32::new(x, 0.0));
+                frame[i] = Complex32::new(x, 0.0);
             }
-            let fft_local = ScalarFftImpl::<f32>::default();
-            fft_local.fft(frame)
+            // SAFETY: `fft_ptr` is shared across threads. Callers must ensure
+            // SAFETY: We cast the shared reference `fft` to a raw pointer (`fft_ptr`) outside the parallel loop,
+            // and reconstruct a shared reference inside each thread. This is safe because:
+            // - The original `fft` reference is valid for the entire duration of the parallel operation,
+            //   and is not mutably aliased elsewhere.
+            // - The pointer is only ever used to create shared (`&`) references, never mutable ones.
+            // - The FFT implementation (`Fft`) must be both `Send` and `Sync`, so it is safe to share
+            //   references to it across threads and to call its methods concurrently.
+            // - It is the caller's responsibility to ensure that the provided `fft` instance upholds these
+            //   thread safety guarantees for the duration of this function.
+            let fft_ref = unsafe { &*(fft_ptr as *const Fft) };
+            fft_ref.fft(frame)
         })
 }
 
