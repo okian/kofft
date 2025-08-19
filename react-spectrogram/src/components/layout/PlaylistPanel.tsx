@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useMemo } from 'react'
 import { X, Play, Trash2, FileAudio, Pause, Loader2 } from 'lucide-react'
 import { AudioTrack } from '@/types'
 import { cn } from '@/utils/cn'
@@ -368,7 +368,58 @@ export function PlaylistPanel({
     setDropIndex(null)
   }
 
-  const totalDuration = tracks.reduce((total, track) => total + track.duration, 0)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const searchIndex = useMemo(
+    () =>
+      tracks.map((track, index) => ({
+        index,
+        title: track.metadata.title?.toLowerCase() ?? '',
+        artist: track.metadata.artist?.toLowerCase() ?? '',
+        album: track.metadata.album?.toLowerCase() ?? '',
+        genre: track.metadata.genre?.toLowerCase() ?? '',
+        year: track.metadata.year ? String(track.metadata.year) : '',
+      })),
+    [tracks]
+  )
+
+  const suggestions = useMemo(() => {
+    const values = new Set<string>()
+    tracks.forEach((track) => {
+      const { title, artist, album, genre, year } = track.metadata
+      if (title) values.add(title)
+      if (artist) values.add(artist)
+      if (album) values.add(album)
+      if (genre) values.add(genre)
+      if (year) values.add(String(year))
+    })
+    return Array.from(values)
+  }, [tracks])
+
+  const filteredIndexes = useMemo(() => {
+    if (!searchQuery.trim()) return searchIndex.map((item) => item.index)
+    const q = searchQuery.toLowerCase()
+    return searchIndex
+      .filter(
+        (item) =>
+          item.title.includes(q) ||
+          item.artist.includes(q) ||
+          item.album.includes(q) ||
+          item.genre.includes(q) ||
+          item.year.includes(q)
+      )
+      .map((item) => item.index)
+  }, [searchIndex, searchQuery])
+
+  const filteredTracks = useMemo(
+    () => filteredIndexes.map((i) => tracks[i]),
+    [filteredIndexes, tracks]
+  )
+
+  const totalDuration = filteredTracks.reduce(
+    (total, track) => total + track.duration,
+    0
+  )
 
   const renderAlbumArt = (track: AudioTrack, index: number) => {
     const isCurrentTrack = currentTrackIndex === index
@@ -515,58 +566,87 @@ export function PlaylistPanel({
         </button>
       </div>
 
+      {/* Search */}
+      <div className="p-1 border-b border-neutral-800">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search..."
+          list="playlist-search-suggestions"
+          className="w-full px-2 py-1 bg-neutral-900 rounded-md text-sm text-neutral-100 border border-neutral-800 focus:outline-none focus:ring-1 focus:ring-accent-blue"
+          data-testid="playlist-search-input"
+        />
+        <datalist id="playlist-search-suggestions" data-testid="playlist-search-suggestions">
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      </div>
+
       {/* Content - Reduced padding */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {tracks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center p-4">
-            <FileAudio size={48} className="text-neutral-600 mb-4" />
-            <h4 className="text-lg font-medium text-neutral-400 mb-2">
-              Playlist Empty
-            </h4>
-            <p className="text-sm text-neutral-500">
-              Drag and drop audio files here or use the file picker
-            </p>
-          </div>
+        {filteredTracks.length === 0 ? (
+          tracks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center p-4">
+              <FileAudio size={48} className="text-neutral-600 mb-4" />
+              <h4 className="text-lg font-medium text-neutral-400 mb-2">
+                Playlist Empty
+              </h4>
+              <p className="text-sm text-neutral-500">
+                Drag and drop audio files here or use the file picker
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center p-4">
+              <p className="text-sm text-neutral-500">No matching tracks</p>
+            </div>
+          )
         ) : (
           <div className="p-1 space-y-1">
-            {tracks.map((track, index) => {
-              const isDragging = dragIndex === index
-              const isDropTarget = dropIndex === index
-              
+            {filteredIndexes.map((originalIndex) => {
+              const track = tracks[originalIndex]
+              const isDragging = dragIndex === originalIndex
+              const isDropTarget = dropIndex === originalIndex
+
               return (
                 <div
                   key={track.id}
-                  ref={(el) => (trackRefs.current[index] = el)}
+                  ref={(el) => (trackRefs.current[originalIndex] = el)}
                   draggable
-                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragStart={(e) => handleDragStart(e, originalIndex)}
                   onDragEnd={handleDragEnd}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDrop={(e) => handleDrop(e, index)}
+                  onDragOver={(e) => handleDragOver(e, originalIndex)}
+                  onDrop={(e) => handleDrop(e, originalIndex)}
                   className={cn(
                     'group flex items-center gap-3 p-2 rounded-md cursor-pointer transition-all duration-300 ease-out',
                     'hover:bg-neutral-800 hover:shadow-sm',
                     'border border-transparent hover:border-neutral-700',
-                    currentTrackIndex === index && 'bg-neutral-800 border-neutral-600 shadow-sm',
+                    currentTrackIndex === originalIndex && 'bg-neutral-800 border-neutral-600 shadow-sm',
                     isDragging && 'opacity-50 scale-95 rotate-1 z-50',
                     isDropTarget && 'bg-neutral-700/30'
                   )}
-                  onClick={() => onTrackSelect(index)}
+                  onClick={() => onTrackSelect(originalIndex)}
                 >
                   {/* Album Art - Bigger and clickable */}
-                  {renderAlbumArt(track, index)}
+                  {renderAlbumArt(track, originalIndex)}
 
                   {/* Track info - More space now */}
                   <div className="flex-1 min-w-0">
                     {/* Title - Most important */}
                     <div className="mb-1">
-                      <h4 className={cn(
-                        'text-sm font-medium truncate',
-                        currentTrackIndex === index ? 'text-accent-blue' : 'text-neutral-100'
-                      )}>
+                      <h4
+                        className={cn(
+                          'text-sm font-medium truncate',
+                          currentTrackIndex === originalIndex
+                            ? 'text-accent-blue'
+                            : 'text-neutral-100'
+                        )}
+                      >
                         {track.metadata.title || track.file.name}
                       </h4>
                     </div>
-                    
+
                     {/* Artist and Duration - Second most important */}
                     <div className="flex items-center justify-between text-xs text-neutral-400 mb-0.5">
                       <span className="truncate">
@@ -576,7 +656,7 @@ export function PlaylistPanel({
                         {formatDuration(track.duration)}
                       </span>
                     </div>
-                    
+
                     {/* Album - Third most important, only if available */}
                     {track.metadata.album && (
                       <p className="text-xs text-neutral-500 truncate">
@@ -590,7 +670,7 @@ export function PlaylistPanel({
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        onTrackRemove(index)
+                        onTrackRemove(originalIndex)
                       }}
                       className={cn(
                         'p-1.5 rounded transition-colors',
@@ -609,12 +689,12 @@ export function PlaylistPanel({
       </div>
 
       {/* Footer - More compact */}
-      {tracks.length > 0 && (
+      {filteredTracks.length > 0 && (
         <div className="p-2 border-t border-neutral-800 bg-neutral-900/50">
           <div className="flex items-center justify-between text-xs">
             <div className="flex flex-col gap-0.5">
               <span className="text-neutral-300 font-medium">
-                {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+                {filteredTracks.length} track{filteredTracks.length !== 1 ? 's' : ''}
               </span>
               <span className="text-neutral-400">
                 {formatDuration(totalDuration)}
