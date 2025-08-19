@@ -41,7 +41,35 @@ export class SpectrogramApp {
           0,
           this.canvas.width,
           this.canvas.height - 1,
-        );
+        // Preserve current canvas content before resizing
+        const prevWidth = this.canvas.width;
+        const prevHeight = this.canvas.height;
+        let prevImage = null;
+        if (prevWidth > 0 && prevHeight > 0) {
+          // Create an offscreen canvas to store the previous image
+          const offscreen = document.createElement('canvas');
+          offscreen.width = prevWidth;
+          offscreen.height = prevHeight;
+          offscreen.getContext('2d').drawImage(this.canvas, 0, 0);
+          prevImage = offscreen;
+        }
+        this.canvas.width = width;
+        // Optionally, set canvas.height if it can change (not shown here)
+        const imageData = new ImageData(new Uint8ClampedArray(frame), width, 1);
+        if (prevImage) {
+          // Draw the previous image shifted up by one row
+          this.ctx.drawImage(
+            prevImage,
+            0,
+            1,
+            width,
+            this.canvas.height - 1,
+            0,
+            0,
+            width,
+            this.canvas.height - 1,
+          );
+        }
         this.ctx.putImageData(imageData, 0, this.canvas.height - 1);
       };
       this.source.connect(this.processor);
