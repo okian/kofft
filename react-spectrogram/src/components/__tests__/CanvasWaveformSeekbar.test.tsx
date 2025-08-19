@@ -18,9 +18,9 @@ describe("CanvasWaveformSeekbar", () => {
       observe() {}
       disconnect() {}
     };
-    vi
-      .spyOn(window, "getComputedStyle")
-      .mockReturnValue({ getPropertyValue: () => "" } as any);
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      getPropertyValue: () => "",
+    } as any);
   });
 
   it("renders waveform bars centered on canvas", () => {
@@ -52,7 +52,8 @@ describe("CanvasWaveformSeekbar", () => {
     );
 
     const bar = getByTestId("progress-bar");
-    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({
+    const canvas = bar.querySelector("canvas") as HTMLCanvasElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
       left: 0,
       width: 100,
       top: 0,
@@ -102,7 +103,8 @@ describe("CanvasWaveformSeekbar", () => {
     );
 
     const bar = getByTestId("progress-bar");
-    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({
+    const canvas = bar.querySelector("canvas") as HTMLCanvasElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
       left: 0,
       width: 100,
       top: 0,
@@ -121,8 +123,87 @@ describe("CanvasWaveformSeekbar", () => {
     expect(onSeek).not.toHaveBeenCalled();
     vi.advanceTimersByTime(250);
     fireEvent.pointerMove(bar, { clientX: 60 });
-    expect(onSeek).toHaveBeenCalled();
+    expect(onSeek).toHaveBeenCalledTimes(1);
     fireEvent.pointerUp(bar, { clientX: 80 });
+    expect(onSeek).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("does not dispatch seek twice on drag release", () => {
+    const audioData = new Float32Array(1000);
+    const onSeek = vi.fn();
+    const { getByTestId } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={100}
+        onSeek={onSeek}
+      />,
+    );
+
+    const bar = getByTestId("progress-bar");
+    const canvas = bar.querySelector("canvas") as HTMLCanvasElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 100,
+      top: 0,
+      height: 10,
+      bottom: 10,
+      right: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(bar, { clientX: 0 });
+    fireEvent.pointerMove(bar, { clientX: 50 });
+    vi.advanceTimersByTime(250);
+    fireEvent.pointerMove(bar, { clientX: 50 });
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    fireEvent.pointerUp(bar, { clientX: 50 });
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("ignores rapid repeated clicks at same position", () => {
+    vi.useFakeTimers();
+    const audioData = new Float32Array(1000);
+    const onSeek = vi.fn();
+    const { getByTestId } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={100}
+        onSeek={onSeek}
+      />,
+    );
+
+    const bar = getByTestId("progress-bar");
+    const canvas = bar.querySelector("canvas") as HTMLCanvasElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 100,
+      top: 0,
+      height: 10,
+      bottom: 10,
+      right: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    fireEvent.pointerDown(bar, { clientX: 30 });
+    fireEvent.pointerUp(bar, { clientX: 30 });
+    expect(onSeek).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerDown(bar, { clientX: 30 });
+    fireEvent.pointerUp(bar, { clientX: 30 });
+    expect(onSeek).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(250);
+    fireEvent.pointerDown(bar, { clientX: 30 });
+    fireEvent.pointerUp(bar, { clientX: 30 });
     expect(onSeek).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
