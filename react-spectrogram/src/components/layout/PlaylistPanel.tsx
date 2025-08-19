@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { X, Play, Trash2, FileAudio, Pause, Loader2 } from 'lucide-react'
 import { AudioTrack } from '@/types'
 import { cn } from '@/utils/cn'
@@ -25,6 +25,58 @@ interface CircularProgressControlProps {
   isPlaying?: boolean
   onPlayPause?: () => void
   onSeek?: (progress: number) => void
+}
+
+interface LazyAlbumArtProps {
+  data: Uint8Array
+  mimeType: string
+  className?: string
+  onClick?: () => void
+}
+
+function LazyAlbumArt({ data, mimeType, className, onClick }: LazyAlbumArtProps) {
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    const img = imgRef.current
+    if (!img) return
+
+    let url: string | null = null
+
+    const load = () => {
+      if (url || !data || data.length === 0) return
+      const blob = new Blob([data], { type: mimeType })
+      url = URL.createObjectURL(blob)
+      img.src = url
+    }
+
+    const unload = () => {
+      if (url) {
+        URL.revokeObjectURL(url)
+        url = null
+      }
+      img.removeAttribute('src')
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          load()
+        } else {
+          unload()
+        }
+      })
+    })
+
+    observer.observe(img)
+
+    return () => {
+      observer.disconnect()
+      unload()
+    }
+  }, [data, mimeType])
+
+  return <img ref={imgRef} alt="Album Art" className={className} onClick={onClick} />
 }
 
 function CircularProgressControl({ 
@@ -140,45 +192,34 @@ function CircularProgressControl({
         {(() => {
           try {
             if (track.artwork && track.artwork.data && track.artwork.data.length > 0) {
-              const artworkData = track.artwork.data
+              const artworkData =
+                track.artwork.data instanceof Uint8Array
+                  ? track.artwork.data
+                  : new Uint8Array(track.artwork.data)
               const mimeType = track.artwork.mimeType || 'image/jpeg'
-              
-              const blob = new Blob([artworkData], { type: mimeType })
-              const url = URL.createObjectURL(blob)
-              
+
               return (
-                <img
-                  src={url}
-                  alt="Album Art"
+                <LazyAlbumArt
+                  data={artworkData}
+                  mimeType={mimeType}
                   className="w-16 h-16 object-cover rounded-md transition-transform hover:scale-105"
-                  onLoad={() => setTimeout(() => URL.revokeObjectURL(url), 1000)}
-                  onError={(e) => {
-                    URL.revokeObjectURL(url)
-                  }}
                 />
               )
             }
-            
+
             if (track.metadata.album_art && track.metadata.album_art.length > 0) {
               const albumArtData = track.metadata.album_art
               const mimeType = track.metadata.album_art_mime || 'image/jpeg'
-              
-              const blob = new Blob([albumArtData], { type: mimeType })
-              const url = URL.createObjectURL(blob)
-              
+
               return (
-                <img
-                  src={url}
-                  alt="Album Art"
+                <LazyAlbumArt
+                  data={albumArtData}
+                  mimeType={mimeType}
                   className="w-16 h-16 object-cover rounded-md transition-transform hover:scale-105"
-                  onLoad={() => setTimeout(() => URL.revokeObjectURL(url), 1000)}
-                  onError={(e) => {
-                    URL.revokeObjectURL(url)
-                  }}
                 />
               )
             }
-            
+
             return (
               <div className="w-16 h-16 bg-neutral-800 rounded-md flex items-center justify-center">
                 <FileAudio size={20} className="text-neutral-500" />
@@ -493,32 +534,24 @@ export function PlaylistPanel({
       try {
         const artworkData = track.artwork.data
         const mimeType = track.artwork.mimeType || 'image/jpeg'
-        
+
         // Validate the data before creating blob
         if (artworkData.length < 100) {
           return renderFallbackAlbumArt(index)
         }
-        
-        // Create blob from the Uint8Array
+
         // Ensure we have a Uint8Array
-        const dataArray = artworkData instanceof Uint8Array ? artworkData : new Uint8Array(artworkData)
-        const blob = new Blob([dataArray], { type: mimeType })
-        const url = URL.createObjectURL(blob)
-        
+        const dataArray =
+          artworkData instanceof Uint8Array
+            ? artworkData
+            : new Uint8Array(artworkData)
+
         return (
           <div className="relative flex-shrink-0">
-            <img
-              src={url}
-              alt="Album Art"
+            <LazyAlbumArt
+              data={dataArray}
+              mimeType={mimeType}
               className="w-16 h-16 object-cover rounded-md cursor-pointer transition-transform hover:scale-105"
-              onLoad={() => {
-                // Clean up the URL after the image loads
-                setTimeout(() => URL.revokeObjectURL(url), 1000)
-              }}
-              onError={(e) => {
-                // Clean up the URL on error
-                URL.revokeObjectURL(url)
-              }}
               onClick={() => onTrackSelect(index)}
             />
           </div>
@@ -527,36 +560,24 @@ export function PlaylistPanel({
         return renderFallbackAlbumArt(index)
       }
     }
-    
+
     // Fallback to old metadata album art if available
     if (track.metadata.album_art && track.metadata.album_art.length > 0) {
       try {
         const albumArtData = track.metadata.album_art
         const mimeType = track.metadata.album_art_mime || 'image/jpeg'
-        
+
         // Validate the data before creating blob
         if (albumArtData.length < 100) {
           return renderFallbackAlbumArt(index)
         }
-        
-        // Create blob from the Uint8Array
-        const blob = new Blob([albumArtData], { type: mimeType })
-        const url = URL.createObjectURL(blob)
-        
+
         return (
           <div className="relative flex-shrink-0">
-            <img
-              src={url}
-              alt="Album Art"
+            <LazyAlbumArt
+              data={albumArtData}
+              mimeType={mimeType}
               className="w-16 h-16 object-cover rounded-md cursor-pointer transition-transform hover:scale-105"
-              onLoad={() => {
-                // Clean up the URL after the image loads
-                setTimeout(() => URL.revokeObjectURL(url), 1000)
-              }}
-              onError={(e) => {
-                // Clean up the URL on error
-                URL.revokeObjectURL(url)
-              }}
               onClick={() => onTrackSelect(index)}
             />
           </div>
@@ -570,8 +591,8 @@ export function PlaylistPanel({
     return renderFallbackAlbumArt(index)
   }
 
-    const renderFallbackAlbumArt = (index: number) => (
-    <div 
+  const renderFallbackAlbumArt = (index: number) => (
+    <div
       className="w-16 h-16 bg-neutral-800 rounded-md flex-shrink-0 flex items-center justify-center cursor-pointer transition-transform hover:scale-105"
       onClick={() => onTrackSelect(index)}
     >
