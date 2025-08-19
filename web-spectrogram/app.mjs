@@ -123,7 +123,7 @@ export function drawSpectrogram(
 ) {
   const gl = canvas.getContext("webgl2") || canvas.getContext("webgl") || null;
   if (gl) {
-    drawSpectrogramWebGL(gl, canvas, res, colormap);
+    drawSpectrogramWebGL(gl, canvas, res);
     return;
   }
   if (typeof navigator !== "undefined" && navigator.gpu) {
