@@ -3,6 +3,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import { AudioState, AudioTrack } from '@/types'
 import { playbackEngine } from '@/utils/PlaybackEngine'
 import { audioPlayer } from '@/utils/audioPlayer'
+import { revokeTrackUrl } from '@/utils/audio'
 
 interface AudioStore extends AudioState {
   // Actions
@@ -69,18 +70,23 @@ export const useAudioStore = create<AudioStore>()(
     
     removeFromPlaylist: (index) => {
       const { playlist, currentTrackIndex } = get()
+      const trackToRemove = playlist[index]
       const newPlaylist = playlist.filter((_, i) => i !== index)
       let newCurrentIndex = currentTrackIndex
-      
+
       if (index <= currentTrackIndex && currentTrackIndex > 0) {
         newCurrentIndex = currentTrackIndex - 1
       }
-      
-      set({ 
+
+      set({
         playlist: newPlaylist,
         currentTrackIndex: newCurrentIndex,
         currentTrack: newCurrentIndex >= 0 ? newPlaylist[newCurrentIndex] : null
       })
+
+      if (trackToRemove) {
+        revokeTrackUrl(trackToRemove)
+      }
     },
     
     reorderPlaylist: (fromIndex, toIndex) => {

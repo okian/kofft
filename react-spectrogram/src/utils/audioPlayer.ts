@@ -222,6 +222,7 @@ class AudioPlayerEngine {
     }
   }
 
+<<<<<<< HEAD
   // Pause playback
   pausePlayback(): void {
     if (this.source && !this.isPaused) {
@@ -438,6 +439,7 @@ class AudioPlayerEngine {
     this.currentTrack = null
     this.callbacks.clear()
   }
+
 }
 
 // Export singleton instance
