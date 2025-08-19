@@ -80,4 +80,11 @@ describe('App', () => {
     expect(screen.getByTestId('drop-zone')).toBeInTheDocument()
     expect(screen.getByText('Drop audio files here')).toBeInTheDocument()
   })
+
+  it('preserves existing body classes when applying theme', () => {
+    document.body.className = 'keep-me'
+    render(<App />)
+    expect(document.body.classList.contains('keep-me')).toBe(true)
+    expect(document.body.classList.contains('theme-dark')).toBe(true)
+  })
 })
