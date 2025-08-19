@@ -55,7 +55,7 @@
 //! let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
 //! let mut out = Vec::new();
 //! while stft_stream.next_frame(&mut frame).unwrap() {
-//!     out.extend_from_slice(istft_stream.push_frame(&frame).unwrap());
+//!     out.extend_from_slice(istft_stream.push_frame(&mut frame).unwrap());
 //! }
 //! out.extend_from_slice(istft_stream.flush());
 //! ```
@@ -451,7 +451,6 @@ pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
     buffer: alloc::vec::Vec<f32>,
     /// Buffer storing the sum of squared window values for normalization.
     norm_buf: alloc::vec::Vec<f32>,
-    time_buf: alloc::vec::Vec<crate::fft::Complex32>,
     buf_pos: usize,
     out_pos: usize,
     frame_count: usize,
@@ -472,7 +471,6 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         }
         let buffer = vec![0.0f32; win_len + hop * 2];
         let norm_buf = vec![0.0f32; win_len + hop * 2];
-        let time_buf = vec![crate::fft::Complex32::new(0.0, 0.0); win_len];
         Ok(Self {
             win_len,
             hop,
@@ -480,7 +478,6 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
             fft,
             buffer,
             norm_buf,
-            time_buf,
             buf_pos: 0,
             out_pos: 0,
             frame_count: 0,
@@ -492,12 +489,22 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     /// Returns a slice of length `hop` containing the next chunk of time-domain
     /// signal. Remaining samples after all frames have been pushed can be
     /// retrieved via [`flush`].
-    pub fn push_frame(&mut self, frame: &[crate::fft::Complex32]) -> Result<&[f32], FftError> {
+    pub fn push_frame(&mut self, frame: &mut [crate::fft::Complex32]) -> Result<&[f32], FftError> {
         if frame.len() != self.win_len {
             return Err(FftError::MismatchedLengths);
         }
-        self.time_buf.copy_from_slice(frame);
-        self.fft.ifft(&mut self.time_buf)?;
+        if self.buf_pos + self.win_len > self.buffer.len() {
+            let shift = self.out_pos;
+            self.buffer.copy_within(shift.., 0);
+            self.norm_buf.copy_within(shift.., 0);
+            self.buf_pos -= shift;
+            self.out_pos = 0;
+            for i in self.buf_pos + self.win_len - self.hop..self.buffer.len() {
+                self.buffer[i] = 0.0;
+                self.norm_buf[i] = 0.0;
+            }
+        }
+        self.fft.ifft(frame)?;
         // Window and overlap-add
         overlap_add(
             &self.time_buf,
@@ -506,6 +513,13 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
             &mut self.buffer,
             &mut self.norm_buf,
         );
+        for (i, sample) in frame.iter().enumerate().take(self.win_len) {
+            let win = self.window[i];
+            let val = sample.re * win;
+            let idx = self.buf_pos + i;
+            self.buffer[idx] += val;
+            self.norm_buf[idx] += win * win;
+        }
         self.frame_count += 1;
         // Output is available after the first frame
         let out_start = self.out_pos;
@@ -519,17 +533,12 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         }
         self.out_pos += self.hop;
         self.buf_pos += self.hop;
-        // Zero the region that will be written next time
-        if self.buf_pos + self.win_len > self.buffer.len() {
-            // Extend buffer if needed
-            let new_len = self.buf_pos + self.win_len;
-            self.buffer.resize(new_len, 0.0);
-            self.norm_buf.resize(new_len, 0.0);
-        }
         for i in 0..self.hop {
             let idx = self.buf_pos + self.win_len - self.hop + i;
-            self.buffer[idx] = 0.0;
-            self.norm_buf[idx] = 0.0;
+            if idx < self.buffer.len() {
+                self.buffer[idx] = 0.0;
+                self.norm_buf[idx] = 0.0;
+            }
         }
         Ok(&self.buffer[out_start..out_end])
     }
@@ -558,6 +567,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         }
         self.out_pos = out_end;
         &self.buffer[out_start..out_end]
+    }
+
+    /// Current length of the internal buffer (for diagnostics and testing).
+    pub fn buffer_len(&self) -> usize {
+        self.buffer.len()
     }
 }
 
@@ -723,8 +737,8 @@ mod edge_case_tests {
         let window = vec![1.0f32; win_len];
         let fft = ScalarFftImpl::<f32>::default();
         let mut istft_stream = IstftStream::new(win_len, hop, &window, &fft).unwrap();
-        let frame = vec![Complex32::new(0.0, 0.0); win_len - 1];
-        let res = istft_stream.push_frame(&frame);
+        let mut frame = vec![Complex32::new(0.0, 0.0); win_len - 1];
+        let res = istft_stream.push_frame(&mut frame);
         assert!(matches!(res, Err(FftError::MismatchedLengths)));
     }
 
@@ -798,7 +812,7 @@ mod edge_case_tests {
         let mut output = Vec::new();
         let mut frame = vec![Complex32::new(0.0, 0.0); win_len];
         while stft_stream.next_frame(&mut frame).unwrap() {
-            let out = istft_stream.push_frame(&frame).unwrap();
+            let out = istft_stream.push_frame(&mut frame).unwrap();
             output.extend_from_slice(out);
         }
         let tail = istft_stream.flush();

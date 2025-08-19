@@ -14,6 +14,9 @@ once_cell = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rusqlite = { version = "0.29", features = ["bundled"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.14"
+
 [features]
 default = []
 parallel = ["kofft/parallel"]
@@ -33,6 +36,10 @@ harness = false
 
 [[bench]]
 name = "waveform_cache"
+harness = false
+
+[[bench]]
+name = "memory_usage"
 harness = false
 
 [[example]]

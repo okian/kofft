@@ -16,6 +16,17 @@ use crate::fft::{Complex, FftError, FftImpl, Float, ScalarFftImpl};
 /// Result type returned by [`flatten_3d`].
 type Flatten3dResult<T> = (Vec<Complex<T>>, usize, usize, usize);
 
+fn checked_capacity_2d(rows: usize, cols: usize) -> Result<usize, FftError> {
+    rows.checked_mul(cols).ok_or(FftError::LengthOverflow)
+}
+
+fn checked_capacity_3d(depth: usize, rows: usize, cols: usize) -> Result<usize, FftError> {
+    depth
+        .checked_mul(rows)
+        .and_then(|v| v.checked_mul(cols))
+        .ok_or(FftError::LengthOverflow)
+}
+
 /// Flatten a 2D `Vec<Vec<Complex<T>>>` into a single `Vec<Complex<T>>` along
 /// with its row/column dimensions.
 pub fn flatten_2d<T: Float>(
@@ -29,7 +40,8 @@ pub fn flatten_2d<T: Float>(
     if data.iter().any(|row| row.len() != cols) {
         return Err(FftError::MismatchedLengths);
     }
-    let mut flat = Vec::with_capacity(rows * cols);
+    let total = checked_capacity_2d(rows, cols)?;
+    let mut flat = Vec::with_capacity(total);
     for row in data {
         flat.extend(row);
     }
@@ -57,7 +69,8 @@ pub fn flatten_3d<T: Float>(
             }
         }
     }
-    let mut flat = Vec::with_capacity(depth * rows * cols);
+    let total = checked_capacity_3d(depth, rows, cols)?;
+    let mut flat = Vec::with_capacity(total);
     for plane in data {
         for row in plane {
             flat.extend(row);
@@ -78,7 +91,8 @@ pub fn fft2d_inplace<T: Float>(
     fft: &ScalarFftImpl<T>,
     scratch_col: &mut [Complex<T>],
 ) -> Result<(), FftError> {
-    if rows * cols != data.len() {
+    let len = rows.checked_mul(cols).ok_or(FftError::Overflow)?;
+    if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
     if rows == 0 || cols == 0 {
@@ -119,7 +133,9 @@ pub fn fft3d_inplace<T: Float>(
     fft: &ScalarFftImpl<T>,
     scratch: &mut Fft3dScratch<'_, T>,
 ) -> Result<(), FftError> {
-    if depth * rows * cols != data.len() {
+    let rowcols = rows.checked_mul(cols).ok_or(FftError::Overflow)?;
+    let len = depth.checked_mul(rowcols).ok_or(FftError::Overflow)?;
+    if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
     if depth == 0 || rows == 0 || cols == 0 {
@@ -132,20 +148,20 @@ pub fn fft3d_inplace<T: Float>(
     for r in 0..rows {
         for c in 0..cols {
             let start = r * cols + c;
-            fft.fft_strided(&mut data[start..], rows * cols, scratch.tube)?;
+            fft.fft_strided(&mut data[start..], rowcols, scratch.tube)?;
         }
     }
     // FFT on rows (y axis)
     for d in 0..depth {
         for c in 0..cols {
-            let start = d * rows * cols + c;
+            let start = d * rowcols + c;
             fft.fft_strided(&mut data[start..], cols, scratch.row)?;
         }
     }
     // FFT on columns (x axis)
     for d in 0..depth {
         for r in 0..rows {
-            let start = d * rows * cols + r * cols;
+            let start = d * rowcols + r * cols;
             fft.fft(&mut data[start..start + cols])?;
         }
     }
@@ -383,5 +399,39 @@ mod tests {
             fft3d_inplace(&mut data, 2, 2, 2, &fft, &mut scratch),
             Err(FftError::MismatchedLengths)
         );
+    }
+}
+
+#[cfg(test)]
+mod overflow_tests {
+    use super::{checked_capacity_2d, checked_capacity_3d};
+    use crate::fft::FftError;
+
+    #[test]
+    fn checked_capacity_2d_overflow() {
+        assert_eq!(
+            checked_capacity_2d(usize::MAX, 2),
+            Err(FftError::LengthOverflow)
+        );
+    }
+
+    #[test]
+    fn checked_capacity_3d_overflow() {
+        assert_eq!(
+            checked_capacity_3d(usize::MAX, usize::MAX, 2),
+            Err(FftError::LengthOverflow)
+        );
+    }
+
+    #[test]
+    fn checked_capacity_2d_ok() {
+        let half = usize::MAX / 2;
+        assert!(checked_capacity_2d(half, 2).is_ok());
+    }
+
+    #[test]
+    fn checked_capacity_3d_ok() {
+        let third = usize::MAX / 3;
+        assert!(checked_capacity_3d(third, 3, 1).is_ok());
     }
 }
