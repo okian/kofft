@@ -120,7 +120,13 @@ impl FftResult {
 
     #[wasm_bindgen(getter)]
     pub fn im(&self) -> Vec<f32> {
-        self.im.clone()
+    pub fn re(&self) -> Float32Array {
+        Float32Array::from(self.re.as_slice())
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn im(&self) -> Float32Array {
+        Float32Array::from(self.im.as_slice())
     }
 }
 
