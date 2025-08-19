@@ -5,13 +5,6 @@ use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
 use kofft::{dct, wavelet};
-use lofty::{
-    picture::{Picture, PictureType},
-    prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt},
-    probe::Probe,
-};
-use serde::{Deserialize, Serialize};
-use std::io::Cursor;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -19,22 +12,7 @@ pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct AudioMetadata {
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub year: Option<u32>,
-    pub genre: Option<String>,
-    pub duration: Option<f64>,
-    pub sample_rate: Option<u32>,
-    pub channels: Option<u16>,
-    pub bit_depth: Option<u16>,
-    pub bitrate: Option<u32>,
-    pub format: String,
-    pub album_art: Option<Vec<u8>>,
-    pub album_art_mime: Option<String>,
-}
+
 
 #[wasm_bindgen]
 pub struct StftResult {
@@ -180,7 +158,6 @@ const HOP: usize = 512;
 pub enum Colormap {
     Rainbow,
     Fire,
-    Grayscale,
 }
 
 impl From<Colormap> for KColormap {
@@ -188,7 +165,6 @@ impl From<Colormap> for KColormap {
         match cmap {
             Colormap::Rainbow => KColormap::Rainbow,
             Colormap::Fire => KColormap::Fire,
-            Colormap::Grayscale => KColormap::Grayscale,
         }
     }
 }
@@ -207,7 +183,6 @@ pub fn set_colormap(cmap: &str) {
         let mut state = state.borrow_mut();
         state.cmap = match cmap {
             "fire" => KColormap::Fire,
-            "grayscale" => KColormap::Grayscale,
             _ => KColormap::Rainbow,
         };
     });
@@ -230,12 +205,15 @@ pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
 
         // Compute FFT
         let mut spectrum = vec![Complex32::new(0.0, 0.0); WIN_LEN];
-        state.fft.forward(&windowed, &mut spectrum);
+        for (i, &sample) in windowed.iter().enumerate() {
+            spectrum[i] = Complex32::new(sample, 0.0);
+        }
+        state.fft.fft(&mut spectrum).unwrap();
 
         // Compute magnitudes
         let mut magnitudes = Vec::with_capacity(WIN_LEN / 2);
         for i in 0..WIN_LEN / 2 {
-            let mag = (spectrum[i].norm() / WIN_LEN as f32).sqrt();
+            let mag = ((spectrum[i].re * spectrum[i].re + spectrum[i].im * spectrum[i].im) / WIN_LEN as f32).sqrt();
             magnitudes.push(mag);
             state.max_mag = state.max_mag.max(mag);
         }
@@ -267,7 +245,7 @@ impl State {
     fn new() -> Self {
         Self {
             buf: Vec::new(),
-            fft: new_fft_impl(WIN_LEN).unwrap(),
+            fft: new_fft_impl(),
             window: hann(WIN_LEN),
             cmap: KColormap::Rainbow,
             max_mag: 0.0,
@@ -275,105 +253,7 @@ impl State {
     }
 }
 
-impl Default for AudioMetadata {
-    fn default() -> Self {
-        Self {
-            title: None,
-            artist: None,
-            album: None,
-            year: None,
-            genre: None,
-            duration: None,
-            sample_rate: None,
-            channels: None,
-            bit_depth: None,
-            bitrate: None,
-            format: "unknown".to_string(),
-            album_art: None,
-            album_art_mime: None,
-        }
-    }
-}
 
-#[wasm_bindgen]
-pub fn parse_metadata(bytes: &[u8]) -> Result<JsValue, JsValue> {
-    let mut meta = AudioMetadata::default();
-    let cursor = Cursor::new(bytes);
-    let tagged_file = match Probe::new(cursor).guess_file_type() {
-        Ok(probe) => match probe.read() {
-            Ok(f) => f,
-            Err(_e) => {
-                return serde_wasm_bindgen::to_value(&meta)
-                    .map_err(|e| JsValue::from_str(&format!("serde error: {e}")));
-            }
-        },
-        Err(_e) => {
-            return serde_wasm_bindgen::to_value(&meta)
-                .map_err(|e| JsValue::from_str(&format!("serde error: {e}")));
-        }
-    };
-
-    meta.format = format!("{:?}", tagged_file.file_type()).to_lowercase();
-
-    let tag = tagged_file
-        .primary_tag()
-        .or_else(|| tagged_file.first_tag());
-
-    if let Some(tag) = tag {
-        meta.title = tag.title().map(|s| s.to_string());
-        meta.artist = tag.artist().map(|s| s.to_string());
-        meta.album = tag.album().map(|s| s.to_string());
-
-        let mut year_found = None;
-        for item in tag.get_items(&ItemKey::RecordingDate) {
-            if let Some(text) = item.value().text() {
-                if let Some(year_str) = text.get(0..4) {
-                    if let Ok(year) = year_str.parse::<u32>() {
-                        year_found = Some(year);
-                        break;
-                    }
-                }
-            }
-        }
-        if year_found.is_none() {
-            for item in tag.get_items(&ItemKey::Year) {
-                if let Some(text) = item.value().text() {
-                    if let Ok(year) = text.parse::<u32>() {
-                        year_found = Some(year);
-                        break;
-                    }
-                }
-            }
-        }
-        meta.year = year_found;
-        meta.genre = tag.genre().map(|s| s.to_string());
-
-        // Debug: Check if we have any pictures
-        let pictures = tag.pictures();
-
-        if let Some(pic) = pick_cover_picture(tag.pictures()) {
-            meta.album_art = Some(pic.data().to_vec());
-            meta.album_art_mime = Some(picture_mime(&pic).to_string());
-        }
-    }
-
-    let props = tagged_file.properties();
-    meta.duration = Some(props.duration().as_secs_f64());
-    if let Some(sr) = props.sample_rate() {
-        meta.sample_rate = Some(sr);
-    }
-    if let Some(ch) = props.channels().map(|c| c as u16) {
-        meta.channels = Some(ch);
-    }
-    if let Some(bits) = props.bit_depth().map(|b| b as u16) {
-        meta.bit_depth = Some(bits);
-    }
-    if let Some(br) = props.overall_bitrate() {
-        meta.bitrate = Some(br);
-    }
-
-    serde_wasm_bindgen::to_value(&meta).map_err(|e| JsValue::from_str(&format!("serde error: {e}")))
-}
 
 /// Generate amplitude envelope for seekbar visualization
 /// Returns an array of amplitude values (0.0 to 1.0) representing the audio envelope
@@ -487,35 +367,7 @@ pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     generate_amplitude_envelope(audio_data, 44100, num_bars, 20, 3)
 }
 
-fn pick_cover_picture<'a>(pics: impl IntoIterator<Item = &'a Picture>) -> Option<&'a Picture> {
-    let mut pics_iter = pics.into_iter();
-    // First try to find a cover front picture
-    if let Some(cover_front) = pics_iter.find(|p| p.pic_type() == PictureType::CoverFront) {
-        return Some(cover_front);
-    }
-    // If no cover front, try to find any picture
-    pics_iter.next()
-}
 
-fn picture_mime(pic: &Picture) -> &str {
-    if let Some(m) = pic.mime_type() {
-        let mime_str = m.as_str();
-        if !mime_str.is_empty() {
-            return mime_str;
-        }
-    }
-
-    let d = pic.data();
-    if d.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        "image/jpeg"
-    } else if d.starts_with(&[0x89, b'P', b'N', b'G']) {
-        "image/png"
-    } else if d.len() > 12 && &d[0..4] == b"RIFF" && &d[8..12] == b"WEBP" {
-        "image/webp"
-    } else {
-        "application/octet-stream"
-    }
-}
 
 #[cfg(test)]
 mod tests {

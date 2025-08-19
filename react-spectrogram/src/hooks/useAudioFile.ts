@@ -40,6 +40,38 @@ const base64ToUint8 = (base64: string): Uint8Array => {
   return bytes
 }
 
+// Utility to clean up localStorage when it's getting full
+const cleanupLocalStorage = () => {
+  try {
+    const keys = Object.keys(localStorage)
+    const audioKeys = keys.filter(key => key.startsWith('audio-metadata-'))
+    
+    if (audioKeys.length > 20) {
+      // If we have more than 20 cached audio files, remove the oldest ones
+      const sortedKeys = audioKeys.sort((a, b) => {
+        try {
+          const aData = localStorage.getItem(a)
+          const bData = localStorage.getItem(b)
+          if (!aData || !bData) return 0
+          
+          const aTime = JSON.parse(aData).timestamp || 0
+          const bTime = JSON.parse(bData).timestamp || 0
+          return aTime - bTime
+        } catch {
+          return 0
+        }
+      })
+      
+      // Remove the oldest 5 entries
+      sortedKeys.slice(0, 5).forEach(key => {
+        localStorage.removeItem(key)
+      })
+    }
+  } catch (e) {
+    console.warn('Failed to cleanup localStorage:', e)
+  }
+}
+
 export const useAudioFile = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -214,7 +246,40 @@ export const useAudioFile = () => {
               ? { ...artwork, data: artwork.data ? uint8ToBase64(artwork.data) : undefined }
               : undefined
             try {
-              localStorage.setItem(cacheKey, JSON.stringify({ metadata: metadataToStore, artwork: artworkToStore }))
+              // Clean up old entries if we have too many
+              cleanupLocalStorage()
+              
+              // Check if we have enough space before storing
+              const dataToStore = JSON.stringify({ 
+                metadata: metadataToStore, 
+                artwork: artworkToStore,
+                timestamp: Date.now()
+              })
+              const estimatedSize = new Blob([dataToStore]).size
+              
+              // Estimate available space (localStorage is typically 5-10MB)
+              const testKey = 'storage_test'
+              const testData = 'x'.repeat(1024) // 1KB test
+              try {
+                localStorage.setItem(testKey, testData)
+                localStorage.removeItem(testKey)
+              } catch {
+                // If we can't even store 1KB, localStorage is full
+                console.warn('localStorage appears to be full, skipping metadata cache')
+                return
+              }
+              
+              // If estimated size is too large (>1MB), skip storing artwork
+              if (estimatedSize > 1024 * 1024) {
+                const metadataOnly = { 
+                  metadata: metadataToStore, 
+                  artwork: undefined,
+                  timestamp: Date.now()
+                }
+                localStorage.setItem(cacheKey, JSON.stringify(metadataOnly))
+              } else {
+                localStorage.setItem(cacheKey, dataToStore)
+              }
             } catch (e) {
               console.error('Failed to cache audio metadata in localStorage:', e);
             }
