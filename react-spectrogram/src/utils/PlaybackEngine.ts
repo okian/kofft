@@ -82,7 +82,25 @@ class PlaybackEngine {
           controller.signal.onabort = null
           resolve(v)
         })
+    return await new Promise<T>((resolve, reject) => {
+      let finished = false
+      const onAbort = () => {
+        if (finished) return
+        finished = true
+        controller.signal.onabort = null
+        reject(new DOMException('Aborted', 'AbortError'))
+      }
+      controller.signal.onabort = onAbort
+      promise
+        .then(v => {
+          if (finished) return
+          finished = true
+          controller.signal.onabort = null
+          resolve(v)
+        })
         .catch(err => {
+          if (finished) return
+          finished = true
           controller.signal.onabort = null
           reject(err)
         })
