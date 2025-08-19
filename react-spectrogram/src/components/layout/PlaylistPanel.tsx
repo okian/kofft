@@ -55,7 +55,7 @@ function LazyAlbumArt({ data, mimeType, className, onClick }: LazyAlbumArtProps)
         URL.revokeObjectURL(url)
         url = null
       }
-      img.removeAttribute('src')
+      img.src = ''
     }
 
     const observer = new IntersectionObserver((entries) => {
