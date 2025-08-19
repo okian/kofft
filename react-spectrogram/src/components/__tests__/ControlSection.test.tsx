@@ -1,13 +1,51 @@
-import { render, screen, cleanup } from "@testing-library/react";
-import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import ControlSection from "../common/ControlSection";
+import * as PIXI from "pixi.js";
+
+vi.mock("pixi.js", () => {
+  const Application = vi.fn().mockImplementation(() => ({
+    stage: { addChild: vi.fn(), removeChildren: vi.fn() },
+    destroy: vi.fn(),
+  }));
+
+  const Sprite = { from: vi.fn(() => ({}) as any) };
+  const Text = vi.fn(() => ({}));
+  return { Application, Sprite, Text };
+});
 
 describe("ControlSection", () => {
-  afterEach(() => {
+  let getContextSpy: ReturnType<typeof vi.spyOn>;
+  let OriginalImage: any;
+  beforeEach(() => {
+    getContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype as any, "getContext")
+      .mockImplementation(
+        () =>
+          ({
+            clearRect: vi.fn(),
+            drawImage: vi.fn(),
+            fillText: vi.fn(),
+            fillStyle: "",
+            font: "",
+          }) as any,
+      );
+    OriginalImage = (global as any).Image;
+    (global as any).Image = class {
+      onload: (() => void) | null = null;
+      set src(_: string) {
+        this.onload && this.onload();
+      }
+    };
     cleanup();
   });
 
-  it("is in now playing mode without coming-up class by default", () => {
+  afterEach(() => {
+    getContextSpy.mockRestore();
+    (global as any).Image = OriginalImage;
+  });
+
+  it("uses webgl renderer when pixi initializes", async () => {
     render(
       <ControlSection
         art="art.jpg"
@@ -17,17 +55,17 @@ describe("ControlSection", () => {
         mode="now"
       />,
     );
-    const container = screen.getByTestId("control-section");
-    expect(container.classList.contains("coming-up")).toBe(false);
-    const titleScale = Number(
-      container.style.getPropertyValue("--title-scale"),
+    const canvas = await screen.findByTestId("control-section");
+    await waitFor(() =>
+      expect((canvas as HTMLCanvasElement).dataset.renderer).toBe("webgl"),
     );
-    const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
-    expect(titleScale / metaScale).toBe(3);
   });
 
-  it("flips ratio and shows coming up text when mode changes", async () => {
-    const { rerender } = render(
+  it("falls back to 2d canvas when pixi throws", async () => {
+    (PIXI.Application as any).mockImplementationOnce(() => {
+      throw new Error("no webgl");
+    });
+    render(
       <ControlSection
         art="art.jpg"
         title="Song"
@@ -36,103 +74,9 @@ describe("ControlSection", () => {
         mode="now"
       />,
     );
-    rerender(
-      <ControlSection
-        art="art.jpg"
-        title="Next Song"
-        artist="Next Artist"
-        album="Next Album"
-        mode="next"
-      />,
+    const canvas = await screen.findByTestId("control-section");
+    await waitFor(() =>
+      expect((canvas as HTMLCanvasElement).dataset.renderer).toBe("2d"),
     );
-    await new Promise((r) => setTimeout(r, 610));
-    const container = screen.getByTestId("control-section");
-
-    const titleScale = Number(
-      container.style.getPropertyValue("--title-scale"),
-    );
-    const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
-
-    const meta = screen.getByTestId("song-meta");
-    expect(meta).toHaveTextContent("Coming Up Next");
-    expect(container.classList.contains("coming-up")).toBe(true);
-  });
-
-  it("uses quick fade when only text changes", async () => {
-    const { rerender } = render(
-      <ControlSection
-        art="art.jpg"
-        title="Song"
-        artist="Artist"
-        album="Album"
-        mode="now"
-      />,
-    );
-    rerender(
-      <ControlSection
-        art="art.jpg"
-        title="Song 2"
-        artist="Artist"
-        album="Album"
-        mode="now"
-      />,
-    );
-    const container = screen.getByTestId("control-section");
-    expect(container.style.getPropertyValue("--fade-duration")).toBe("200ms");
-    await new Promise((r) => setTimeout(r, 210));
-    await screen.findByText("Song 2");
-  });
-
-  it("toggles fade and scale classes in order", async () => {
-    const { rerender } = render(
-      <ControlSection
-        art="art.jpg"
-        title="Song"
-        artist="Artist"
-        album="Album"
-  it("animates album art when switching to next with a new album", async () => {
-    const { rerender } = render(
-      <ControlSection
-        art="art1.jpg"
-        title="Song"
-        artist="Artist"
-        album="Album1"
-        mode="now"
-      />,
-    );
-    rerender(
-      <ControlSection
-        art="art.jpg"
-        title="Next Song"
-        artist="Next Artist"
-        album="Next Album"
-        mode="next"
-      />,
-    );
-    const container = screen.getByTestId("control-section");
-    expect(container.classList.contains("fade-out")).toBe(true);
-    await new Promise((r) => setTimeout(r, 310));
-    expect(container.classList.contains("fade-in")).toBe(true);
-    expect(container.classList.contains("fade-out")).toBe(false);
-    await new Promise((r) => setTimeout(r, 310));
-    expect(container.classList.contains("coming-up")).toBe(true);
-    expect(container.classList.contains("fade-in")).toBe(false);
-        art="art2.jpg"
-        title="Song2"
-        artist="Artist2"
-        album="Album2"
-        mode="next"
-      />,
-    );
-    const stack = screen
-      .getByTestId("control-section")
-      .querySelector(".art-stack");
-    expect(stack?.children.length).toBe(2);
-    const next = screen.getByTestId("next-art");
-    expect(next.className).toContain("animating");
-    await new Promise((r) => setTimeout(r, 310));
-    expect(screen.queryByTestId("next-art")).toBeNull();
-    const current = screen.getByTestId("current-art");
-    expect(current).toHaveAttribute("src", "art2.jpg");
   });
 });
