@@ -23,7 +23,10 @@ export class SpectrogramApp {
       this.source = this.audioContext.createMediaStreamSource(this.stream);
       this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
       this.processor.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0);
+      await this._ensureWorkletModule();
+      this.processor = new AudioWorkletNode(this.audioContext, 'spectrogram-processor', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1 });
+      this.processor.port.onmessage = (event) => {
+        const input = event.data;
         const frame = this.computeFrame(input);
         if (!frame || frame.length === 0) return;
         const width = frame.length / BYTES_PER_PIXEL;
