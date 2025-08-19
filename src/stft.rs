@@ -263,7 +263,15 @@ pub fn parallel<Fft: FftImpl<f32>>(
                 frame[i] = Complex32::new(x, 0.0);
             }
             // SAFETY: `fft_ptr` is shared across threads. Callers must ensure
-            // the provided FFT implementation is thread-safe.
+            // SAFETY: We cast the shared reference `fft` to a raw pointer (`fft_ptr`) outside the parallel loop,
+            // and reconstruct a shared reference inside each thread. This is safe because:
+            // - The original `fft` reference is valid for the entire duration of the parallel operation,
+            //   and is not mutably aliased elsewhere.
+            // - The pointer is only ever used to create shared (`&`) references, never mutable ones.
+            // - The FFT implementation (`Fft`) must be both `Send` and `Sync`, so it is safe to share
+            //   references to it across threads and to call its methods concurrently.
+            // - It is the caller's responsibility to ensure that the provided `fft` instance upholds these
+            //   thread safety guarantees for the duration of this function.
             let fft_ref = unsafe { &*(fft_ptr as *const Fft) };
             fft_ref.fft(frame)
         })
