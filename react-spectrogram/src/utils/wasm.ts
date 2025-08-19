@@ -30,7 +30,7 @@ export async function initWASM(): Promise<WASMModule | null> {
       // Dynamic import of the WASM glue
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - resolved by Vite at runtime
-      const module: any = await import("../../wasm/react_spectrogram_wasm");
+      const module: any = await import("@wasm/react_spectrogram_wasm");
 
       // Initialize the wasm instance by calling the default init
       if (typeof module.default === "function") {
