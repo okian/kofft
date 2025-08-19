@@ -7,7 +7,7 @@ describe("ControlSection", () => {
     cleanup();
   });
 
-  it("applies 3:1 typography ratio in now playing mode", () => {
+  it("is in now playing mode without coming-up class by default", () => {
     render(
       <ControlSection
         art="art.jpg"
@@ -18,6 +18,7 @@ describe("ControlSection", () => {
       />,
     );
     const container = screen.getByTestId("control-section");
+    expect(container.classList.contains("coming-up")).toBe(false);
     const titleScale = Number(
       container.style.getPropertyValue("--title-scale"),
     );
@@ -44,16 +45,17 @@ describe("ControlSection", () => {
         mode="next"
       />,
     );
-    await new Promise((r) => setTimeout(r, 310));
-    await screen.findByTestId("song-title");
+    await new Promise((r) => setTimeout(r, 610));
     const container = screen.getByTestId("control-section");
+
     const titleScale = Number(
       container.style.getPropertyValue("--title-scale"),
     );
     const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
+
     const meta = screen.getByTestId("song-meta");
     expect(meta).toHaveTextContent("Coming Up Next");
-    expect(metaScale / titleScale).toBe(3);
+    expect(container.classList.contains("coming-up")).toBe(true);
   });
 
   it("uses quick fade when only text changes", async () => {
@@ -81,6 +83,13 @@ describe("ControlSection", () => {
     await screen.findByText("Song 2");
   });
 
+  it("toggles fade and scale classes in order", async () => {
+    const { rerender } = render(
+      <ControlSection
+        art="art.jpg"
+        title="Song"
+        artist="Artist"
+        album="Album"
   it("animates album art when switching to next with a new album", async () => {
     const { rerender } = render(
       <ControlSection
@@ -93,6 +102,21 @@ describe("ControlSection", () => {
     );
     rerender(
       <ControlSection
+        art="art.jpg"
+        title="Next Song"
+        artist="Next Artist"
+        album="Next Album"
+        mode="next"
+      />,
+    );
+    const container = screen.getByTestId("control-section");
+    expect(container.classList.contains("fade-out")).toBe(true);
+    await new Promise((r) => setTimeout(r, 310));
+    expect(container.classList.contains("fade-in")).toBe(true);
+    expect(container.classList.contains("fade-out")).toBe(false);
+    await new Promise((r) => setTimeout(r, 310));
+    expect(container.classList.contains("coming-up")).toBe(true);
+    expect(container.classList.contains("fade-in")).toBe(false);
         art="art2.jpg"
         title="Song2"
         artist="Artist2"

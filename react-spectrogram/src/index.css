@@ -653,8 +653,14 @@
     transform 300ms var(--transition);
 }
 
-.control-section.fading .song-title,
-.control-section.fading .song-meta {
+.control-section.fade-out .song-title,
+.control-section.fade-out .song-meta {
   opacity: 0;
+  transition: opacity var(--fade-duration) var(--transition);
+}
+
+.control-section.fade-in .song-title,
+.control-section.fade-in .song-meta {
+  opacity: 1;
   transition: opacity var(--fade-duration) var(--transition);
 }

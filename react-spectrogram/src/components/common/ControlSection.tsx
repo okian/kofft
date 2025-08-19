@@ -38,7 +38,8 @@ export function ControlSection({
     album,
     mode,
   });
-  const [fading, setFading] = useState(false);
+  const [phase, setPhase] = useState<"fadeOut" | "fadeIn" | "scale">("scale");
+  const [scaleMode, setScaleMode] = useState<"now" | "next">(mode);
   const [fadeDuration, setFadeDuration] = useState(200);
   const prevRef = useRef<DisplayedText>(displayed);
   const [currentArt, setCurrentArt] = useState(art);
@@ -50,13 +51,22 @@ export function ControlSection({
     const isStateChange = prevRef.current.mode !== mode;
     const duration = isStateChange ? 300 : 200;
     setFadeDuration(duration);
-    setFading(true);
-    const timeout = setTimeout(() => {
-      setDisplayed({ title, artist, album, mode });
-      setFading(false);
-      prevRef.current = { title, artist, album, mode };
-    }, duration);
-    return () => clearTimeout(timeout);
+    setPhase("fadeOut");
+    const timeouts: NodeJS.Timeout[] = [];
+    timeouts.push(
+      setTimeout(() => {
+        setDisplayed({ title, artist, album, mode });
+        setPhase("fadeIn");
+        timeouts.push(
+          setTimeout(() => {
+            setPhase("scale");
+            setScaleMode(mode);
+            prevRef.current = { title, artist, album, mode };
+          }, duration),
+        );
+      }, duration),
+    );
+    return () => timeouts.forEach(clearTimeout);
   }, [title, artist, album, mode]);
 
   useEffect(() => {
@@ -87,14 +97,12 @@ export function ControlSection({
     <div
       className={clsx(
         "control-section",
-        displayed.mode === "next" && "coming-up",
-        fading && "fading",
+        scaleMode === "next" && "coming-up",
+        phase === "fadeOut" && "fade-out",
+        phase === "fadeIn" && "fade-in",
       )}
       style={{
         ["--fade-duration" as any]: `${fadeDuration}ms`,
-        ["--title-scale" as any]: displayed.mode === "now" ? 3 : 1,
-        ["--meta-scale" as any]: displayed.mode === "now" ? 1 : 3,
-        ["--gap" as any]: displayed.mode === "now" ? "0.125rem" : "0.0625rem",
       }}
       data-testid="control-section"
     >
