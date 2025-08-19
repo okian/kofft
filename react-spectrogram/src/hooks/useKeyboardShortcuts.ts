@@ -5,13 +5,15 @@ import { useAudioFile } from '@/hooks/useAudioFile'
 import { conditionalToast } from '@/utils/toast'
 
 export const useKeyboardShortcuts = () => {
-  const { 
-    setMetadataPanelOpen, 
-    setPlaylistPanelOpen, 
+  const {
+    setMetadataPanelOpen,
+    setPlaylistPanelOpen,
     setSettingsPanelOpen,
+    setShortcutsHelpOpen,
     metadataPanelOpen,
     playlistPanelOpen,
-    settingsPanelOpen
+    settingsPanelOpen,
+    shortcutsHelpOpen
   } = useUIStore()
   
   const { 
@@ -38,7 +40,7 @@ export const useKeyboardShortcuts = () => {
       return
     }
 
-    const { key, ctrlKey, shiftKey, metaKey } = event
+    const { key, ctrlKey, shiftKey, metaKey, altKey } = event
 
     // Spacebar - Play/Pause
     if (key === ' ' && !ctrlKey && !shiftKey && !metaKey) {
@@ -70,8 +72,28 @@ export const useKeyboardShortcuts = () => {
       return
     }
 
-    // Arrow Left - Previous track
-    if (key === 'ArrowLeft' && !ctrlKey && !shiftKey && !metaKey) {
+    // Arrow Left - Seek backward 5s
+    if (key === 'ArrowLeft' && !ctrlKey && !metaKey && !altKey) {
+      event.preventDefault()
+      if (currentTrack) {
+        const newTime = Math.max(0, currentTime - 5)
+        audioFile.seekTo(newTime)
+      }
+      return
+    }
+
+    // Arrow Right - Seek forward 5s
+    if (key === 'ArrowRight' && !ctrlKey && !metaKey && !altKey) {
+      event.preventDefault()
+      if (currentTrack) {
+        const newTime = Math.min(duration, currentTime + 5)
+        audioFile.seekTo(newTime)
+      }
+      return
+    }
+
+    // Ctrl/Cmd + Arrow Left - Previous track
+    if (key === 'ArrowLeft' && (ctrlKey || metaKey) && !altKey) {
       event.preventDefault()
       if (playlist.length > 0) {
         const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
@@ -83,34 +105,8 @@ export const useKeyboardShortcuts = () => {
       return
     }
 
-    // Arrow Right - Next track
-    if (key === 'ArrowRight' && !ctrlKey && !shiftKey && !metaKey) {
-      event.preventDefault()
-      if (playlist.length > 0) {
-        const nextIndex = (currentTrackIndex + 1) % playlist.length
-        const nextTrack = playlist[nextIndex]
-        if (nextTrack) {
-          audioFile.playTrack(nextTrack)
-        }
-      }
-      return
-    }
-
-    // < and , - Previous track
-    if ((key === '<' || key === ',') && !ctrlKey && !shiftKey && !metaKey) {
-      event.preventDefault()
-      if (playlist.length > 0) {
-        const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
-        const prevTrack = playlist[prevIndex]
-        if (prevTrack) {
-          audioFile.playTrack(prevTrack)
-        }
-      }
-      return
-    }
-
-    // > and . - Next track
-    if ((key === '>' || key === '.') && !ctrlKey && !shiftKey && !metaKey) {
+    // Ctrl/Cmd + Arrow Right - Next track
+    if (key === 'ArrowRight' && (ctrlKey || metaKey) && !altKey) {
       event.preventDefault()
       if (playlist.length > 0) {
         const nextIndex = (currentTrackIndex + 1) % playlist.length
@@ -139,7 +135,7 @@ export const useKeyboardShortcuts = () => {
     }
 
     // J - 10 seconds back
-    if (key.toLowerCase() === 'j' && !ctrlKey && !shiftKey && !metaKey) {
+    if (key.toLowerCase() === 'j' && !ctrlKey && !metaKey && !altKey) {
       event.preventDefault()
       if (currentTrack) {
         const newTime = Math.max(0, currentTime - 10)
@@ -149,7 +145,7 @@ export const useKeyboardShortcuts = () => {
     }
 
     // L - 10 seconds forward
-    if (key.toLowerCase() === 'l' && !ctrlKey && !shiftKey && !metaKey) {
+    if (key.toLowerCase() === 'l' && !ctrlKey && !metaKey && !altKey) {
       event.preventDefault()
       if (currentTrack) {
         const newTime = Math.min(duration, currentTime + 10)
@@ -158,24 +154,38 @@ export const useKeyboardShortcuts = () => {
       return
     }
 
-    // M - Toggle metadata panel
-    if (key.toLowerCase() === 'm' && !ctrlKey && !shiftKey && !metaKey) {
+    // M - Mute/Unmute
+    if (key.toLowerCase() === 'm' && !ctrlKey && !metaKey && !altKey) {
+      event.preventDefault()
+      audioFile.toggleMute()
+      return
+    }
+
+    // I - Toggle metadata panel
+    if (key.toLowerCase() === 'i' && !ctrlKey && !metaKey && !altKey) {
       event.preventDefault()
       setMetadataPanelOpen(!metadataPanelOpen)
       return
     }
 
     // P - Toggle playlist panel
-    if (key.toLowerCase() === 'p' && !ctrlKey && !shiftKey && !metaKey) {
+    if (key.toLowerCase() === 'p' && !ctrlKey && !metaKey && !altKey) {
       event.preventDefault()
       setPlaylistPanelOpen(!playlistPanelOpen)
       return
     }
 
     // S - Open settings
-    if (key.toLowerCase() === 's' && !ctrlKey && !shiftKey && !metaKey) {
+    if (key.toLowerCase() === 's' && !ctrlKey && !metaKey && !altKey) {
       event.preventDefault()
       setSettingsPanelOpen(true)
+      return
+    }
+
+    // ? - Toggle shortcuts help
+    if (key === '?' && !ctrlKey && !altKey && !metaKey) {
+      event.preventDefault()
+      setShortcutsHelpOpen(!shortcutsHelpOpen)
       return
     }
 
@@ -196,6 +206,8 @@ export const useKeyboardShortcuts = () => {
         setMetadataPanelOpen(false)
       } else if (playlistPanelOpen) {
         setPlaylistPanelOpen(false)
+      } else if (shortcutsHelpOpen) {
+        setShortcutsHelpOpen(false)
       }
       return
     }
@@ -209,21 +221,12 @@ export const useKeyboardShortcuts = () => {
       return
     }
 
-    // M - Toggle mute (alternative to metadata panel)
-    // Note: This conflicts with metadata panel toggle, so we'll use a different key
-    // or implement it differently
-    if (key.toLowerCase() === 'm' && ctrlKey && !shiftKey && !metaKey) {
-      event.preventDefault()
-      audioFile.toggleMute()
-      return
-    }
-
   }, [
-    isPlaying, 
-    isPaused, 
-    isStopped, 
-    currentTrack, 
-    playlist, 
+    isPlaying,
+    isPaused,
+    isStopped,
+    currentTrack,
+    playlist,
     currentTrackIndex,
     volume,
     isMuted,
@@ -232,10 +235,12 @@ export const useKeyboardShortcuts = () => {
     metadataPanelOpen,
     playlistPanelOpen,
     settingsPanelOpen,
+    shortcutsHelpOpen,
     audioFile,
     setMetadataPanelOpen,
     setPlaylistPanelOpen,
-    setSettingsPanelOpen
+    setSettingsPanelOpen,
+    setShortcutsHelpOpen
   ])
 
   // Add event listener
@@ -253,7 +258,7 @@ export const useKeyboardShortcuts = () => {
     if (!hasSeenHelp) {
       setTimeout(() => {
         conditionalToast.success(
-          '💡 Keyboard shortcuts available! Press S for settings to see all shortcuts.'
+          '💡 Keyboard shortcuts available! Press ? to view all shortcuts.'
         )
         localStorage.setItem('spectrogram-keyboard-help', 'true')
       }, 2000)

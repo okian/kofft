@@ -298,7 +298,7 @@ export const Footer: React.FC = () => {
               "min-w-[32px] min-h-[32px] flex items-center justify-center",
               "p-1",
             )}
-            title="Previous track (←)"
+            title="Previous track (Ctrl+←)"
             data-testid="previous-track-button"
             aria-label="Previous track"
           >
@@ -359,7 +359,7 @@ export const Footer: React.FC = () => {
               "min-w-[32px] min-h-[32px] flex items-center justify-center",
               "p-1",
             )}
-            title="Next track (→)"
+            title="Next track (Ctrl+→)"
             data-testid="next-track-button"
             aria-label="Next track"
           >
