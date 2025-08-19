@@ -1,9 +1,15 @@
+#[cfg(target_os = "linux")]
 use criterion::{criterion_group, criterion_main, Criterion};
+#[cfg(target_os = "linux")]
 use kofft::fft::{Complex32, ScalarFftImpl};
+#[cfg(target_os = "linux")]
 use kofft::stft::IstftStream;
+#[cfg(target_os = "linux")]
 use procfs::process::Process;
+#[cfg(target_os = "linux")]
 use std::hint::black_box;
 
+#[cfg(target_os = "linux")]
 fn memory_usage_benchmark(c: &mut Criterion) {
     c.bench_function("istft_stream_memory_usage", |b| {
         b.iter(|| {
@@ -24,5 +30,10 @@ fn memory_usage_benchmark(c: &mut Criterion) {
     });
 }
 
+#[cfg(target_os = "linux")]
 criterion_group!(benches, memory_usage_benchmark);
+#[cfg(target_os = "linux")]
 criterion_main!(benches);
+
+#[cfg(not(target_os = "linux"))]
+fn main() {}
