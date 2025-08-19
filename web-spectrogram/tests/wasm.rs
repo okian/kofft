@@ -3,9 +3,11 @@
 use kofft::visual::spectrogram::{
     color_from_magnitude_u8 as core_color_from_magnitude_u8, Colormap as KColormap,
 };
+use kofft::{dct, fft, wavelet};
 use wasm_bindgen_test::wasm_bindgen_test;
 use web_spectrogram::{
-    color_from_magnitude_u8, compute_frame, reset_state, stft_magnitudes, Colormap,
+    color_from_magnitude_u8, compute_frame, dct2, fft_split, haar_forward, haar_inverse,
+    reset_state, stft_magnitudes, Colormap,
 };
 
 const WIN_LEN: usize = 1024;
@@ -54,4 +56,36 @@ fn stft_output_stable_for_sine_wave() {
         .unwrap()
         .0;
     assert_eq!(max_idx, k);
+}
+
+#[wasm_bindgen_test]
+fn fft_wrapper_matches_core() {
+    let re = vec![1.0, 0.0, 0.0, 0.0];
+    let im = vec![0.0; 4];
+    let res = fft_split(&re, &im).unwrap();
+    let mut r = re.clone();
+    let mut i = im.clone();
+    fft::fft_split(&mut r, &mut i).unwrap();
+    assert_eq!(res.re(), r);
+    assert_eq!(res.im(), i);
+}
+
+#[wasm_bindgen_test]
+fn dct2_wrapper_matches_core() {
+    let input = vec![1.0, 2.0, 3.0, 4.0];
+    let w = dct2(&input);
+    let c = dct::dct2(&input);
+    assert_eq!(w, c);
+}
+
+#[wasm_bindgen_test]
+fn haar_wrapper_matches_core() {
+    let input = vec![1.0, 2.0, 3.0, 4.0];
+    let wasm_res = haar_forward(&input);
+    let (avg, diff) = wavelet::haar_forward(&input);
+    assert_eq!(wasm_res.avg(), avg);
+    assert_eq!(wasm_res.diff(), diff);
+    let back = haar_inverse(&wasm_res.avg(), &wasm_res.diff());
+    let core_back = wavelet::haar_inverse(&avg, &diff);
+    assert_eq!(back, core_back);
 }

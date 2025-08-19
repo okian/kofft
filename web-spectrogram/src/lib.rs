@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 
-use kofft::fft::{new_fft_impl, Complex32, FftImpl};
+use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
+use kofft::{dct, wavelet};
 use wasm_bindgen::prelude::*;
 
 const WIN_LEN: usize = 1024;
@@ -102,6 +103,86 @@ pub fn map_color_u8(t: f32, cmap: Colormap) -> Vec<u8> {
 #[wasm_bindgen]
 pub fn color_from_magnitude_u8(mag: f32, max_mag: f32, floor_db: f32, cmap: Colormap) -> Vec<u8> {
     spectrogram::color_from_magnitude_u8(mag, max_mag, floor_db, cmap.into()).to_vec()
+}
+
+#[wasm_bindgen]
+pub struct FftResult {
+    re: Vec<f32>,
+    im: Vec<f32>,
+}
+
+#[wasm_bindgen]
+impl FftResult {
+    #[wasm_bindgen(getter)]
+    pub fn re(&self) -> Vec<f32> {
+        self.re.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn im(&self) -> Vec<f32> {
+    pub fn re(&self) -> Float32Array {
+        Float32Array::from(self.re.as_slice())
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn im(&self) -> Float32Array {
+        Float32Array::from(self.im.as_slice())
+    }
+}
+
+#[wasm_bindgen]
+pub fn fft_split(re: &[f32], im: &[f32]) -> Result<FftResult, JsValue> {
+    if re.len() != im.len() {
+        return Err(JsValue::from_str("input length mismatch"));
+    }
+    let mut re_vec = re.to_vec();
+    let mut im_vec = im.to_vec();
+    fft::fft_split(&mut re_vec, &mut im_vec).map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
+    Ok(FftResult {
+        re: re_vec,
+        im: im_vec,
+    })
+}
+
+#[wasm_bindgen]
+pub fn dct2(input: &[f32]) -> Vec<f32> {
+    dct::dct2(input)
+}
+
+#[wasm_bindgen]
+pub struct HaarResult {
+    avg: Vec<f32>,
+    diff: Vec<f32>,
+}
+
+#[wasm_bindgen]
+impl HaarResult {
+    #[wasm_bindgen(getter)]
+    pub fn avg(&self) -> Vec<f32> {
+        self.avg.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn diff(&self) -> Vec<f32> {
+    pub fn avg(&self) -> Array {
+        self.avg.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn diff(&self) -> Array {
+        self.diff.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
+    }
+}
+
+#[wasm_bindgen]
+pub fn haar_forward(input: &[f32]) -> HaarResult {
+    let (avg, diff) = wavelet::haar_forward(input);
+    HaarResult { avg, diff }
+}
+
+#[wasm_bindgen]
+pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Vec<f32> {
+    wavelet::haar_inverse(avg, diff)
 }
 
 thread_local! {
@@ -232,6 +313,38 @@ mod tests {
             let c2 = spectrogram::map_color_u8(0.5, cmap.into());
             assert_eq!(w2, c2.to_vec());
         }
+    }
+
+    #[test]
+    fn fft_wrapper_matches_core() {
+        let re = vec![1.0, 0.0, 0.0, 0.0];
+        let im = vec![0.0; 4];
+        let res = fft_split(&re, &im).unwrap();
+        let mut r = re.clone();
+        let mut i = im.clone();
+        fft::fft_split(&mut r, &mut i).unwrap();
+        assert_eq!(res.re(), r);
+        assert_eq!(res.im(), i);
+    }
+
+    #[test]
+    fn dct2_wrapper_matches_core() {
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let w = dct2(&input);
+        let c = dct::dct2(&input);
+        assert_eq!(w, c);
+    }
+
+    #[test]
+    fn haar_wrapper_matches_core() {
+        let input = vec![1.0, 2.0, 3.0, 4.0];
+        let wasm_res = haar_forward(&input);
+        let (avg, diff) = wavelet::haar_forward(&input);
+        assert_eq!(wasm_res.avg(), avg);
+        assert_eq!(wasm_res.diff(), diff);
+        let back = haar_inverse(&wasm_res.avg(), &wasm_res.diff());
+        let core_back = wavelet::haar_inverse(&avg, &diff);
+        assert_eq!(back, core_back);
     }
 
     #[test]
