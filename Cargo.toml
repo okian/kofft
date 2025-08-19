@@ -84,6 +84,7 @@ path = "examples/benchmark.rs"
 [[example]]
 name = "stft_usage"
 path = "examples/stft_usage.rs"
+required-features = ["std", "wasm", "simd"]
 
 [[example]]
 name = "ndfft_usage"
@@ -92,6 +93,7 @@ path = "examples/ndfft_usage.rs"
 [[example]]
 name = "spectrogram"
 path = "examples/spectrogram.rs"
+required-features = ["std", "wasm", "simd"]
 
 [[example]]
 name = "parallel_benchmark"
