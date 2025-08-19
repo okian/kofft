@@ -1,18 +1,17 @@
 use std::cell::RefCell;
 
 use console_error_panic_hook;
+use js_sys::{Array, Uint32Array};
 use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
-use kofft::{dct, wavelet};
+use kofft::{dct, fuzzy, wavelet};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
-
-
 
 #[wasm_bindgen]
 pub struct StftResult {
@@ -213,7 +212,9 @@ pub fn compute_frame(samples: &[f32]) -> Vec<u8> {
         // Compute magnitudes
         let mut magnitudes = Vec::with_capacity(WIN_LEN / 2);
         for i in 0..WIN_LEN / 2 {
-            let mag = ((spectrum[i].re * spectrum[i].re + spectrum[i].im * spectrum[i].im) / WIN_LEN as f32).sqrt();
+            let mag = ((spectrum[i].re * spectrum[i].re + spectrum[i].im * spectrum[i].im)
+                / WIN_LEN as f32)
+                .sqrt();
             magnitudes.push(mag);
             state.max_mag = state.max_mag.max(mag);
         }
@@ -252,8 +253,6 @@ impl State {
         }
     }
 }
-
-
 
 /// Generate amplitude envelope for seekbar visualization
 /// Returns an array of amplitude values (0.0 to 1.0) representing the audio envelope
@@ -367,7 +366,25 @@ pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     generate_amplitude_envelope(audio_data, 44100, num_bars, 20, 3)
 }
 
+#[wasm_bindgen]
+pub fn fuzzy_score(pattern: &str, text: &str) -> u32 {
+    fuzzy::fuzzy_score(pattern, text) as u32
+}
 
+#[wasm_bindgen]
+pub fn fuzzy_match(pattern: &str, text: &str) -> bool {
+    fuzzy::fuzzy_match(pattern, text)
+}
+
+#[wasm_bindgen]
+pub fn fuzzy_scores(pattern: &str, candidates: Array) -> Uint32Array {
+    let mut scores = Vec::with_capacity(candidates.length() as usize);
+    for cand in candidates.iter() {
+        let s = cand.as_string().unwrap_or_default();
+        scores.push(fuzzy::fuzzy_score(pattern, &s) as u32);
+    }
+    Uint32Array::from(scores.as_slice())
+}
 
 #[cfg(test)]
 mod tests {
