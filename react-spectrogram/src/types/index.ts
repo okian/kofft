@@ -23,6 +23,10 @@ export interface AudioMetadata {
   format_description?: string;
 }
 
+export interface WasmAudioMetadata extends Partial<AudioMetadata> {
+  album_art?: Uint8Array | number[];
+}
+
 // API Keys and external services
 export interface APIKeys {
   acoustid?: string;
@@ -270,7 +274,10 @@ export type RefreshRate = 30 | 60;
 
 // WASM types
 export interface WASMModule {
-  extract_metadata: (fileData: Uint8Array, filename: string) => AudioMetadata;
+  extract_metadata: (
+    fileData: Uint8Array,
+    filename: string,
+  ) => WasmAudioMetadata | null;
   compute_spectrogram: (audioData: Float32Array, sampleRate: number) => SpectrogramData;
   compute_waveform: (audioData: Float32Array) => number[];
 }
