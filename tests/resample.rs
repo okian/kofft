@@ -71,3 +71,23 @@ fn benchmark_linear_resampler() {
     // Ensure the linear resampler is within 2x of the naive nearest neighbour
     assert!(linear_time <= nearest_time * 2);
 }
+
+#[test]
+fn linear_resample_rejects_invalid_params() {
+    // empty input
+    assert!(linear_resample(&[], 44_100.0, 48_000.0).is_empty());
+    // non-positive rates
+    let data = [0.0, 1.0];
+    assert!(linear_resample(&data, -1.0, 48_000.0).is_empty());
+    assert!(linear_resample(&data, 44_100.0, 0.0).is_empty());
+    // non-finite rates
+    assert!(linear_resample(&data, f32::NAN, 48_000.0).is_empty());
+    assert!(linear_resample(&data, 44_100.0, f32::INFINITY).is_empty());
+}
+
+#[test]
+fn linear_resample_identical_rates_returns_copy() {
+    let input = vec![0.0, 1.0, 0.5];
+    let output = linear_resample(&input, 44_100.0, 44_100.0);
+    assert_eq!(input, output);
+}
