@@ -1,3 +1,6 @@
+#[cfg(not(all(feature = "wasm", feature = "simd")))]
+compile_error!("fft_kernels requires `wasm` and `simd` features to be enabled");
+
 use crate::num::{Complex, Float};
 
 #[inline(always)]
