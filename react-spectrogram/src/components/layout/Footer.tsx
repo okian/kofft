@@ -1,8 +1,8 @@
-import React, { useRef, useCallback, useMemo } from 'react'
-import { useAudioStore } from '@/stores/audioStore'
-import { useAudioFile } from '@/hooks/useAudioFile'
-import { useScreenSize } from '@/hooks/useScreenSize'
-import { WaveformSeekbar } from '@/components/spectrogram/WaveformSeekbar'
+import React, { useRef, useCallback, useMemo } from "react";
+import { useAudioStore } from "@/stores/audioStore";
+import { useAudioFile } from "@/hooks/useAudioFile";
+import { useScreenSize } from "@/hooks/useScreenSize";
+import { CanvasWaveformSeekbar } from "@/components/spectrogram/CanvasWaveformSeekbar";
 import {
   Play,
   Pause,
@@ -13,14 +13,14 @@ import {
   VolumeX,
   Shuffle,
   Repeat,
-  FileAudio
-} from 'lucide-react'
-import { cn } from '@/utils/cn'
-import { conditionalToast } from '@/utils/toast'
+  FileAudio,
+} from "lucide-react";
+import { cn } from "@/utils/cn";
+import { conditionalToast } from "@/utils/toast";
 
 export const Footer: React.FC = () => {
-  const volumeSliderRef = useRef<HTMLInputElement>(null)
-  
+  const volumeSliderRef = useRef<HTMLInputElement>(null);
+
   const {
     isPlaying,
     isStopped,
@@ -30,68 +30,72 @@ export const Footer: React.FC = () => {
     isMuted,
     currentTrack,
     playlist,
-    currentTrackIndex
-  } = useAudioStore()
+    currentTrackIndex,
+  } = useAudioStore();
 
-  const { isMobile, isTablet } = useScreenSize()
-  const audioFile = useAudioFile()
+  const { isMobile, isTablet } = useScreenSize();
+  const audioFile = useAudioFile();
 
   // Format time for display
   const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   // Handle volume change
-  const handleVolumeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = parseFloat(event.target.value) / 100
-    audioFile.setAudioVolume(newVolume)
-  }, [audioFile])
+  const handleVolumeChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const newVolume = parseFloat(event.target.value) / 100;
+      audioFile.setAudioVolume(newVolume);
+    },
+    [audioFile],
+  );
 
   // Toggle mute
   const toggleMute = useCallback(() => {
-    audioFile.toggleMute()
-  }, [audioFile])
+    audioFile.toggleMute();
+  }, [audioFile]);
 
   // Transport controls
   const togglePlayPause = useCallback(() => {
     if (isStopped) {
       if (currentTrack) {
-        audioFile.playTrack(currentTrack)
+        audioFile.playTrack(currentTrack);
       } else {
-        conditionalToast.error('No audio file loaded')
+        conditionalToast.error("No audio file loaded");
       }
     } else if (isPlaying) {
-      audioFile.pausePlayback()
+      audioFile.pausePlayback();
     } else {
-      audioFile.resumePlayback()
+      audioFile.resumePlayback();
     }
-  }, [isStopped, isPlaying, currentTrack, audioFile])
+  }, [isStopped, isPlaying, currentTrack, audioFile]);
 
   const stopPlayback = useCallback(() => {
-    audioFile.stopPlayback()
-  }, [audioFile])
+    audioFile.stopPlayback();
+  }, [audioFile]);
 
   const previousTrack = useCallback(() => {
-    if (playlist.length === 0) return
-    
-    const prevIndex = currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1
-    const prevTrack = playlist[prevIndex]
+    if (playlist.length === 0) return;
+
+    const prevIndex =
+      currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1;
+    const prevTrack = playlist[prevIndex];
     if (prevTrack) {
-      audioFile.playTrack(prevTrack)
+      audioFile.playTrack(prevTrack);
     }
-  }, [playlist, currentTrackIndex, audioFile])
+  }, [playlist, currentTrackIndex, audioFile]);
 
   const nextTrack = useCallback(() => {
-    if (playlist.length === 0) return
-    
-    const nextIndex = (currentTrackIndex + 1) % playlist.length
-    const nextTrack = playlist[nextIndex]
+    if (playlist.length === 0) return;
+
+    const nextIndex = (currentTrackIndex + 1) % playlist.length;
+    const nextTrack = playlist[nextIndex];
     if (nextTrack) {
-      audioFile.playTrack(nextTrack)
+      audioFile.playTrack(nextTrack);
     }
-  }, [playlist, currentTrackIndex, audioFile])
+  }, [playlist, currentTrackIndex, audioFile]);
 
   // Determine layout configuration based on screen size
   const layoutConfig = useMemo(() => {
@@ -104,8 +108,8 @@ export const Footer: React.FC = () => {
         showAdditionalControls: false,
         buttonSize: 20,
         playButtonSize: 24,
-        footerHeight: 'h-16'
-      }
+        footerHeight: "h-16",
+      };
     } else if (isTablet) {
       return {
         showAlbumArt: true,
@@ -115,8 +119,8 @@ export const Footer: React.FC = () => {
         showAdditionalControls: true,
         buttonSize: 18,
         playButtonSize: 22,
-        footerHeight: 'h-14'
-      }
+        footerHeight: "h-14",
+      };
     } else {
       return {
         showAlbumArt: true,
@@ -126,117 +130,127 @@ export const Footer: React.FC = () => {
         showAdditionalControls: true,
         buttonSize: 20,
         playButtonSize: 24,
-        footerHeight: 'h-14'
-      }
+        footerHeight: "h-14",
+      };
     }
-  }, [isMobile, isTablet])
+  }, [isMobile, isTablet]);
 
   // Render album art for current track
   const renderCurrentTrackAlbumArt = () => {
-    if (!layoutConfig.showAlbumArt) return null
+    if (!layoutConfig.showAlbumArt) return null;
 
     // Use the new artwork system if available
-    if (currentTrack?.artwork && currentTrack.artwork.data && currentTrack.artwork.data.length > 0) {
+    if (
+      currentTrack?.artwork &&
+      currentTrack.artwork.data &&
+      currentTrack.artwork.data.length > 0
+    ) {
       try {
-        const artworkData = currentTrack.artwork.data
-        const mimeType = currentTrack.artwork.mimeType || 'image/jpeg'
-        
+        const artworkData = currentTrack.artwork.data;
+        const mimeType = currentTrack.artwork.mimeType || "image/jpeg";
+
         // Validate the data before creating blob
         if (artworkData.length < 100) {
-          console.warn('Album art data too small, likely invalid:', artworkData.length, 'bytes')
-          return renderFallbackAlbumArt()
+          console.warn(
+            "Album art data too small, likely invalid:",
+            artworkData.length,
+            "bytes",
+          );
+          return renderFallbackAlbumArt();
         }
-        
+
         // Create blob from the Uint8Array
-        const blob = new Blob([artworkData], { type: mimeType })
-        const url = URL.createObjectURL(blob)
-        
+        const blob = new Blob([artworkData], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+
         return (
           <img
             src={url}
             alt="Album Art"
             className={cn(
-              'object-cover rounded flex-shrink-0',
-              isMobile ? 'w-8 h-8' : 'w-10 h-10'
+              "object-cover rounded flex-shrink-0",
+              isMobile ? "w-8 h-8" : "w-10 h-10",
             )}
             onLoad={() => {
               // Clean up the URL after the image loads
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
             }}
             onError={(e) => {
               // Clean up the URL on error
-              URL.revokeObjectURL(url)
+              URL.revokeObjectURL(url);
               // Hide the failed image
-              const imgElement = e.currentTarget as HTMLImageElement
-              imgElement.style.display = 'none'
+              const imgElement = e.currentTarget as HTMLImageElement;
+              imgElement.style.display = "none";
             }}
           />
-        )
+        );
       } catch (error) {
-        return renderFallbackAlbumArt()
+        return renderFallbackAlbumArt();
       }
     }
-    
+
     // Fallback to old metadata album art if available
-    if (currentTrack?.metadata.album_art && currentTrack.metadata.album_art.length > 0) {
+    if (
+      currentTrack?.metadata.album_art &&
+      currentTrack.metadata.album_art.length > 0
+    ) {
       try {
-        const albumArtData = currentTrack.metadata.album_art
-        const mimeType = currentTrack.metadata.album_art_mime || 'image/jpeg'
-        
+        const albumArtData = currentTrack.metadata.album_art;
+        const mimeType = currentTrack.metadata.album_art_mime || "image/jpeg";
+
         // Validate the data before creating blob
         if (albumArtData.length < 100) {
-          return renderFallbackAlbumArt()
+          return renderFallbackAlbumArt();
         }
-        
+
         // Create blob from the Uint8Array
-        const blob = new Blob([albumArtData], { type: mimeType })
-        const url = URL.createObjectURL(blob)
-        
+        const blob = new Blob([albumArtData], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+
         return (
           <img
             src={url}
             alt="Album Art"
             className={cn(
-              'object-cover rounded flex-shrink-0',
-              isMobile ? 'w-8 h-8' : 'w-10 h-10'
+              "object-cover rounded flex-shrink-0",
+              isMobile ? "w-8 h-8" : "w-10 h-10",
             )}
             onLoad={() => {
               // Clean up the URL after the image loads
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
             }}
             onError={(e) => {
               // Clean up the URL on error
-              URL.revokeObjectURL(url)
+              URL.revokeObjectURL(url);
               // Hide the failed image
-              const imgElement = e.currentTarget as HTMLImageElement
-              imgElement.style.display = 'none'
+              const imgElement = e.currentTarget as HTMLImageElement;
+              imgElement.style.display = "none";
             }}
           />
-        )
+        );
       } catch (error) {
-        return renderFallbackAlbumArt()
+        return renderFallbackAlbumArt();
       }
     }
-    
+
     // Fallback album art placeholder
-    return renderFallbackAlbumArt()
-  }
+    return renderFallbackAlbumArt();
+  };
 
   const renderFallbackAlbumArt = () => (
-    <div className={cn(
-      'bg-neutral-800 rounded flex-shrink-0 flex items-center justify-center',
-      isMobile ? 'w-8 h-8' : 'w-10 h-10'
-    )}>
+    <div
+      className={cn(
+        "bg-neutral-800 rounded flex-shrink-0 flex items-center justify-center",
+        isMobile ? "w-8 h-8" : "w-10 h-10",
+      )}
+    >
       <FileAudio size={isMobile ? 14 : 16} className="text-neutral-500" />
     </div>
-  )
+  );
 
   return (
-    <footer 
-      className={cn(
-        'footer-controls',
-        layoutConfig.footerHeight
-      )}
+    <footer
+      className={cn("footer-controls", layoutConfig.footerHeight)}
       data-testid="footer"
       role="contentinfo"
       aria-label="Playback controls"
@@ -246,20 +260,24 @@ export const Footer: React.FC = () => {
         {/* Left side - Album art and track info */}
         <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
           {layoutConfig.showAlbumArt && renderCurrentTrackAlbumArt()}
-          
+
           {layoutConfig.showTrackInfo && currentTrack && (
             <div className="min-w-0 flex-shrink-0">
-              <h4 className={cn(
-                'font-medium text-neutral-100 truncate',
-                isMobile ? 'text-xs' : 'text-sm'
-              )}>
+              <h4
+                className={cn(
+                  "font-medium text-neutral-100 truncate",
+                  isMobile ? "text-xs" : "text-sm",
+                )}
+              >
                 {currentTrack.metadata.title || currentTrack.file.name}
               </h4>
-              <p className={cn(
-                'text-neutral-400 truncate',
-                isMobile ? 'text-xs' : 'text-xs'
-              )}>
-                {currentTrack.metadata.artist || 'Unknown Artist'}
+              <p
+                className={cn(
+                  "text-neutral-400 truncate",
+                  isMobile ? "text-xs" : "text-xs",
+                )}
+              >
+                {currentTrack.metadata.artist || "Unknown Artist"}
               </p>
             </div>
           )}
@@ -272,12 +290,12 @@ export const Footer: React.FC = () => {
             onClick={previousTrack}
             disabled={playlist.length === 0}
             className={cn(
-              'rounded transition-colors duration-200',
-              'hover:bg-neutral-800 active:bg-neutral-700',
-              'text-neutral-400 hover:text-neutral-200',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'min-w-[32px] min-h-[32px] flex items-center justify-center',
-              'p-1'
+              "rounded transition-colors duration-200",
+              "hover:bg-neutral-800 active:bg-neutral-700",
+              "text-neutral-400 hover:text-neutral-200",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "min-w-[32px] min-h-[32px] flex items-center justify-center",
+              "p-1",
             )}
             title="Previous track (←)"
             data-testid="previous-track-button"
@@ -291,18 +309,22 @@ export const Footer: React.FC = () => {
             onClick={togglePlayPause}
             disabled={!currentTrack && !isPlaying}
             className={cn(
-              'rounded-full transition-colors duration-200',
-              'hover:bg-neutral-800 active:bg-neutral-700',
-              'text-neutral-400 hover:text-neutral-200',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'min-w-[40px] min-h-[40px] flex items-center justify-center',
-              'p-2'
+              "rounded-full transition-colors duration-200",
+              "hover:bg-neutral-800 active:bg-neutral-700",
+              "text-neutral-400 hover:text-neutral-200",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "min-w-[40px] min-h-[40px] flex items-center justify-center",
+              "p-2",
             )}
             title="Play/Pause (Space)"
             data-testid="play-pause-button"
             aria-label={isPlaying ? "Pause playback" : "Start playback"}
           >
-            {isPlaying ? <Pause size={layoutConfig.playButtonSize} /> : <Play size={layoutConfig.playButtonSize} />}
+            {isPlaying ? (
+              <Pause size={layoutConfig.playButtonSize} />
+            ) : (
+              <Play size={layoutConfig.playButtonSize} />
+            )}
           </button>
 
           {/* Stop */}
@@ -310,12 +332,12 @@ export const Footer: React.FC = () => {
             onClick={stopPlayback}
             disabled={isStopped}
             className={cn(
-              'rounded transition-colors duration-200',
-              'hover:bg-neutral-800 active:bg-neutral-700',
-              'text-neutral-400 hover:text-neutral-200',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'min-w-[32px] min-h-[32px] flex items-center justify-center',
-              'p-1'
+              "rounded transition-colors duration-200",
+              "hover:bg-neutral-800 active:bg-neutral-700",
+              "text-neutral-400 hover:text-neutral-200",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "min-w-[32px] min-h-[32px] flex items-center justify-center",
+              "p-1",
             )}
             title="Stop"
             data-testid="stop-button"
@@ -329,12 +351,12 @@ export const Footer: React.FC = () => {
             onClick={nextTrack}
             disabled={playlist.length === 0}
             className={cn(
-              'rounded transition-colors duration-200',
-              'hover:bg-neutral-800 active:bg-neutral-700',
-              'text-neutral-400 hover:text-neutral-200',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'min-w-[32px] min-h-[32px] flex items-center justify-center',
-              'p-1'
+              "rounded transition-colors duration-200",
+              "hover:bg-neutral-800 active:bg-neutral-700",
+              "text-neutral-400 hover:text-neutral-200",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "min-w-[32px] min-h-[32px] flex items-center justify-center",
+              "p-1",
             )}
             title="Next track (→)"
             data-testid="next-track-button"
@@ -360,23 +382,23 @@ export const Footer: React.FC = () => {
             <div className="flex items-center gap-1">
               <button
                 className={cn(
-                  'p-1 rounded transition-colors duration-200',
-                  'hover:bg-neutral-800 active:bg-neutral-700',
-                  'text-neutral-400 hover:text-neutral-200',
-                  'min-w-[28px] min-h-[28px] flex items-center justify-center'
+                  "p-1 rounded transition-colors duration-200",
+                  "hover:bg-neutral-800 active:bg-neutral-700",
+                  "text-neutral-400 hover:text-neutral-200",
+                  "min-w-[28px] min-h-[28px] flex items-center justify-center",
                 )}
                 title="Shuffle"
                 aria-label="Shuffle playlist"
               >
                 <Shuffle size={16} />
               </button>
-              
+
               <button
                 className={cn(
-                  'p-1 rounded transition-colors duration-200',
-                  'hover:bg-neutral-800 active:bg-neutral-700',
-                  'text-neutral-400 hover:text-neutral-200',
-                  'min-w-[28px] min-h-[28px] flex items-center justify-center'
+                  "p-1 rounded transition-colors duration-200",
+                  "hover:bg-neutral-800 active:bg-neutral-700",
+                  "text-neutral-400 hover:text-neutral-200",
+                  "min-w-[28px] min-h-[28px] flex items-center justify-center",
                 )}
                 title="Repeat"
                 aria-label="Repeat playlist"
@@ -392,19 +414,23 @@ export const Footer: React.FC = () => {
               <button
                 onClick={toggleMute}
                 className={cn(
-                  'p-1 rounded transition-colors duration-200',
-                  'hover:bg-neutral-800 active:bg-neutral-700',
-                  'text-neutral-400 hover:text-neutral-200',
-                  'min-w-[28px] min-h-[28px] flex items-center justify-center'
+                  "p-1 rounded transition-colors duration-200",
+                  "hover:bg-neutral-800 active:bg-neutral-700",
+                  "text-neutral-400 hover:text-neutral-200",
+                  "min-w-[28px] min-h-[28px] flex items-center justify-center",
                 )}
                 title="Mute/Unmute"
                 data-testid="mute-button"
                 aria-label={isMuted ? "Unmute" : "Mute"}
               >
-                {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                {isMuted || volume === 0 ? (
+                  <VolumeX size={16} />
+                ) : (
+                  <Volume2 size={16} />
+                )}
               </button>
 
-              <div className={isMobile ? 'w-12' : 'w-16'}>
+              <div className={isMobile ? "w-12" : "w-16"}>
                 <input
                   ref={volumeSliderRef}
                   type="range"
@@ -413,11 +439,11 @@ export const Footer: React.FC = () => {
                   value={isMuted ? 0 : volume * 100}
                   onChange={handleVolumeChange}
                   className={cn(
-                    'w-full h-1 bg-neutral-700 rounded appearance-none cursor-pointer',
-                    'slider-thumb:appearance-none slider-thumb:w-3 slider-thumb:h-3',
-                    'slider-thumb:bg-neutral-300 slider-thumb:rounded-full',
-                    'slider-thumb:cursor-pointer slider-thumb:border-0',
-                    'hover:slider-thumb:bg-neutral-200'
+                    "w-full h-1 bg-neutral-700 rounded appearance-none cursor-pointer",
+                    "slider-thumb:appearance-none slider-thumb:w-3 slider-thumb:h-3",
+                    "slider-thumb:bg-neutral-300 slider-thumb:rounded-full",
+                    "slider-thumb:cursor-pointer slider-thumb:border-0",
+                    "hover:slider-thumb:bg-neutral-200",
                   )}
                   title="Volume"
                   data-testid="volume-slider"
@@ -431,7 +457,7 @@ export const Footer: React.FC = () => {
 
       {/* Waveform Seekbar - Full width below controls */}
       <div className="flex-1 px-4 pb-2">
-        <WaveformSeekbar
+        <CanvasWaveformSeekbar
           audioData={currentTrack?.audioData || null}
           currentTime={currentTime}
           duration={duration}
@@ -445,5 +471,5 @@ export const Footer: React.FC = () => {
         />
       </div>
     </footer>
-  )
-}
+  );
+};
