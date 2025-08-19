@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react'
-import { X, Play, Trash2, FileAudio, Pause } from 'lucide-react'
+import { X, Play, Trash2, FileAudio, Pause, Loader2 } from 'lucide-react'
 import { AudioTrack } from '@/types'
 import { cn } from '@/utils/cn'
 import { formatDuration } from '@/utils/audio'
@@ -372,7 +372,18 @@ export function PlaylistPanel({
 
   const renderAlbumArt = (track: AudioTrack, index: number) => {
     const isCurrentTrack = currentTrackIndex === index
-    
+
+    if (track.isLoading) {
+      return (
+        <div
+          className="w-16 h-16 bg-neutral-800 rounded-md flex-shrink-0 flex items-center justify-center"
+          data-testid="track-loading-spinner"
+        >
+          <Loader2 size={20} className="text-neutral-500 animate-spin" />
+        </div>
+      )
+    }
+
     if (isCurrentTrack) {
       // Use the circular progress control for current track
       return (

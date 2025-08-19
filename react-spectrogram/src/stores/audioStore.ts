@@ -17,6 +17,7 @@ interface AudioStore extends AudioState {
   setCurrentTrack: (track: AudioTrack | null) => void
   setPlaylist: (tracks: AudioTrack[]) => void
   addToPlaylist: (track: AudioTrack) => void
+  updateTrack: (id: string, updates: Partial<AudioTrack>) => void
   removeFromPlaylist: (index: number) => void
   reorderPlaylist: (fromIndex: number, toIndex: number) => void
   setCurrentTrackIndex: (index: number) => void
@@ -67,7 +68,23 @@ export const useAudioStore = create<AudioStore>()(
       const { playlist } = get()
       set({ playlist: [...playlist, track] })
     },
-    
+
+    updateTrack: (id, updates) => {
+      const { playlist, currentTrack } = get()
+      const index = playlist.findIndex(t => t.id === id)
+      if (index === -1) return
+      const updatedTrack = { ...playlist[index], ...updates }
+      const newPlaylist = [...playlist]
+      newPlaylist[index] = updatedTrack
+      const newState: Partial<AudioState> & { playlist: AudioTrack[] } = {
+        playlist: newPlaylist,
+      }
+      if (currentTrack && currentTrack.id === id) {
+        newState.currentTrack = updatedTrack
+      }
+      set(newState)
+    },
+
     removeFromPlaylist: (index) => {
       const { playlist, currentTrackIndex } = get()
       const trackToRemove = playlist[index]

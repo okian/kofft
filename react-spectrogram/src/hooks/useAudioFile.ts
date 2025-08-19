@@ -115,52 +115,65 @@ export const useAudioFile = () => {
         throw new Error('Invalid audio file format')
       }
 
-      // Parse metadata
-      const metadata = await parseMetadata(file)
-      
-      // Generate amplitude envelope
-      const audioData = await generateAmplitudeEnvelopeData(file)
-
-      // Extract artwork
-      const arrayBuffer = await file.arrayBuffer()
-      const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
-
-      const track: AudioTrack = {
-        id: crypto.randomUUID(),
+      const id = crypto.randomUUID()
+      const placeholder: AudioTrack = {
+        id,
         file,
         metadata: {
-          title: metadata.title || file.name.replace(/\.[^/.]+$/, ''),
-          artist: metadata.artist || 'Unknown Artist',
-          album: metadata.album || 'Unknown Album',
-          year: metadata.year ? parseInt(metadata.year.toString()) : undefined,
-          genre: metadata.genre || '',
-          duration: metadata.duration || 0,
-          bitrate: metadata.bitrate || 0,
-          sample_rate: metadata.sample_rate || 0,
-          channels: metadata.channels || 0,
-          album_art: metadata.album_art,
-          album_art_mime: metadata.album_art_mime
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          artist: 'Loading...',
+          album: '',
+          duration: 0,
         },
-        duration: metadata.duration || 0,
+        duration: 0,
         url: URL.createObjectURL(file),
-        audioData: audioData,
-        artwork: artworkResult.artwork
+        isLoading: true,
       }
-      
 
+      addToPlaylist(placeholder)
 
-      // Add to playlist
-      addToPlaylist(track)
-      
-      // Set as current track if it's the first one
       const { playlist } = useAudioStore.getState()
       if (playlist.length === 1) {
-        setCurrentTrack(track)
+        setCurrentTrack(placeholder)
       }
 
-      conditionalToast.success(`Loaded: ${track.metadata.title}`)
-      return track
+      ;(async () => {
+        try {
+          const [metadata, audioData, arrayBuffer] = await Promise.all([
+            parseMetadata(file),
+            generateAmplitudeEnvelopeData(file),
+            file.arrayBuffer(),
+          ])
+          const artworkResult = await extractArtwork(metadata, file.name, arrayBuffer)
+          useAudioStore.getState().updateTrack(id, {
+            metadata: {
+              title: metadata.title || file.name.replace(/\.[^/.]+$/, ''),
+              artist: metadata.artist || 'Unknown Artist',
+              album: metadata.album || 'Unknown Album',
+              year: metadata.year ? parseInt(metadata.year.toString()) : undefined,
+              genre: metadata.genre || '',
+              duration: metadata.duration || 0,
+              bitrate: metadata.bitrate || 0,
+              sample_rate: metadata.sample_rate || 0,
+              channels: metadata.channels || 0,
+              album_art: metadata.album_art,
+              album_art_mime: metadata.album_art_mime,
+            },
+            duration: metadata.duration || 0,
+            audioData,
+            artwork: artworkResult.artwork,
+            isLoading: false,
+          })
+          conditionalToast.success(`Loaded: ${metadata.title || file.name.replace(/\.[^/.]+$/, '')}`)
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load audio file'
+          setError(errorMessage)
+          conditionalToast.error(errorMessage)
+          useAudioStore.getState().updateTrack(id, { isLoading: false })
+        }
+      })()
 
+      return placeholder
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load audio file'
       setError(errorMessage)
@@ -169,7 +182,7 @@ export const useAudioFile = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [validateAudioFile, parseMetadata, generateAmplitudeEnvelope, addToPlaylist, setCurrentTrack])
+  }, [validateAudioFile, parseMetadata, generateAmplitudeEnvelopeData, addToPlaylist, setCurrentTrack])
 
   // Load multiple audio files
   const loadAudioFiles = useCallback(async (files: FileList | File[]): Promise<AudioTrack[]> => {
@@ -185,19 +198,18 @@ export const useAudioFile = () => {
         throw new Error('No valid audio files found')
       }
 
-      const tracks: AudioTrack[] = []
-      const invalidFileNames: string[] = []
+      const results = await Promise.all(
+        validFiles.map(async (file) => {
+          try {
+            return await loadAudioFile(file)
+          } catch {
+            return null
+          }
+        })
+      )
 
-      for (const file of validFiles) {
-        try {
-          const track = await loadAudioFile(file)
-          tracks.push(track)
-        } catch (error) {
-          invalidFileNames.push(file.name)
-        }
-      }
+      const tracks = results.filter((t): t is AudioTrack => t !== null)
 
-      // Set first track as current if no current track
       if (tracks.length > 0) {
         const { currentTrack } = useAudioStore.getState()
         if (!currentTrack) {
@@ -211,7 +223,7 @@ export const useAudioFile = () => {
       } else {
         conditionalToast.success(successMessage)
       }
-      
+
       return tracks
 
     } catch (error) {
