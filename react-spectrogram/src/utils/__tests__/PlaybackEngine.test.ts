@@ -111,15 +111,16 @@ describe("PlaybackEngine", () => {
       playlist: [track1, track2],
       currentTrackIndex: 0,
       currentTrack: track1,
+      loopMode: "off",
     });
 
-    const playSpy = vi
-      .spyOn(useAudioStore.getState(), "playTrack")
+    const nextSpy = vi
+      .spyOn(useAudioStore.getState(), "nextTrack")
       .mockResolvedValue(undefined);
 
     (playbackEngine as any).handleEnded();
 
-    expect(playSpy).toHaveBeenCalledWith(1);
+    expect(nextSpy).toHaveBeenCalled();
   });
 
   it("stops when there is no next track", () => {
@@ -132,20 +133,61 @@ describe("PlaybackEngine", () => {
       playlist: [track1],
       currentTrackIndex: 0,
       currentTrack: track1,
+      loopMode: "off",
     });
 
-    const playSpy = vi
-      .spyOn(useAudioStore.getState(), "playTrack")
-      .mockResolvedValue(undefined);
+    const nextSpy = vi.spyOn(useAudioStore.getState(), "nextTrack");
     const setPlayingSpy = vi.spyOn(useAudioStore.getState(), "setPlaying");
     const setPausedSpy = vi.spyOn(useAudioStore.getState(), "setPaused");
     const setStoppedSpy = vi.spyOn(useAudioStore.getState(), "setStopped");
 
     (playbackEngine as any).handleEnded();
 
-    expect(playSpy).not.toHaveBeenCalled();
+    expect(nextSpy).not.toHaveBeenCalled();
     expect(setPlayingSpy).toHaveBeenCalledWith(false);
     expect(setPausedSpy).toHaveBeenCalledWith(false);
     expect(setStoppedSpy).toHaveBeenCalledWith(true);
+  });
+
+  it('repeats the same track when loopMode is "one"', () => {
+    const track1 = {
+      id: "1",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    useAudioStore.setState({
+      playlist: [track1],
+      currentTrackIndex: 0,
+      currentTrack: track1,
+      loopMode: "one",
+    });
+
+    const playSpy = vi
+      .spyOn(useAudioStore.getState(), "playTrack")
+      .mockResolvedValue(undefined);
+    (playbackEngine as any).handleEnded();
+    expect(playSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('loops to next track when loopMode is "all" at playlist end', () => {
+    const track1 = {
+      id: "1",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    const track2 = {
+      id: "2",
+      file: { arrayBuffer: async () => new ArrayBuffer(8) },
+    } as any;
+    useAudioStore.setState({
+      playlist: [track1, track2],
+      currentTrackIndex: 1,
+      currentTrack: track2,
+      loopMode: "all",
+    });
+
+    const nextSpy = vi
+      .spyOn(useAudioStore.getState(), "nextTrack")
+      .mockResolvedValue(undefined);
+    (playbackEngine as any).handleEnded();
+    expect(nextSpy).toHaveBeenCalled();
   });
 });

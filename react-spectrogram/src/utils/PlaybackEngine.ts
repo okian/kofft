@@ -275,17 +275,22 @@ class PlaybackEngine {
       setPlaying,
       setPaused,
       setStopped,
+      nextTrack,
+      loopMode,
     } = useAudioStore.getState();
 
-    const nextIndex = currentTrackIndex + 1;
-    if (nextIndex < playlist.length) {
-      // Auto-advance to the next track
-      playTrack(nextIndex);
+    if (loopMode === 'one') {
+      playTrack(currentTrackIndex);
+      return;
+    }
+
+    const isLastTrack = currentTrackIndex >= playlist.length - 1;
+    if (!isLastTrack || loopMode === 'all') {
+      nextTrack();
       return;
     }
 
     this.notify();
-    // No more tracks: ensure store reflects stopped state
     setPlaying(false);
     setPaused(false);
     setStopped(true);

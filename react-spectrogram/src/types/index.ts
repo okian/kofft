@@ -40,7 +40,7 @@ export interface APIKeyStatus {
 
 // Artwork sources and results
 export interface ArtworkSource {
-  type: 'embedded' | 'musicbrainz' | 'acoustid' | 'filename' | 'placeholder';
+  type: "embedded" | "musicbrainz" | "acoustid" | "filename" | "placeholder";
   url?: string;
   data?: Uint8Array;
   mimeType?: string;
@@ -64,7 +64,7 @@ export interface ArtworkResult {
 export interface MusicBrainzRelease {
   id: string;
   title: string;
-  'artist-credit': Array<{
+  "artist-credit": Array<{
     name: string;
     artist?: {
       id: string;
@@ -120,10 +120,10 @@ export interface AudioTrack {
 }
 
 export interface SpectrogramSettings {
-  theme: 'dark' | 'light' | 'neon' | 'high-contrast';
-  amplitudeScale: 'linear' | 'logarithmic' | 'db';
-  frequencyScale: 'linear' | 'logarithmic';
-  resolution: 'low' | 'medium' | 'high';
+  theme: "dark" | "light" | "neon" | "high-contrast";
+  amplitudeScale: "linear" | "logarithmic" | "db";
+  frequencyScale: "linear" | "logarithmic";
+  resolution: "low" | "medium" | "high";
   refreshRate: 30 | 60;
   colormap: string;
   showLegend: boolean;
@@ -171,6 +171,8 @@ export interface AudioState {
   isLive: boolean;
   isMicrophoneActive: boolean;
   inputDevice: string | null;
+  shuffle: boolean;
+  loopMode: "off" | "one" | "all";
 }
 
 // Keyboard shortcuts
@@ -209,7 +211,7 @@ export interface SpectrogramRenderer {
 
 // Event types
 export interface SpectrogramEvent {
-  type: 'click' | 'hover' | 'drag';
+  type: "click" | "hover" | "drag";
   position: { x: number; y: number };
   frequency?: number;
   time?: number;
@@ -266,10 +268,10 @@ export interface SettingsPanelProps {
 }
 
 // Utility types
-export type Theme = 'dark' | 'light' | 'neon' | 'high-contrast';
-export type AmplitudeScale = 'linear' | 'logarithmic' | 'db';
-export type FrequencyScale = 'linear' | 'logarithmic';
-export type Resolution = 'low' | 'medium' | 'high';
+export type Theme = "dark" | "light" | "neon" | "high-contrast";
+export type AmplitudeScale = "linear" | "logarithmic" | "db";
+export type FrequencyScale = "linear" | "logarithmic";
+export type Resolution = "low" | "medium" | "high";
 export type RefreshRate = 30 | 60;
 
 // WASM types
@@ -278,7 +280,10 @@ export interface WASMModule {
     fileData: Uint8Array,
     filename: string,
   ) => WasmAudioMetadata | null;
-  compute_spectrogram: (audioData: Float32Array, sampleRate: number) => SpectrogramData;
+  compute_spectrogram: (
+    audioData: Float32Array,
+    sampleRate: number,
+  ) => SpectrogramData;
   compute_waveform: (audioData: Float32Array) => number[];
 }
 
@@ -292,7 +297,7 @@ export interface AppError {
 // Toast notification types
 export interface Toast {
   id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
+  type: "success" | "error" | "warning" | "info";
   title: string;
   message?: string;
   duration?: number;

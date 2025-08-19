@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
-import App from '../../App'
+import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import App from "../../App";
 
 // Mock the stores and hooks
-vi.mock('../../stores/audioStore', () => ({
+vi.mock("../../stores/audioStore", () => ({
   useAudioStore: () => ({
     currentTrack: null,
     playlist: [],
@@ -19,10 +19,16 @@ vi.mock('../../stores/audioStore', () => ({
     isMuted: false,
     isLive: false,
     isMicrophoneActive: false,
-  })
-}))
+    shuffle: false,
+    loopMode: "off",
+    setShuffle: vi.fn(),
+    setLoopMode: vi.fn(),
+    nextTrack: vi.fn(),
+    previousTrack: vi.fn(),
+  }),
+}));
 
-vi.mock('../../stores/uiStore', () => ({
+vi.mock("../../stores/uiStore", () => ({
   useUIStore: () => ({
     isMobile: false,
     metadataPanelOpen: false,
@@ -34,60 +40,60 @@ vi.mock('../../stores/uiStore', () => ({
     setSettingsPanelOpen: vi.fn(),
     setShortcutsHelpOpen: vi.fn(),
     toggleShortcutsHelp: vi.fn(),
-  })
-}))
+  }),
+}));
 
-vi.mock('../../stores/settingsStore', () => ({
+vi.mock("../../stores/settingsStore", () => ({
   useSettingsStore: () => ({
-    theme: 'dark',
+    theme: "dark",
     updateSettings: vi.fn(),
-  })
-}))
+  }),
+}));
 
-vi.mock('../../hooks/useKeyboardShortcuts', () => ({
+vi.mock("../../hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: vi.fn(),
-}))
+}));
 
-vi.mock('../../hooks/useScreenSize', () => ({
+vi.mock("../../hooks/useScreenSize", () => ({
   useScreenSize: () => ({ isMobile: false, isTablet: false }),
-}))
+}));
 
-vi.mock('../../utils/wasm', () => ({
+vi.mock("../../utils/wasm", () => ({
   initWASM: vi.fn(),
-}))
+}));
 
-describe('App', () => {
-  it('renders without crashing', () => {
-    render(<App />)
-    expect(screen.getByTestId('app-container')).toBeInTheDocument()
-  })
+describe("App", () => {
+  it("renders without crashing", () => {
+    render(<App />);
+    expect(screen.getByTestId("app-container")).toBeInTheDocument();
+  });
 
-  it('renders header with app title', () => {
-    render(<App />)
-    expect(screen.getByText('Spectrogram')).toBeInTheDocument()
-  })
+  it("renders header with app title", () => {
+    render(<App />);
+    expect(screen.getByText("Spectrogram")).toBeInTheDocument();
+  });
 
-  it('renders footer with controls', () => {
-    render(<App />)
-    expect(screen.getByTestId('footer')).toBeInTheDocument()
-    expect(screen.getByTestId('play-pause-button')).toBeInTheDocument()
-  })
+  it("renders footer with controls", () => {
+    render(<App />);
+    expect(screen.getByTestId("footer")).toBeInTheDocument();
+    expect(screen.getByTestId("play-pause-button")).toBeInTheDocument();
+  });
 
-  it('renders spectrogram view', () => {
-    render(<App />)
-    expect(screen.getByTestId('spectrogram-view')).toBeInTheDocument()
-  })
+  it("renders spectrogram view", () => {
+    render(<App />);
+    expect(screen.getByTestId("spectrogram-view")).toBeInTheDocument();
+  });
 
-  it('shows drop zone when no track is loaded', () => {
-    render(<App />)
-    expect(screen.getByTestId('drop-zone')).toBeInTheDocument()
-    expect(screen.getByText('Drop audio files here')).toBeInTheDocument()
-  })
+  it("shows drop zone when no track is loaded", () => {
+    render(<App />);
+    expect(screen.getByTestId("drop-zone")).toBeInTheDocument();
+    expect(screen.getByText("Drop audio files here")).toBeInTheDocument();
+  });
 
-  it('preserves existing body classes when applying theme', () => {
-    document.body.className = 'keep-me'
-    render(<App />)
-    expect(document.body.classList.contains('keep-me')).toBe(true)
-    expect(document.body.classList.contains('theme-dark')).toBe(true)
-  })
-})
+  it("preserves existing body classes when applying theme", () => {
+    document.body.className = "keep-me";
+    render(<App />);
+    expect(document.body.classList.contains("keep-me")).toBe(true);
+    expect(document.body.classList.contains("theme-dark")).toBe(true);
+  });
+});

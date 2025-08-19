@@ -14,6 +14,12 @@ vi.mock("../../../stores/audioStore", () => ({
     currentTrack: null,
     playlist: [],
     currentTrackIndex: -1,
+    shuffle: false,
+    loopMode: "off",
+    setShuffle: vi.fn(),
+    setLoopMode: vi.fn(),
+    nextTrack: vi.fn(),
+    previousTrack: vi.fn(),
   }),
 }));
 

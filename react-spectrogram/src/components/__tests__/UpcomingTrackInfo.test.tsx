@@ -13,6 +13,12 @@ const mockState: any = {
   currentTrack: null,
   playlist: [],
   currentTrackIndex: 0,
+  shuffle: false,
+  loopMode: "off",
+  setShuffle: vi.fn(),
+  setLoopMode: vi.fn(),
+  nextTrack: vi.fn(),
+  previousTrack: vi.fn(),
 };
 
 vi.mock("../../stores/audioStore", () => ({
