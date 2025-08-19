@@ -41,7 +41,7 @@ parallel = ["rayon"]
 x86_64 = []      # AVX/SSE on x86_64
 sse = []         # Force SSE2-only backend
 aarch64 = []     # NEON on 64-bit ARM
-wasm = []        # WebAssembly SIMD128
+wasm = ["simd"] # WebAssembly SIMD128, always include portable SIMD for heavy modules
 avx2 = []        # Enable AVX2-specific code paths
 avx512 = []      # Enable AVX-512 code paths
 

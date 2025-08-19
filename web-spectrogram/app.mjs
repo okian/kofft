@@ -11,22 +11,31 @@ export function ensureBuffer() {
   }
 }
 
+export function ensureSharedArrayBuffer() {
+  if (typeof SharedArrayBuffer === "undefined") {
+    throw new Error("SharedArrayBuffer is required for WASM threads");
+  }
+}
+
 ensureBuffer();
 
 let wasm;
-/* c8 ignore start */
-async function loadWasm() {
+export async function loadWasm() {
   if (!wasm) {
     if (typeof window === "undefined") {
       wasm = await import("./tests/pkg/web_spectrogram.js");
     } else {
       wasm = await import("./pkg/web_spectrogram.js");
-      await wasm.default();
+      ensureSharedArrayBuffer();
+    }
+    await wasm.default();
+    if (typeof wasm.initThreadPool === "function") {
+      const cores = navigator?.hardwareConcurrency || 1;
+      await wasm.initThreadPool(cores);
     }
   }
   return wasm;
 }
-/* c8 ignore stop */
 
 export function magnitudeToDb(mag, maxMag) {
   const ratio = mag / maxMag;

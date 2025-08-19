@@ -5,7 +5,10 @@ import {
   drawSpectrogram,
   initApp,
   ensureBuffer,
+  loadWasm,
+  ensureSharedArrayBuffer,
 } from "../app.mjs";
+import { getThreadPoolInit } from "./pkg/web_spectrogram.js";
 
 test("magnitudeToDb converts correctly", () => {
   const db = magnitudeToDb(1, 1);
@@ -32,6 +35,27 @@ test("drawSpectrogram writes pixels", () => {
   assert.equal(ctx.last.data[0], 1);
   assert.equal(ctx.last.data[1], 2);
   assert.equal(ctx.last.data[2], 3);
+});
+
+test("loadWasm initializes thread pool", async () => {
+  await loadWasm();
+  const cores = global.navigator?.hardwareConcurrency || 1;
+  assert.equal(getThreadPoolInit(), cores);
+});
+
+test("ensureSharedArrayBuffer works", () => {
+  assert.doesNotThrow(() => ensureSharedArrayBuffer());
+});
+
+test("ensureSharedArrayBuffer throws when missing", () => {
+  const original = global.SharedArrayBuffer;
+  try {
+    // eslint-disable-next-line no-global-assign
+    global.SharedArrayBuffer = undefined;
+    assert.throws(() => ensureSharedArrayBuffer());
+  } finally {
+    global.SharedArrayBuffer = original;
+  }
 });
 
 test("initApp loads and processes file", async () => {
