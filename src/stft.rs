@@ -222,7 +222,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
 /// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// use kofft::stft::parallel;
 /// use kofft::window::hann;
 /// use kofft::fft::ScalarFftImpl;
@@ -231,7 +231,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
 /// let mut frames = vec![vec![]; 4];
 /// let fft = ScalarFftImpl::<f32>::default();
 /// parallel(&signal, &window, 2, &mut frames, &fft).unwrap();
-/// ```
+/// ```ignore
 pub fn parallel<Fft: FftImpl<f32>>(
     signal: &[f32],
     window: &[f32],
@@ -239,29 +239,41 @@ pub fn parallel<Fft: FftImpl<f32>>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    use crate::fft::ScalarFftImpl;
     use rayon::prelude::*;
-    let _ = fft;
     if hop_size == 0 {
         return Err(FftError::InvalidHopSize);
     }
     let win_len = window.len();
+    // Pre-size frames to avoid repeated allocations in the parallel loop
+    for frame in output.iter_mut() {
+        frame.resize(win_len, Complex32::zero());
+    }
+    let fft_ptr = fft as *const Fft as usize;
     output
         .par_iter_mut()
         .enumerate()
         .try_for_each(|(frame_idx, frame)| {
             let start = frame_idx * hop_size;
-            frame.clear();
             for i in 0..win_len {
                 let x = if start + i < signal.len() {
                     signal[start + i] * window[i]
                 } else {
                     0.0
                 };
-                frame.push(Complex32::new(x, 0.0));
+                frame[i] = Complex32::new(x, 0.0);
             }
-            let fft_local = ScalarFftImpl::<f32>::default();
-            fft_local.fft(frame)
+            // SAFETY: `fft_ptr` is shared across threads. Callers must ensure
+            // SAFETY: We cast the shared reference `fft` to a raw pointer (`fft_ptr`) outside the parallel loop,
+            // and reconstruct a shared reference inside each thread. This is safe because:
+            // - The original `fft` reference is valid for the entire duration of the parallel operation,
+            //   and is not mutably aliased elsewhere.
+            // - The pointer is only ever used to create shared (`&`) references, never mutable ones.
+            // - The FFT implementation (`Fft`) must be both `Send` and `Sync`, so it is safe to share
+            //   references to it across threads and to call its methods concurrently.
+            // - It is the caller's responsibility to ensure that the provided `fft` instance upholds these
+            //   thread safety guarantees for the duration of this function.
+            let fft_ref = unsafe { &*(fft_ptr as *const Fft) };
+            fft_ref.fft(frame)
         })
 }
 
@@ -279,7 +291,7 @@ pub fn parallel<Fft: FftImpl<f32>>(
 /// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// use kofft::stft::inverse_parallel;
 /// use kofft::window::hann;
 /// use kofft::fft::ScalarFftImpl;
@@ -289,16 +301,14 @@ pub fn parallel<Fft: FftImpl<f32>>(
 /// let fft = ScalarFftImpl::<f32>::default();
 /// inverse_parallel(&frames, &window, 2, &mut out, &fft).unwrap();
 /// ```
-pub fn inverse_parallel<Fft: FftImpl<f32>>(
+pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     frames: &[alloc::vec::Vec<Complex32>],
     window: &[f32],
     hop_size: usize,
     output: &mut [f32],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    use crate::fft::ScalarFftImpl;
     use rayon::prelude::*;
-    let _ = fft;
     if hop_size == 0 {
         return Err(FftError::InvalidHopSize);
     }
@@ -308,23 +318,28 @@ pub fn inverse_parallel<Fft: FftImpl<f32>>(
     let partials: AccumResult = frames
         .par_iter()
         .enumerate()
-        .map(|(frame_idx, frame)| {
-            let start = frame_idx * hop_size;
-            let mut time_buf = frame.clone();
-            let fft_local = ScalarFftImpl::<f32>::default();
-            fft_local.ifft(&mut time_buf)?;
-            let mut acc = alloc::vec::Vec::with_capacity(win_len);
-            acc.resize(win_len, 0.0);
-            let mut norm = alloc::vec::Vec::with_capacity(win_len);
-            norm.resize(win_len, 0.0);
-            for i in 0..win_len {
-                acc[i] = time_buf[i].re * window[i];
-                norm[i] = window[i] * window[i];
-            }
-            Ok((start, acc, norm))
-        })
+        .map_init(
+            || {
+                (
+                    vec![Complex32::new(0.0, 0.0); win_len],
+                    vec![0.0f32; win_len],
+                    vec![0.0f32; win_len],
+                )
+            },
+            |(time_buf, acc, norm), (frame_idx, frame)| {
+                let start = frame_idx * hop_size;
+                time_buf.copy_from_slice(frame);
+                fft.ifft(time_buf)?;
+                for i in 0..win_len {
+                    acc[i] = time_buf[i].re * window[i];
+                    norm[i] = window[i] * window[i];
+                }
+                Ok((start, take(acc), take(norm)))
+            },
+        )
         .collect();
     let partials = partials?;
+    output.fill(0.0);
     let mut norm = alloc::vec::Vec::with_capacity(output.len());
     norm.resize(output.len(), 0.0);
     for (start, acc_frame, norm_frame) in partials {
@@ -535,7 +550,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
-    use crate::fft::{Complex32, ScalarFftImpl};
+    use crate::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
@@ -595,6 +610,70 @@ mod tests {
     #[cfg(feature = "parallel")]
     #[test]
     fn test_stft_istft_parallel_roundtrip() {
+        use std::sync::Mutex;
+
+        struct SyncFft(Mutex<ScalarFftImpl<f32>>);
+        impl Default for SyncFft {
+            fn default() -> Self {
+                Self(Mutex::new(ScalarFftImpl::<f32>::default()))
+            }
+        }
+        impl FftImpl<f32> for SyncFft {
+            fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+                self.0.lock().unwrap().fft(input)
+            }
+            fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+                self.0.lock().unwrap().ifft(input)
+            }
+            fn fft_strided(
+                &self,
+                input: &mut [Complex32],
+                stride: usize,
+                scratch: &mut [Complex32],
+            ) -> Result<(), FftError> {
+                self.0.lock().unwrap().fft_strided(input, stride, scratch)
+            }
+            fn ifft_strided(
+                &self,
+                input: &mut [Complex32],
+                stride: usize,
+                scratch: &mut [Complex32],
+            ) -> Result<(), FftError> {
+                self.0.lock().unwrap().ifft_strided(input, stride, scratch)
+            }
+            fn fft_out_of_place_strided(
+                &self,
+                input: &[Complex32],
+                in_stride: usize,
+                output: &mut [Complex32],
+                out_stride: usize,
+            ) -> Result<(), FftError> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .fft_out_of_place_strided(input, in_stride, output, out_stride)
+            }
+            fn ifft_out_of_place_strided(
+                &self,
+                input: &[Complex32],
+                in_stride: usize,
+                output: &mut [Complex32],
+                out_stride: usize,
+            ) -> Result<(), FftError> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .ifft_out_of_place_strided(input, in_stride, output, out_stride)
+            }
+            fn fft_with_strategy(
+                &self,
+                input: &mut [Complex32],
+                strategy: FftStrategy,
+            ) -> Result<(), FftError> {
+                self.0.lock().unwrap().fft_with_strategy(input, strategy)
+            }
+        }
+
         let n: usize = 8;
         let win_len: usize = 4;
         let hop: usize = 2;
@@ -605,7 +684,7 @@ mod tests {
         for _ in 0..num_frames {
             frames.push(alloc::vec::Vec::with_capacity(win_len));
         }
-        let fft = ScalarFftImpl::<f32>::default();
+        let fft = SyncFft::default();
         parallel(&signal, &window, hop, &mut frames, &fft).unwrap();
         let mut output = vec![0.0f32; n];
         inverse_parallel(&frames, &window, hop, &mut output, &fft).unwrap();

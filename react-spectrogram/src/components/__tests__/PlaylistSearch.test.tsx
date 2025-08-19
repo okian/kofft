@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { AudioTrack } from '@/types'
 import { vi } from 'vitest'
+import { usePlaylistSearchStore } from '@/stores/playlistSearchStore'
 
 vi.mock('@/utils/wasm', () => ({}), { virtual: true })
 
@@ -54,6 +55,10 @@ describe('PlaylistPanel search', () => {
       url: 'url3'
     }
   ]
+
+  afterEach(() => {
+    usePlaylistSearchStore.setState({ searchQuery: '' })
+  })
 
   it('filters tracks and provides suggestions', () => {
     render(

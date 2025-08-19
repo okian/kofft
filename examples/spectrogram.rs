@@ -1,3 +1,5 @@
+#![cfg(all(feature = "std", feature = "wasm", feature = "simd"))]
+
 //! Generates a spectrogram from a WAV file using kofft.
 //!
 //! Usage:

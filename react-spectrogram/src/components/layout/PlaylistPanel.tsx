@@ -6,6 +6,7 @@ import { formatDuration } from '@/utils/audio'
 import { useAudioFile } from '@/hooks/useAudioFile'
 import { getFilesFromDataTransfer } from '@/utils/file'
 import { fuzzyMatch, fuzzyScore } from '@/utils/fuzzy'
+import { usePlaylistSearchStore } from '@/stores/playlistSearchStore'
 
 interface PlaylistPanelProps {
   tracks: AudioTrack[]
@@ -410,7 +411,7 @@ export function PlaylistPanel({
     setDropIndex(null)
   }
 
-  const [searchQuery, setSearchQuery] = useState('')
+  const { searchQuery, setSearchQuery } = usePlaylistSearchStore()
 
   const searchIndex = useMemo(
     () =>

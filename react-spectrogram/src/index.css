@@ -585,15 +585,38 @@
   --gap: 0.0625rem;
 }
 
-.control-section .album-art {
+.control-section .art-stack {
+  position: relative;
   width: var(--art-size);
   height: var(--art-size);
+}
+
+.control-section .art-stack .album-art {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
+  position: absolute;
+  top: 0;
+  left: 0;
   transition: transform 300ms var(--transition);
 }
 
-.control-section.coming-up .album-art {
+.control-section.coming-up .art-stack .album-art.current {
   transform: scale(1.05);
+}
+
+.control-section .art-stack .album-art.next {
+  transform: rotate(-45deg) scale(0.8) translate(-20%, 20%);
+}
+
+.control-section .art-stack .album-art.next.animating {
+  animation: albumArtSlideForward 300ms var(--transition) forwards;
+}
+
+@keyframes albumArtSlideForward {
+  to {
+    transform: rotate(0deg) scale(1) translate(0, 0);
+  }
 }
 
 .control-section .text-stack {

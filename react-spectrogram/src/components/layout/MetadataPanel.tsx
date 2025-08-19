@@ -1,6 +1,8 @@
 import { X, Music, User, Disc, Calendar, FileAudio } from 'lucide-react'
 import { AudioTrack } from '@/types'
 import { formatDuration, formatFileSize } from '@/utils/audio'
+import { useUIStore } from '@/stores/uiStore'
+import { usePlaylistSearchStore } from '@/stores/playlistSearchStore'
 
 // Helper function to format sample rate in kHz
 const formatSampleRate = (sampleRate: number): string => {
@@ -15,6 +17,14 @@ interface MetadataPanelProps {
 
 export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
   if (!isOpen) return null
+
+  const { setPlaylistPanelOpen } = useUIStore()
+  const { setSearchQuery } = usePlaylistSearchStore()
+
+  const handleMetadataSearch = (value: string) => {
+    setSearchQuery(value)
+    setPlaylistPanelOpen(true)
+  }
 
   const renderFallbackAlbumArt = () => (
     <div className="w-full h-48 bg-neutral-800 rounded-lg flex items-center justify-center">
@@ -120,7 +130,13 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
                   <User size={14} className="text-neutral-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-neutral-400">Artist</p>
-                    <p className="text-sm text-neutral-100 truncate">{track.metadata.artist}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleMetadataSearch(track.metadata.artist as string)}
+                      className="text-sm text-neutral-100 truncate bg-transparent p-0 text-left"
+                    >
+                      {track.metadata.artist}
+                    </button>
                   </div>
                 </div>
               )}
@@ -131,7 +147,13 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
                   <Disc size={14} className="text-neutral-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-neutral-400">Album</p>
-                    <p className="text-sm text-neutral-100 truncate">{track.metadata.album}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleMetadataSearch(track.metadata.album as string)}
+                      className="text-sm text-neutral-100 truncate bg-transparent p-0 text-left"
+                    >
+                      {track.metadata.album}
+                    </button>
                   </div>
                 </div>
               )}
@@ -142,7 +164,13 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
                   <Calendar size={14} className="text-neutral-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-neutral-400">Year</p>
-                    <p className="text-sm text-neutral-100">{track.metadata.year}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleMetadataSearch(String(track.metadata.year))}
+                      className="text-sm text-neutral-100 truncate bg-transparent p-0 text-left"
+                    >
+                      {track.metadata.year}
+                    </button>
                   </div>
                 </div>
               )}
@@ -153,7 +181,13 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
                   <Music size={14} className="text-neutral-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-neutral-400">Genre</p>
-                    <p className="text-sm text-neutral-100 truncate">{track.metadata.genre}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleMetadataSearch(track.metadata.genre as string)}
+                      className="text-sm text-neutral-100 truncate bg-transparent p-0 text-left"
+                    >
+                      {track.metadata.genre}
+                    </button>
                   </div>
                 </div>
               )}

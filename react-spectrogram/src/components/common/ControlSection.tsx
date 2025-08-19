@@ -42,6 +42,10 @@ export function ControlSection({
   const [scaleMode, setScaleMode] = useState<"now" | "next">(mode);
   const [fadeDuration, setFadeDuration] = useState(200);
   const prevRef = useRef<DisplayedText>(displayed);
+  const [currentArt, setCurrentArt] = useState(art);
+  const [nextArt, setNextArt] = useState<string | null>(null);
+  const [artAnimating, setArtAnimating] = useState(false);
+  const prevArtRef = useRef({ album, mode });
 
   useEffect(() => {
     const isStateChange = prevRef.current.mode !== mode;
@@ -65,6 +69,25 @@ export function ControlSection({
     return () => timeouts.forEach(clearTimeout);
   }, [title, artist, album, mode]);
 
+  useEffect(() => {
+    const prev = prevArtRef.current;
+    const modeSwitchedToNext = prev.mode !== "next" && mode === "next";
+    const albumChanged = prev.album !== album;
+    if (modeSwitchedToNext && albumChanged) {
+      setNextArt(art);
+      setArtAnimating(true);
+      const timeout = setTimeout(() => {
+        setCurrentArt(art);
+        setNextArt(null);
+        setArtAnimating(false);
+      }, 300);
+      prevArtRef.current = { album, mode };
+      return () => clearTimeout(timeout);
+    }
+    setCurrentArt(art);
+    prevArtRef.current = { album, mode };
+  }, [art, album, mode]);
+
   const metaText =
     displayed.mode === "now"
       ? `${displayed.artist} • ${displayed.album}`
@@ -83,7 +106,22 @@ export function ControlSection({
       }}
       data-testid="control-section"
     >
-      <img src={art} alt="Album art" className="album-art" />
+      <div className="art-stack">
+        <img
+          src={currentArt}
+          alt="Album art"
+          className="album-art current"
+          data-testid="current-art"
+        />
+        {nextArt && (
+          <img
+            src={nextArt}
+            alt="Next album art"
+            className={clsx("album-art next", artAnimating && "animating")}
+            data-testid="next-art"
+          />
+        )}
+      </div>
       <div className="text-stack">
         <div className="song-title" data-testid="song-title">
           {displayed.title}

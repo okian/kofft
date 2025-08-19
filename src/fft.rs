@@ -460,6 +460,7 @@ pub enum FftError {
     InvalidStride,
     InvalidHopSize,
     InvalidValue,
+    LengthOverflow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -19,6 +19,11 @@ describe("ControlSection", () => {
     );
     const container = screen.getByTestId("control-section");
     expect(container.classList.contains("coming-up")).toBe(false);
+    const titleScale = Number(
+      container.style.getPropertyValue("--title-scale"),
+    );
+    const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
+    expect(titleScale / metaScale).toBe(3);
   });
 
   it("flips ratio and shows coming up text when mode changes", async () => {
@@ -42,6 +47,12 @@ describe("ControlSection", () => {
     );
     await new Promise((r) => setTimeout(r, 610));
     const container = screen.getByTestId("control-section");
+
+    const titleScale = Number(
+      container.style.getPropertyValue("--title-scale"),
+    );
+    const metaScale = Number(container.style.getPropertyValue("--meta-scale"));
+
     const meta = screen.getByTestId("song-meta");
     expect(meta).toHaveTextContent("Coming Up Next");
     expect(container.classList.contains("coming-up")).toBe(true);
@@ -79,6 +90,13 @@ describe("ControlSection", () => {
         title="Song"
         artist="Artist"
         album="Album"
+  it("animates album art when switching to next with a new album", async () => {
+    const { rerender } = render(
+      <ControlSection
+        art="art1.jpg"
+        title="Song"
+        artist="Artist"
+        album="Album1"
         mode="now"
       />,
     );
@@ -99,5 +117,22 @@ describe("ControlSection", () => {
     await new Promise((r) => setTimeout(r, 310));
     expect(container.classList.contains("coming-up")).toBe(true);
     expect(container.classList.contains("fade-in")).toBe(false);
+        art="art2.jpg"
+        title="Song2"
+        artist="Artist2"
+        album="Album2"
+        mode="next"
+      />,
+    );
+    const stack = screen
+      .getByTestId("control-section")
+      .querySelector(".art-stack");
+    expect(stack?.children.length).toBe(2);
+    const next = screen.getByTestId("next-art");
+    expect(next.className).toContain("animating");
+    await new Promise((r) => setTimeout(r, 310));
+    expect(screen.queryByTestId("next-art")).toBeNull();
+    const current = screen.getByTestId("current-art");
+    expect(current).toHaveAttribute("src", "art2.jpg");
   });
 });
