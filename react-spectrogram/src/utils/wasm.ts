@@ -13,6 +13,11 @@ interface WASMModule {
     windowMs: number,
     smoothingSamples: number,
   ) => Float32Array;
+  resample_audio?: (
+    audioData: Float32Array,
+    srcRate: number,
+    dstRate: number,
+  ) => Float32Array;
 }
 
 let wasmModule: WASMModule | null = null;
@@ -242,6 +247,27 @@ async function extractBasicMetadata(file: File): Promise<AudioMetadata> {
   }
 
   return metadata;
+}
+
+// Resample audio data using WASM if available
+export async function resampleAudio(
+  audioData: Float32Array,
+  srcRate: number,
+  dstRate: number,
+): Promise<Float32Array | null> {
+  try {
+    const module = await initWASM();
+    if (module && module.resample_audio) {
+      try {
+        return module.resample_audio(audioData, srcRate, dstRate);
+      } catch (error) {
+        // WASM resampling failed
+      }
+    }
+  } catch (error) {
+    // WASM module not available for resampling
+  }
+  return null;
 }
 
 // Generate waveform data using WASM
