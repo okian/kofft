@@ -157,22 +157,41 @@ export interface UIState {
 }
 
 // Audio State types
+
+/**
+ * Supported looping behaviours for playlist playback.
+ * Using a dedicated type alias keeps runtime validation cheap and
+ * centralizes the allowed values.
+ */
+export type LoopMode = "off" | "one" | "all";
+
 export interface AudioState {
+  // Playback state
   isPlaying: boolean;
   isPaused: boolean;
   isStopped: boolean;
+
+  // Timing
   currentTime: number;
   duration: number;
+
+  // Output levels
   volume: number;
   isMuted: boolean;
+
+  // Track and playlist info
   currentTrack: AudioTrack | null;
   playlist: AudioTrack[];
   currentTrackIndex: number;
+
+  // Recording and device state
   isLive: boolean;
   isMicrophoneActive: boolean;
   inputDevice: string | null;
+
+  // User playback preferences
   shuffle: boolean;
-  loopMode: "off" | "one" | "all";
+  loopMode: LoopMode;
 }
 
 // Keyboard shortcuts
@@ -291,7 +310,10 @@ export interface WASMModule {
 export interface AppError {
   code: string;
   message: string;
-  details?: any;
+  // Additional error context from arbitrary sources.
+  // Using `unknown` avoids the pitfalls of `any` while still allowing
+  // flexibility for callers to narrow the type as needed.
+  details?: unknown;
 }
 
 // Toast notification types
