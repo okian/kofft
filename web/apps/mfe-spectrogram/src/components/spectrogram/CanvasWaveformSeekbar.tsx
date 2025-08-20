@@ -22,6 +22,11 @@ const SEEK_DISPATCH_MS = 200; // throttle dispatch interval
 const SEEK_DISPATCH_THRESHOLD = 0.01; // minimum movement before dispatch
 const SMALL_STEP = 1; // keyboard seek step
 const LARGE_STEP = 5; // keyboard seek step when holding shift
+// Width in CSS pixels of the playhead indicator when rendered.
+const PLAYHEAD_WIDTH = 1;
+// WebGPU buffer usage flags used when uploading vertex data.
+const GPU_BUFFER_USAGE_VERTEX = 0x20;
+const GPU_BUFFER_USAGE_COPY_DST = 0x8;
 
 interface CanvasWaveformSeekbarProps {
   audioData: Float32Array | null;
@@ -35,7 +40,6 @@ interface CanvasWaveformSeekbarProps {
   maxBarHeight?: number;
   disabled?: boolean;
   bufferedTime?: number;
-  useWebGL?: boolean;
 }
 
 // Simple utility to convert hex color to rgb array
@@ -57,7 +61,6 @@ export function CanvasWaveformSeekbar({
   maxBarHeight = DEFAULT_MAX_BAR_HEIGHT,
   disabled = false,
   bufferedTime = 0,
-  useWebGL = false,
 }: CanvasWaveformSeekbarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -137,7 +140,45 @@ export function CanvasWaveformSeekbar({
     const playheadColor =
       style.getPropertyValue("--seek-playhead") || "#60a5fa";
 
-    if (useWebGL) {
+    const commonOpts = {
+      barWidth: effectiveBarWidth,
+      barGap,
+      numBars,
+      disabled,
+      background: backgroundColor,
+      colors: {
+        played: playedColor,
+        unplayed: unplayedColor,
+        buffered: bufferedColor,
+        disabled: disabledColor,
+        playhead: playheadColor,
+      },
+    } as const;
+
+    (async () => {
+      const gpu = (navigator as any).gpu;
+      if (gpu) {
+        try {
+          const context = canvas.getContext(
+            "webgpu",
+          ) as GPUCanvasContext | null;
+          if (context) {
+            await drawWithWebGPU(
+              context,
+              width,
+              height,
+              peaks,
+              progressPosition,
+              bufferedPosition,
+              commonOpts,
+            );
+            return;
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
       const gl = canvas.getContext("webgl");
       if (gl) {
         drawWithWebGL(
@@ -147,59 +188,46 @@ export function CanvasWaveformSeekbar({
           peaks,
           progressPosition,
           bufferedPosition,
-          {
-            barWidth: effectiveBarWidth,
-            barGap,
-            numBars,
-            disabled,
-            background: backgroundColor,
-            colors: {
-              played: playedColor,
-              unplayed: unplayedColor,
-              buffered: bufferedColor,
-              disabled: disabledColor,
-              playhead: playheadColor,
-            },
-          },
+          commonOpts,
         );
         return;
       }
-    }
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    ctx.clearRect(0, 0, width, height);
-    // Fill background so gaps between bars are not transparent/white.
-    ctx.fillStyle = backgroundColor.trim();
-    ctx.fillRect(0, 0, width, height);
+      ctx.clearRect(0, 0, width, height);
+      // Fill background so gaps between bars are not transparent/white.
+      ctx.fillStyle = backgroundColor.trim();
+      ctx.fillRect(0, 0, width, height);
 
-    const centerY = height / 2;
-    for (let i = 0; i < numBars; i++) {
-      const amplitude = peaks[i];
-      const barHeight = Math.max(amplitude * maxBarHeight, MIN_BAR_HEIGHT);
-      const x = i * (effectiveBarWidth + barGap);
-      const barPosition = i / (numBars - 1);
+      const centerY = height / 2;
+      for (let i = 0; i < numBars; i++) {
+        const amplitude = peaks[i];
+        const barHeight = Math.max(amplitude * maxBarHeight, MIN_BAR_HEIGHT);
+        const x = i * (effectiveBarWidth + barGap);
+        const barPosition = i / (numBars - 1);
 
-      let color = unplayedColor.trim();
-      if (disabled) {
-        color = disabledColor.trim();
-      } else if (barPosition <= progressPosition) {
-        color = playedColor.trim();
-      } else if (barPosition <= bufferedPosition) {
-        color = bufferedColor.trim();
+        let color = unplayedColor.trim();
+        if (disabled) {
+          color = disabledColor.trim();
+        } else if (barPosition <= progressPosition) {
+          color = playedColor.trim();
+        } else if (barPosition <= bufferedPosition) {
+          color = bufferedColor.trim();
+        }
+
+        ctx.fillStyle = color;
+        ctx.fillRect(x, centerY - barHeight / 2, effectiveBarWidth, barHeight);
       }
 
-      ctx.fillStyle = color;
-      ctx.fillRect(x, centerY - barHeight / 2, effectiveBarWidth, barHeight);
-    }
-
-    // Playhead line
-    if (!disabled) {
-      const playheadX = progressPosition * width;
-      ctx.fillStyle = playheadColor.trim();
-      ctx.fillRect(playheadX, 0, 1, height);
-    }
+      // Playhead line
+      if (!disabled) {
+        const playheadX = progressPosition * width;
+        ctx.fillStyle = playheadColor.trim();
+        ctx.fillRect(playheadX, 0, PLAYHEAD_WIDTH, height);
+      }
+    })();
   }, [
     peaks,
     numBars,
@@ -209,7 +237,6 @@ export function CanvasWaveformSeekbar({
     progressPosition,
     bufferedPosition,
     disabled,
-    useWebGL,
     themeVersion,
   ]);
 
@@ -401,7 +428,15 @@ function drawWithWebGL(
     };
   },
 ) {
-  const { barWidth, barGap, numBars, colors, background, disabled } = opts;
+  const { background } = opts;
+  const { vertices, colors, vertexCount } = buildGeometry(
+    width,
+    height,
+    peaks,
+    progress,
+    buffered,
+    opts,
+  );
 
   const vertexSrc = `
     attribute vec2 a_position;
@@ -433,12 +468,170 @@ function drawWithWebGL(
   gl.linkProgram(program);
   gl.useProgram(program);
 
-  const vertices: number[] = [];
-  const colorValues: number[] = [];
+  const vertexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(program, "a_position");
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  const colorBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+  const aColor = gl.getAttribLocation(program, "a_color");
+  gl.enableVertexAttribArray(aColor);
+  gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+  gl.viewport(0, 0, width, height);
+  const bg = hexToRgb(background.trim());
+  gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+}
+
+async function drawWithWebGPU(
+  ctx: GPUCanvasContext,
+  width: number,
+  height: number,
+  peaks: Float32Array,
+  progress: number,
+  buffered: number,
+  opts: {
+    barWidth: number;
+    barGap: number;
+    numBars: number;
+    disabled: boolean;
+    background: string;
+    colors: {
+      played: string;
+      unplayed: string;
+      buffered: string;
+      disabled: string;
+      playhead: string;
+    };
+  },
+) {
+  const gpu = (navigator as any).gpu;
+  const adapter = await gpu.requestAdapter();
+  if (!adapter) throw new Error("WebGPU adapter not available");
+  const device = await adapter.requestDevice();
+  const format = gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format, alphaMode: "opaque" });
+
+  const { background } = opts;
+  const { vertices, colors, vertexCount } = buildGeometry(
+    width,
+    height,
+    peaks,
+    progress,
+    buffered,
+    opts,
+  );
+
+  // Interleave position and color for a single vertex buffer.
+  const interleaved = new Float32Array(vertexCount * 5);
+  for (let i = 0, j = 0, k = 0; i < vertexCount; i++) {
+    interleaved[j++] = vertices[i * 2];
+    interleaved[j++] = vertices[i * 2 + 1];
+    interleaved[j++] = colors[k++];
+    interleaved[j++] = colors[k++];
+    interleaved[j++] = colors[k++];
+  }
+  const vertexBuffer = device.createBuffer({
+    size: interleaved.byteLength,
+    usage: GPU_BUFFER_USAGE_VERTEX | GPU_BUFFER_USAGE_COPY_DST,
+  });
+  device.queue.writeBuffer(vertexBuffer, 0, interleaved.buffer);
+
+  const shader = `
+    struct Out {
+      @builtin(position) pos: vec4f,
+      @location(0) color: vec3f,
+    };
+    @vertex fn vs(@location(0) position: vec2f, @location(1) color: vec3f) -> Out {
+      var o: Out;
+      o.pos = vec4f(position, 0, 1);
+      o.color = color;
+      return o;
+    }
+    @fragment fn fs(@location(0) color: vec3f) -> @location(0) vec4f {
+      return vec4f(color, 1);
+    }
+  `;
+  const pipeline = device.createRenderPipeline({
+    layout: "auto",
+    vertex: {
+      module: device.createShaderModule({ code: shader }),
+      buffers: [
+        {
+          arrayStride: 20,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: "float32x2" },
+            { shaderLocation: 1, offset: 8, format: "float32x3" },
+          ],
+        },
+      ],
+    },
+    fragment: {
+      module: device.createShaderModule({ code: shader }),
+      targets: [{ format }],
+    },
+    primitive: { topology: "triangle-list" },
+  });
+
+  const encoder = device.createCommandEncoder();
+  const bg = hexToRgb(background.trim());
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [
+      {
+        view: ctx.getCurrentTexture().createView(),
+        clearValue: {
+          r: bg[0] / 255,
+          g: bg[1] / 255,
+          b: bg[2] / 255,
+          a: 1,
+        },
+        loadOp: "clear",
+        storeOp: "store",
+      },
+    ],
+  });
+  pass.setPipeline(pipeline);
+  pass.setVertexBuffer(0, vertexBuffer);
+  pass.draw(vertexCount);
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+}
+
+function buildGeometry(
+  width: number,
+  height: number,
+  peaks: Float32Array,
+  progress: number,
+  buffered: number,
+  opts: {
+    barWidth: number;
+    barGap: number;
+    numBars: number;
+    disabled: boolean;
+    colors: {
+      played: string;
+      unplayed: string;
+      buffered: string;
+      disabled: string;
+      playhead: string;
+    };
+  },
+) {
+  const { barWidth, barGap, numBars, colors, disabled } = opts;
+  const rects = numBars + (disabled ? 0 : 1);
+  const vertices = new Float32Array(rects * 6 * 2);
+  const colorValues = new Float32Array(rects * 6 * 3);
+  let v = 0;
+  let c = 0;
 
   for (let i = 0; i < numBars; i++) {
     const amplitude = peaks[i];
-    // Ensure a minimum bar height so tiny peaks remain visible.
     const barHeight = Math.max(amplitude * height, MIN_BAR_HEIGHT);
     const x = i * (barWidth + barGap);
     const left = (x / width) * 2 - 1;
@@ -447,21 +640,18 @@ function drawWithWebGL(
     const top = barHeight / height;
     const bottom = -top;
 
-    // Determine bar color. When disabled we ignore progress/buffered state
-    // and draw every bar using the disabled palette for consistency.
     let color = colors.unplayed;
     if (disabled) color = colors.disabled;
     else if (barPosition <= progress) color = colors.played;
     else if (barPosition <= buffered) color = colors.buffered;
 
-    const rgb = hexToRgb(color.trim()).map((v) => v / 255) as [
+    const rgb = hexToRgb(color.trim()).map((v2) => v2 / 255) as [
       number,
       number,
       number,
     ];
 
-    // two triangles per bar
-    vertices.push(
+    const arr = [
       left,
       bottom,
       right,
@@ -474,31 +664,32 @@ function drawWithWebGL(
       top,
       left,
       top,
-    );
+    ];
+    vertices.set(arr, v);
+    v += arr.length;
     for (let j = 0; j < 6; j++) {
-      colorValues.push(...rgb);
+      colorValues.set(rgb, c);
+      c += 3;
     }
   }
 
-  const vertexBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(program, "a_position");
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  if (!disabled) {
+    const playX = progress * width;
+    const left = (playX / width) * 2 - 1;
+    const right = ((playX + PLAYHEAD_WIDTH) / width) * 2 - 1;
+    const arr = [left, -1, right, -1, right, 1, left, -1, right, 1, left, 1];
+    vertices.set(arr, v);
+    const rgb = hexToRgb(colors.playhead.trim()).map((v2) => v2 / 255) as [
+      number,
+      number,
+      number,
+    ];
+    v += arr.length;
+    for (let j = 0; j < 6; j++) {
+      colorValues.set(rgb, c);
+      c += 3;
+    }
+  }
 
-  const colorBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colorValues), gl.STATIC_DRAW);
-  const aColor = gl.getAttribLocation(program, "a_color");
-  gl.enableVertexAttribArray(aColor);
-  gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
-
-  gl.viewport(0, 0, width, height);
-  // WebGL defaults to transparent black. Explicitly clear with the computed
-  // background color so the canvas matches the CSS styling.
-  const bg = hexToRgb(background.trim());
-  gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 2);
+  return { vertices, colors: colorValues, vertexCount: v / 2 };
 }

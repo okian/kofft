@@ -27,8 +27,8 @@ describe("CanvasWaveformSeekbar", () => {
     vi.restoreAllMocks();
     mockCtx.fillRect.mockReset();
     mockCtx.clearRect.mockReset();
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
-      mockCtx,
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      (type: string) => (type === "2d" ? mockCtx : null),
     );
     resizeCb = undefined;
     mutationCb = undefined;
@@ -339,5 +339,110 @@ describe("CanvasWaveformSeekbar", () => {
     await Promise.resolve();
     const disabled = ctx.getImageData(1, y, 1, 1).data;
     expect(Array.from(disabled)).toEqual([10, 11, 12, 255]);
+  });
+
+  it("prefers WebGPU when available", async () => {
+    const gpuContext = {
+      configure: vi.fn(),
+      getCurrentTexture: () => ({ createView: vi.fn() }),
+    } as any;
+    const pass = {
+      setPipeline: vi.fn(),
+      setVertexBuffer: vi.fn(),
+      draw: vi.fn(),
+      end: vi.fn(),
+    } as any;
+    const encoder = {
+      beginRenderPass: vi.fn().mockReturnValue(pass),
+      finish: vi.fn(),
+    } as any;
+    const device = {
+      createBuffer: vi.fn().mockReturnValue({}),
+      queue: { writeBuffer: vi.fn(), submit: vi.fn() },
+      createShaderModule: vi.fn().mockReturnValue({}),
+      createRenderPipeline: vi.fn().mockReturnValue({}),
+      createCommandEncoder: vi.fn().mockReturnValue(encoder),
+    } as any;
+    const adapter = { requestDevice: vi.fn().mockResolvedValue(device) } as any;
+    const gpu = {
+      requestAdapter: vi.fn().mockResolvedValue(adapter),
+      getPreferredCanvasFormat: vi.fn().mockReturnValue("bgra8unorm"),
+    };
+    (navigator as any).gpu = gpu;
+    const ctxSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation((type: string) =>
+        type === "webgpu" ? gpuContext : null,
+      );
+
+    const audioData = new Float32Array(10);
+    render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={1}
+        onSeek={() => {}}
+      />,
+    );
+    await Promise.resolve();
+    expect(ctxSpy).toHaveBeenCalledWith("webgpu");
+    delete (navigator as any).gpu;
+  });
+
+  it("falls back to WebGL when WebGPU is unavailable", async () => {
+    const gl = {
+      createShader: vi.fn().mockReturnValue({}),
+      shaderSource: vi.fn(),
+      compileShader: vi.fn(),
+      createProgram: vi.fn().mockReturnValue({}),
+      attachShader: vi.fn(),
+      linkProgram: vi.fn(),
+      useProgram: vi.fn(),
+      createBuffer: vi.fn().mockReturnValue({}),
+      bindBuffer: vi.fn(),
+      bufferData: vi.fn(),
+      getAttribLocation: vi.fn().mockReturnValue(0),
+      enableVertexAttribArray: vi.fn(),
+      vertexAttribPointer: vi.fn(),
+      viewport: vi.fn(),
+      clearColor: vi.fn(),
+      clear: vi.fn(),
+      drawArrays: vi.fn(),
+    } as any;
+    const ctxSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation((type: string) =>
+        type === "webgl" ? gl : type === "2d" ? mockCtx : null,
+      );
+
+    const audioData = new Float32Array(10);
+    render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={1}
+        onSeek={() => {}}
+      />,
+    );
+    await Promise.resolve();
+    expect(ctxSpy).toHaveBeenCalledWith("webgl");
+  });
+
+  it("falls back to 2D canvas when no GPU APIs are available", async () => {
+    const ctxSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation((type: string) => (type === "2d" ? mockCtx : null));
+    const audioData = new Float32Array(10);
+    render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={1}
+        onSeek={() => {}}
+      />,
+    );
+    await Promise.resolve();
+    expect(ctxSpy).toHaveBeenCalledWith("2d");
+    expect(mockCtx.fillRect).toHaveBeenCalled();
   });
 });
