@@ -11,6 +11,7 @@ vi.mock("@/utils/audioPlayer", () => ({
     toggleMute: vi.fn(),
     seekTo: vi.fn(),
     setVolume: vi.fn(),
+    onTrackEnd: vi.fn(),
   },
 }));
 

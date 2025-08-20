@@ -62,20 +62,12 @@ export const useKeyboardShortcuts = () => {
 
       const { key, code, ctrlKey, shiftKey, metaKey, altKey } = event;
 
-      // Spacebar - Play/Pause
-      if (
-        (code === "Space" || key === " ") &&
-        !ctrlKey &&
-        !shiftKey &&
-        !metaKey
-      ) {
-        event.preventDefault();
-        togglePlayPause();
-        return;
-      }
-
-      // K - Play/Pause (alternative to spacebar)
-      if (key.toLowerCase() === "k" && !ctrlKey && !shiftKey && !metaKey) {
+      // Spacebar or K - Play/Pause. Browsers inconsistently report the
+      // space key so we defensively check both `key` and `code` variations.
+      const isSpace =
+        code === "Space" || key === " " || key === "Spacebar";
+      const isK = key.toLowerCase() === "k" || code === "KeyK";
+      if ((isSpace || isK) && !ctrlKey && !shiftKey && !metaKey) {
         event.preventDefault();
         togglePlayPause();
         return;

@@ -13,6 +13,7 @@ import {
   VolumeX,
   Shuffle,
   Repeat,
+  Repeat1,
   FileAudio,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
@@ -401,9 +402,17 @@ export const Footer: React.FC = () => {
             aria-label={isPlaying ? "Pause playback" : "Start playback"}
           >
             {isPlaying ? (
-              <Pause size={layoutConfig.playButtonSize} />
+              <Pause
+                size={layoutConfig.playButtonSize}
+                data-testid="play-pause-icon"
+                data-state="playing"
+              />
             ) : (
-              <Play size={layoutConfig.playButtonSize} />
+              <Play
+                size={layoutConfig.playButtonSize}
+                data-testid="play-pause-icon"
+                data-state="paused"
+              />
             )}
           </button>
 
@@ -469,8 +478,9 @@ export const Footer: React.FC = () => {
                   "min-w-[28px] min-h-[28px] flex items-center justify-center",
                   shuffle && "text-neutral-200 bg-neutral-700",
                 )}
-                title="Shuffle"
+                title={shuffle ? "Disable shuffle" : "Enable shuffle"}
                 aria-label="Shuffle playlist"
+                aria-pressed={shuffle}
                 onClick={toggleShuffle}
               >
                 <Shuffle size={16} />
@@ -485,11 +495,22 @@ export const Footer: React.FC = () => {
                   "min-w-[28px] min-h-[28px] flex items-center justify-center",
                   loopMode !== "off" && "text-neutral-200 bg-neutral-700",
                 )}
-                title="Repeat"
+                title={
+                  loopMode === "one"
+                    ? "Repeat current track"
+                    : loopMode === "all"
+                      ? "Repeat playlist"
+                      : "Repeat off"
+                }
                 aria-label="Repeat playlist"
+                aria-pressed={loopMode !== "off"}
                 onClick={toggleLoopMode}
               >
-                <Repeat size={16} />
+                {loopMode === "one" ? (
+                  <Repeat1 size={16} />
+                ) : (
+                  <Repeat size={16} />
+                )}
               </button>
             </div>
           )}

@@ -67,6 +67,7 @@ vi.mock("../../utils/audioPlayer", () => ({
   audioPlayer: {
     cleanup: vi.fn(),
     subscribe: vi.fn(() => () => {}),
+    onTrackEnd: vi.fn(() => () => {}),
   },
 }));
 

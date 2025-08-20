@@ -19,7 +19,8 @@ vi.mock('@/utils/audioPlayer', () => ({
     startMicrophone: startMicrophoneMock,
     stopMicrophone: stopMicrophoneMock,
     getFrequencyData: vi.fn(),
-    getTimeData: vi.fn()
+    getTimeData: vi.fn(),
+    onTrackEnd: vi.fn()
   }
 }))
 
