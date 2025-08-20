@@ -101,7 +101,7 @@ export const useMicrophone = () => {
         error instanceof Error ? error.message : "Failed to start microphone";
       console.error("Microphone start failed", error);
       conditionalToast.error(message);
-      return false;
+      return handleMicrophoneError(error, "start", "Failed to start microphone");
     }
   }, [
     initAudioContext,
