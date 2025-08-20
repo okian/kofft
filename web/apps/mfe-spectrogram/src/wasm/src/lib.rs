@@ -368,40 +368,74 @@ pub fn generate_amplitude_envelope(
     envelope
 }
 
-/// Compute peak amplitudes for waveform visualization
-/// Returns an array of peak values for each bar
+/// Size of the FFT window used for per-bar amplitude analysis.
+/// Chosen as a power of two for FFT efficiency and to match the JS fallback.
+const BAR_FFT_SIZE: usize = 1024;
+
+/// Compute per-bar amplitudes using an RMS/FFT pipeline.
+///
+/// The incoming audio is first resampled so that `num_bars` windows of
+/// `BAR_FFT_SIZE` samples evenly cover the entire track.  This guarantees that
+/// the final bar always contains the track's last sample.  Each window is
+/// Hann-windowed, transformed with an FFT and converted to an RMS magnitude.
+/// The resulting amplitudes are normalised to the range `0.0..=1.0`.
 #[wasm_bindgen]
-pub fn compute_waveform_peaks(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
+pub fn compute_bar_amplitudes(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     if audio_data.is_empty() || num_bars == 0 {
         return vec![0.0; num_bars];
     }
 
-    let samples_per_bar = (audio_data.len() + num_bars - 1) / num_bars;
-    let mut peaks = Vec::with_capacity(num_bars);
+    // Resample so every bar spans exactly BAR_FFT_SIZE samples.
+    let target_len = num_bars * BAR_FFT_SIZE;
+    let resampled = resample::linear_resample(
+        audio_data,
+        audio_data.len() as f32,
+        target_len as f32,
+    )
+    .unwrap_or_else(|_| audio_data.to_vec());
 
-    for i in 0..num_bars {
-        let start = i * samples_per_bar;
-        if start >= audio_data.len() {
-            peaks.push(0.0);
+    // Pre-allocate reusable buffers to avoid repeated allocations.
+    let window = hann(BAR_FFT_SIZE);
+    let mut fft_buf = vec![Complex32::new(0.0, 0.0); BAR_FFT_SIZE];
+    let mut fft = new_fft_impl();
+
+    let mut amplitudes = Vec::with_capacity(num_bars);
+
+    for bar in 0..num_bars {
+        let start = bar * BAR_FFT_SIZE;
+        let slice = &resampled[start..start + BAR_FFT_SIZE];
+
+        // Apply window and load into complex buffer.
+        for (i, sample) in slice.iter().enumerate() {
+            fft_buf[i].re = *sample * window[i];
+            fft_buf[i].im = 0.0;
+        }
+
+        // Perform FFT in-place.
+        if fft.fft(&mut fft_buf).is_err() {
+            amplitudes.push(0.0);
             continue;
         }
-        let end = (start + samples_per_bar).min(audio_data.len());
-        let mut min = f32::MAX;
-        let mut max = f32::MIN;
 
-        for &sample in &audio_data[start..end] {
-            if sample < min {
-                min = sample;
-            }
-            if sample > max {
-                max = sample;
-            }
-        }
-
-        peaks.push(min.abs().max(max.abs()));
+        // Convert spectrum to RMS magnitude using Parseval's theorem.
+        let energy: f32 = fft_buf
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum();
+        let rms = (energy / BAR_FFT_SIZE as f32).sqrt();
+        amplitudes.push(rms);
     }
 
-    peaks
+    // Normalise to 0.0..1.0 to simplify downstream rendering.
+    if let Some(max) = amplitudes.iter().cloned().fold(None, |acc, v| Some(acc.map_or(v, |m| m.max(v)))) {
+        if max > 0.0 {
+            for amp in &mut amplitudes {
+                *amp /= max;
+            }
+        }
+    }
+
+    amplitudes
 }
 
 /// Generate waveform data for visualization (legacy function for compatibility)
@@ -472,11 +506,13 @@ mod tests {
     }
 
     #[test]
-    fn compute_waveform_peaks_basic() {
-        let data = vec![1.0, -1.0, 0.5, -0.5];
-        let peaks = compute_waveform_peaks(&data, 2);
-        assert_eq!(peaks, vec![1.0, 0.5]);
-        let more = compute_waveform_peaks(&data, 5);
-        assert_eq!(more.last().copied().unwrap_or(1.0), 0.0);
+    fn compute_bar_amplitudes_constant_signal() {
+        // A constant signal should yield identical normalised amplitudes.
+        let data = vec![0.5; BAR_FFT_SIZE * 4];
+        let amps = compute_bar_amplitudes(&data, 4);
+        assert_eq!(amps.len(), 4);
+        for amp in amps {
+            assert!((amp - 1.0).abs() < 1e-6);
+        }
     }
 }

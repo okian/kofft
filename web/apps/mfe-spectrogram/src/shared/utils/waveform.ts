@@ -1,5 +1,7 @@
 import { computeWaveformPeaksWASM } from "./wasm";
 
+const BAR_SAMPLES = 1024;
+
 export type PeaksCacheKey = { numBars: number };
 
 let peaksCache = new WeakMap<Float32Array, Map<number, Float32Array>>();
@@ -44,29 +46,53 @@ function computeWaveformPeaksJS(
   audioData: Float32Array,
   numBars: number,
 ): Float32Array {
+  const targetLength = numBars * BAR_SAMPLES;
+  const data = linearResample(audioData, targetLength);
   const peaks = new Float32Array(numBars);
-  const samplesPerBar = Math.ceil(audioData.length / numBars);
 
   for (let i = 0; i < numBars; i++) {
-    const start = i * samplesPerBar;
-    const end = Math.min(start + samplesPerBar, audioData.length);
-    if (start >= end) {
-      peaks[i] = 0;
-      continue;
+    const start = i * BAR_SAMPLES;
+    let sumSquares = 0;
+    for (let j = 0; j < BAR_SAMPLES; j++) {
+      const sample = data[start + j];
+      sumSquares += sample * sample;
     }
-    let min = 1.0;
-    let max = -1.0;
+    const rms = Math.sqrt(sumSquares / BAR_SAMPLES);
+    peaks[i] = rms;
+  }
 
-    for (let j = start; j < end; j++) {
-      const sample = audioData[j];
-      if (sample < min) min = sample;
-      if (sample > max) max = sample;
+  let max = 0;
+  for (let i = 0; i < numBars; i++) {
+    if (peaks[i] > max) max = peaks[i];
+  }
+  if (max > 0) {
+    for (let i = 0; i < numBars; i++) {
+      peaks[i] /= max;
     }
-
-    peaks[i] = Math.max(Math.abs(min), Math.abs(max));
   }
 
   return peaks;
+}
+
+function linearResample(input: Float32Array, targetLength: number): Float32Array {
+  if (targetLength <= 0 || input.length === 0) {
+    return new Float32Array(targetLength);
+  }
+  const output = new Float32Array(targetLength);
+  if (targetLength === 1) {
+    output[0] = input[input.length - 1];
+    return output;
+  }
+  const ratio = (input.length - 1) / (targetLength - 1);
+  for (let i = 0; i < targetLength; i++) {
+    const pos = i * ratio;
+    const idx = Math.floor(pos);
+    const frac = pos - idx;
+    const s0 = input[idx];
+    const s1 = input[idx + 1 < input.length ? idx + 1 : idx];
+    output[i] = s0 + (s1 - s0) * frac;
+  }
+  return output;
 }
 
 export function clearWaveformPeaksCache() {
