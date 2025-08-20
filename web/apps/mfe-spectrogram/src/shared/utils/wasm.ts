@@ -54,7 +54,7 @@ export async function initWASM(): Promise<WASMModule> {
       // Dynamic import of the WASM glue
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - resolved by Vite at runtime
-      const module: any = await import("@wasm/react_spectrogram_wasm");
+      const module: any = await import("@wasm/web_spectrogram");
 
       // Instantiate the module if it exposes a default init function.
       if (typeof module.default === "function") {
@@ -160,18 +160,20 @@ export async function generateAmplitudeEnvelope(
 }
 
 // Compute waveform peaks using WASM if available
-export function computeWaveformPeaksWASM(
+export async function computeWaveformPeaksWASM(
   audioData: Float32Array,
   numBars: number,
-): Float32Array {
-  if (!wasmModule || !wasmModule.compute_bar_amplitudes) {
-    throw new Error("WASM module not initialised");
+): Promise<Float32Array> {
+  // Initialize WASM module if not already done
+  const module = await initWASM();
+  if (!module.compute_bar_amplitudes) {
+    throw new Error("WASM compute_bar_amplitudes function not available");
   }
   // The Rust helper internally performs a resample so that the final output bar
   // corresponds to the final input sample.  This ensures visual alignment
   // between the waveform and the original audio without redundant JS work.
   try {
-    return wasmModule.compute_bar_amplitudes(audioData, numBars);
+    return module.compute_bar_amplitudes(audioData, numBars);
   } catch (error: any) {
     throw new Error(
       `WASM compute_bar_amplitudes failed: ${error?.message ?? error}`,

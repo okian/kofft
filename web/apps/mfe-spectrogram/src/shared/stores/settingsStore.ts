@@ -9,7 +9,7 @@ import {
   RefreshRate,
   APIKeys,
   APIKeyStatus,
-} from "@/types";
+} from "@/shared/types";
 
 interface SettingsStore extends SpectrogramSettings {
   // Actions

@@ -5,6 +5,7 @@ use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
 use kofft::{dct, wavelet};
 use wasm_bindgen::prelude::*;
+use js_sys::{Array, Float32Array};
 
 const WIN_LEN: usize = 1024;
 const HOP: usize = WIN_LEN / 2;
@@ -114,12 +115,6 @@ pub struct FftResult {
 #[wasm_bindgen]
 impl FftResult {
     #[wasm_bindgen(getter)]
-    pub fn re(&self) -> Vec<f32> {
-        self.re.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn im(&self) -> Vec<f32> {
     pub fn re(&self) -> Float32Array {
         Float32Array::from(self.re.as_slice())
     }
@@ -158,12 +153,6 @@ pub struct HaarResult {
 #[wasm_bindgen]
 impl HaarResult {
     #[wasm_bindgen(getter)]
-    pub fn avg(&self) -> Vec<f32> {
-        self.avg.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn diff(&self) -> Vec<f32> {
     pub fn avg(&self) -> Array {
         self.avg.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
     }
@@ -323,8 +312,10 @@ mod tests {
         let mut r = re.clone();
         let mut i = im.clone();
         fft::fft_split(&mut r, &mut i).unwrap();
-        assert_eq!(res.re(), r);
-        assert_eq!(res.im(), i);
+        let res_re: Vec<f32> = res.re().to_vec();
+        let res_im: Vec<f32> = res.im().to_vec();
+        assert_eq!(res_re, r);
+        assert_eq!(res_im, i);
     }
 
     #[test]
@@ -340,9 +331,11 @@ mod tests {
         let input = vec![1.0, 2.0, 3.0, 4.0];
         let wasm_res = haar_forward(&input);
         let (avg, diff) = wavelet::haar_forward(&input);
-        assert_eq!(wasm_res.avg(), avg);
-        assert_eq!(wasm_res.diff(), diff);
-        let back = haar_inverse(&wasm_res.avg(), &wasm_res.diff());
+        let wasm_avg: Vec<f32> = wasm_res.avg().iter().map(|v| v.as_f64().unwrap() as f32).collect();
+        let wasm_diff: Vec<f32> = wasm_res.diff().iter().map(|v| v.as_f64().unwrap() as f32).collect();
+        assert_eq!(wasm_avg, avg);
+        assert_eq!(wasm_diff, diff);
+        let back = haar_inverse(&wasm_avg, &wasm_diff);
         let core_back = wavelet::haar_inverse(&avg, &diff);
         assert_eq!(back, core_back);
     }

@@ -186,8 +186,20 @@ export function CanvasWaveformSeekbar({
   // Precompute peaks for static waveform mode.
   useEffect(() => {
     if (seekbarMode !== "waveform") return;
-    peaksRef.current = computeWaveformPeaks(audioData, numBars);
-    setDrawTick((t) => t + 1);
+    
+    const computePeaks = async () => {
+      try {
+        peaksRef.current = await computeWaveformPeaks(audioData, numBars);
+        setDrawTick((t) => t + 1);
+      } catch (error) {
+        console.warn("Failed to compute waveform peaks:", error);
+        // Fall back to empty peaks if computation fails
+        peaksRef.current = new Float32Array(numBars);
+        setDrawTick((t) => t + 1);
+      }
+    };
+    
+    computePeaks();
   }, [audioData, numBars, seekbarMode]);
 
   // Drive animations for live and frequency modes.

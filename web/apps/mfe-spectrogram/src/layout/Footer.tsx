@@ -1,3 +1,3 @@
-export { Footer } from '../features/playback/Footer'
+export { Footer } from '../components/layout/Footer';
 
 

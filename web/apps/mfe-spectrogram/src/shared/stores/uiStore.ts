@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import { UIState } from '@/types'
+import { UIState } from '@/shared/types'
 
 interface UIStore extends UIState {
   // Actions

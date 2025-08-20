@@ -3,7 +3,7 @@
  * Centralizes color definitions to avoid scattering hex literals and
  * allows components to derive consistent styling from the active theme.
  */
-import { Theme } from "@/types";
+import { Theme } from "@/shared/types";
 
 /**
  * Hard-coded color palette for each supported theme.

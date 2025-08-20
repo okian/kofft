@@ -25,10 +25,10 @@ let peaksCache = new WeakMap<Float32Array, Map<number, Float32Array>>();
  * Results are cached per audioData reference and number of bars
  * to avoid repeating expensive calculations.
  */
-export function computeWaveformPeaks(
+export async function computeWaveformPeaks(
   audioData: Float32Array | null,
   numBars: number,
-): Float32Array {
+): Promise<Float32Array> {
   if (!audioData || audioData.length === 0) {
     // Synthesize a deterministic placeholder so UI elements still render.
     const placeholder = new Float32Array(numBars);
@@ -50,8 +50,10 @@ export function computeWaveformPeaks(
   const cached = cacheForBuffer.get(numBars);
   if (cached) return cached;
 
-  let peaks = computeWaveformPeaksWASM(audioData, numBars);
-  if (!peaks) {
+  try {
+    peaks = await computeWaveformPeaksWASM(audioData, numBars);
+  } catch (error) {
+    // Fall back to JavaScript implementation if WASM fails
     peaks = computeWaveformPeaksJS(audioData, numBars);
   }
 
