@@ -161,11 +161,25 @@ export function CanvasWaveformSeekbar({
     return () => ro.disconnect();
   }, []);
 
-  // Helper for reading a CSS variable value or throwing if missing.
+  // Helper for reading a CSS variable value with fallback defaults.
   const readCss = useCallback((name: string): string => {
     const style = getComputedStyle(containerRef.current!);
     const value = style.getPropertyValue(name).trim();
-    if (!value) throw new Error(`Missing CSS variable: ${name}`);
+    if (!value) {
+      // Provide fallback values for missing CSS variables
+      const fallbacks: Record<string, string> = {
+        '--seek-played': '#3b82f6', // blue-500
+        '--seek-unplayed': '#6b7280', // gray-500
+        '--seek-buffered': 'rgba(59, 130, 246, 0.6)', // blue-500 with opacity
+        '--seek-disabled': 'rgba(156, 163, 175, 0.4)', // gray-400 with opacity
+        '--seek-playhead': '#3b82f6', // blue-500
+        '--seek-focus': '#3b82f6', // blue-500
+        '--seek-hover-played': '#60a5fa', // blue-400
+        '--seek-hover-unplayed': '#9ca3af', // gray-400
+        '--seek-time-label': '#9ca3af', // gray-400
+      };
+      return fallbacks[name] || '#3b82f6'; // default to blue-500
+    }
     return value;
   }, []);
 
