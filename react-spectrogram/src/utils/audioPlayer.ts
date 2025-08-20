@@ -1,5 +1,16 @@
 import type { AudioTrack } from '@/types'
+
+/**
+ * State callback signature used by subscribers listening to playback
+ * updates from the player.
+ */
 type AudioPlayerCallback = (state: AudioPlayerState) => void
+
+/**
+ * Default volume used when initializing the gain node. Exported for tests
+ * and to avoid magic numbers sprinkled through the codebase.
+ */
+export const DEFAULT_VOLUME = 0.5
 
 class AudioPlayerEngine {
   private static instance: AudioPlayerEngine | null = null
@@ -16,6 +27,12 @@ class AudioPlayerEngine {
   private currentTrack: any = null
   private currentTime: number = 0
   private playRequestId = 0
+  /**
+   * Registered callbacks for when the current track finishes playback. We
+   * keep a set so multiple listeners (e.g. tests or hooks) can respond
+   * without overwriting each other.
+   */
+  private trackEndCallbacks: Set<() => void> = new Set()
 
   // Microphone-related properties
   private microphoneSource: MediaStreamAudioSourceNode | null = null
@@ -41,6 +58,16 @@ class AudioPlayerEngine {
     }
   }
 
+  /**
+   * Register a callback invoked exactly once per track completion. Consumers
+   * (the React hook, tests, etc.) use this to react to natural playback end
+   * without directly coupling to the player internals.
+   */
+  onTrackEnd(callback: () => void): () => void {
+    this.trackEndCallbacks.add(callback)
+    return () => this.trackEndCallbacks.delete(callback)
+  }
+
 
   // Notify all subscribers of state changes
   private notifySubscribers() {
@@ -64,7 +91,7 @@ class AudioPlayerEngine {
       
       // Create gain node for volume control
       this.gainNode = this.audioContext.createGain()
-      this.gainNode.gain.value = 0.5 // Default volume
+      this.gainNode.gain.value = DEFAULT_VOLUME // Initialize to sane default
       
       // Create analyser for frequency data
       this.analyser = this.audioContext.createAnalyser()
@@ -331,7 +358,7 @@ class AudioPlayerEngine {
       if (currentVolume > 0) {
         this.gainNode.gain.value = 0
       } else {
-        this.gainNode.gain.value = 0.5 // Restore to default volume
+        this.gainNode.gain.value = DEFAULT_VOLUME // Restore to default volume
       }
       this.notifySubscribers()
     }
@@ -385,8 +412,19 @@ class AudioPlayerEngine {
       cancelAnimationFrame(this.animationFrameId)
       this.animationFrameId = null
     }
-    
+
     this.notifySubscribers()
+
+    // Inform any listeners that playback naturally reached the end. The
+    // surrounding application (store, hooks) decides what to do next—play
+    // another track, loop, or stop entirely.
+    this.trackEndCallbacks.forEach(cb => {
+      try {
+        cb()
+      } catch {
+        /* swallow listener errors to avoid breaking player state */
+      }
+    })
   }
 
   // State getters

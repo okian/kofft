@@ -53,6 +53,69 @@ export const useAudioFile = () => {
     }
   }, [setPlaying, setPaused, setStopped, setCurrentTime, setDuration, setVolume, setMuted])
 
+  // React to natural track endings by advancing the playlist according to
+  // loop/shuffle preferences. This keeps playback continuity entirely within
+  // the React layer and avoids tight coupling with the player engine.
+  useEffect(() => {
+    const unsubscribeEnded = audioPlayer.onTrackEnd(() => {
+      const {
+        playlist,
+        currentTrackIndex,
+        playTrack,
+        setPlaying,
+        setPaused,
+        setStopped,
+        loopMode,
+        shuffle,
+        nextTrack,
+      } = useAudioStore.getState()
+
+      const playlistLength = playlist.length
+      if (playlistLength === 0) {
+        setPlaying(false)
+        setPaused(false)
+        setStopped(true)
+        return
+      }
+
+      if (loopMode === 'one') {
+        playTrack(currentTrackIndex)
+        return
+      }
+
+      if (shuffle) {
+        if (playlistLength === 1 && loopMode === 'off') {
+          setPlaying(false)
+          setPaused(false)
+          setStopped(true)
+        } else {
+          // Delegate to store's shuffle-aware nextTrack implementation
+          nextTrack()
+        }
+        return
+      }
+
+      const isLastTrack = currentTrackIndex >= playlistLength - 1
+      if (!isLastTrack) {
+        playTrack(currentTrackIndex + 1)
+        return
+      }
+
+      if (loopMode === 'all') {
+        playTrack(0)
+        return
+      }
+
+      setPlaying(false)
+      setPaused(false)
+      setStopped(true)
+    })
+
+    return () => {
+      unsubscribeEnded()
+    }
+  }, [])
+
   // Parse metadata using WASM utility
   const parseMetadata = useCallback(async (file: File): Promise<AudioMetadata> => {
     try {
