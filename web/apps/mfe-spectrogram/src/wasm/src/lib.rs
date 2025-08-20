@@ -5,8 +5,9 @@ use js_sys::{Array, Uint32Array};
 use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
-use kofft::{dct, resample, fuzzy, wavelet};
+use kofft::{dct, fuzzy, resample, wavelet};
 use wasm_bindgen::prelude::*;
+use web_sys::console;
 
 #[wasm_bindgen(start)]
 pub fn init_panic_hook() {
@@ -151,16 +152,14 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Vec<f32> {
 }
 
 #[wasm_bindgen]
-pub fn resample_audio(
-    input: &[f32],
-    src_rate: f32,
-    dst_rate: f32,
-) -> Result<Vec<f32>, JsValue> {
+pub fn resample_audio(input: &[f32], src_rate: f32, dst_rate: f32) -> Result<Vec<f32>, JsValue> {
     resample::linear_resample(input, src_rate, dst_rate)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// FFT window length used for streaming spectrogram frames.
 const WIN_LEN: usize = 1024;
+/// Hop size between successive frames.
 const HOP: usize = 512;
 
 #[wasm_bindgen]
@@ -264,8 +263,11 @@ impl State {
     }
 }
 
-/// Generate amplitude envelope for seekbar visualization
-/// Returns an array of amplitude values (0.0 to 1.0) representing the audio envelope
+/// Number of milliseconds in one second. Used for converting window lengths.
+const MS_PER_SEC: f32 = 1000.0;
+
+/// Generate an amplitude envelope for seekbar visualisation.
+/// Returns an array of amplitude values in the range `0.0..=1.0`.
 #[wasm_bindgen]
 pub fn generate_amplitude_envelope(
     audio_data: &[f32],
@@ -275,12 +277,14 @@ pub fn generate_amplitude_envelope(
     smoothing_samples: usize,
 ) -> Vec<f32> {
     if audio_data.is_empty() || target_bars == 0 {
+        console::warn_1(&"generate_amplitude_envelope: empty input".into());
         return vec![0.0; target_bars];
     }
 
-    // Calculate window size in samples
-    let window_samples = (sample_rate as f32 * window_ms as f32 / 1000.0) as usize;
+    // Calculate window size in samples and guard against zero-length windows.
+    let window_samples = (sample_rate as f32 * window_ms as f32 / MS_PER_SEC) as usize;
     if window_samples == 0 {
+        console::warn_1(&"generate_amplitude_envelope: window length < 1 sample".into());
         return vec![0.0; target_bars];
     }
 
@@ -363,6 +367,8 @@ pub fn generate_amplitude_envelope(
         for val in &mut envelope {
             *val = (*val / max_val).min(1.0);
         }
+    } else {
+        console::warn_1(&"generate_amplitude_envelope: zero maximum amplitude".into());
     }
 
     envelope
@@ -371,6 +377,8 @@ pub fn generate_amplitude_envelope(
 /// Size of the FFT window used for per-bar amplitude analysis.
 /// Chosen as a power of two for FFT efficiency and to match the JS fallback.
 const BAR_FFT_SIZE: usize = 1024;
+/// Maximum number of bars allowed to prevent excessive allocations.
+pub(crate) const MAX_BARS: usize = 10_000;
 
 /// Compute per-bar amplitudes using an RMS/FFT pipeline.
 ///
@@ -381,27 +389,68 @@ const BAR_FFT_SIZE: usize = 1024;
 /// The resulting amplitudes are normalised to the range `0.0..=1.0`.
 #[wasm_bindgen]
 pub fn compute_bar_amplitudes(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
-    if audio_data.is_empty() || num_bars == 0 {
-        return vec![0.0; num_bars];
+    if num_bars == 0 {
+        console::warn_1(&"compute_bar_amplitudes: zero bars".into());
+        return Vec::new();
+    }
+
+    // Clamp number of bars to a sane upper bound to avoid excessive allocations.
+    let clamped_bars = if num_bars > MAX_BARS {
+        console::warn_1(
+            &format!(
+                "compute_bar_amplitudes: clamping num_bars {} to {}",
+                num_bars, MAX_BARS
+            )
+            .into(),
+        );
+        MAX_BARS
+    } else {
+        num_bars
+    };
+
+    if audio_data.is_empty() {
+        console::warn_1(&"compute_bar_amplitudes: empty input".into());
+        return vec![0.0; clamped_bars];
     }
 
     // Resample so every bar spans exactly BAR_FFT_SIZE samples.
-    let target_len = num_bars * BAR_FFT_SIZE;
-    let resampled = resample::linear_resample(
-        audio_data,
-        audio_data.len() as f32,
-        target_len as f32,
-    )
-    .unwrap_or_else(|_| audio_data.to_vec());
+    let target_len = match BAR_FFT_SIZE.checked_mul(clamped_bars) {
+        Some(len) => len,
+        None => {
+            console::error_1(&"compute_bar_amplitudes: length overflow".into());
+            return vec![0.0; clamped_bars];
+        }
+    };
+
+    let resampled =
+        match resample::linear_resample(audio_data, audio_data.len() as f32, target_len as f32) {
+            Ok(data) => data,
+            Err(e) => {
+                console::error_1(&format!("compute_bar_amplitudes: resample failed: {e}").into());
+                return vec![0.0; num_bars];
+            }
+        };
+
+    if resampled.len() != target_len {
+        console::error_1(
+            &format!(
+                "compute_bar_amplitudes: resampled length {} != {}",
+                resampled.len(),
+                target_len
+            )
+            .into(),
+        );
+        return vec![0.0; num_bars];
+    }
 
     // Pre-allocate reusable buffers to avoid repeated allocations.
     let window = hann(BAR_FFT_SIZE);
     let mut fft_buf = vec![Complex32::new(0.0, 0.0); BAR_FFT_SIZE];
     let mut fft = new_fft_impl();
 
-    let mut amplitudes = Vec::with_capacity(num_bars);
+    let mut amplitudes = Vec::with_capacity(clamped_bars);
 
-    for bar in 0..num_bars {
+    for bar in 0..clamped_bars {
         let start = bar * BAR_FFT_SIZE;
         let slice = &resampled[start..start + BAR_FFT_SIZE];
 
@@ -411,28 +460,34 @@ pub fn compute_bar_amplitudes(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
             fft_buf[i].im = 0.0;
         }
 
-        // Perform FFT in-place.
+        // Perform FFT in-place and log on failure.
         if fft.fft(&mut fft_buf).is_err() {
+            console::error_1(&format!("compute_bar_amplitudes: FFT failed at bar {bar}").into());
             amplitudes.push(0.0);
             continue;
         }
 
         // Convert spectrum to RMS magnitude using Parseval's theorem.
-        let energy: f32 = fft_buf
-            .iter()
-            .map(|c| c.re * c.re + c.im * c.im)
-            .sum();
+        let energy: f32 = fft_buf.iter().map(|c| c.re * c.re + c.im * c.im).sum();
         let rms = (energy / BAR_FFT_SIZE as f32).sqrt();
         amplitudes.push(rms);
     }
 
     // Normalise to 0.0..1.0 to simplify downstream rendering.
-    if let Some(max) = amplitudes.iter().cloned().fold(None, |acc, v| Some(acc.map_or(v, |m| m.max(v)))) {
+    if let Some(max) = amplitudes
+        .iter()
+        .cloned()
+        .fold(None, |acc, v| Some(acc.map_or(v, |m| m.max(v))))
+    {
         if max > 0.0 {
             for amp in &mut amplitudes {
                 *amp /= max;
             }
+        } else {
+            console::warn_1(&"compute_bar_amplitudes: zero maximum amplitude".into());
         }
+    } else {
+        console::warn_1(&"compute_bar_amplitudes: no amplitudes computed".into());
     }
 
     amplitudes
@@ -445,7 +500,6 @@ pub fn generate_waveform(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     // Use the new amplitude envelope function with default parameters
     generate_amplitude_envelope(audio_data, 44100, num_bars, 20, 3)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -514,5 +568,23 @@ mod tests {
         for amp in amps {
             assert!((amp - 1.0).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn compute_bar_amplitudes_empty_input() {
+        // Empty audio or zero bars should yield a zero-filled vector without panicking.
+        let amps = compute_bar_amplitudes(&[], 5);
+        assert_eq!(amps, vec![0.0; 5]);
+        let amps = compute_bar_amplitudes(&[1.0, 2.0], 0);
+        assert!(amps.is_empty());
+    }
+
+    #[test]
+    fn compute_bar_amplitudes_overflow_safe() {
+        // An excessively large bar count must be clamped and not panic.
+        let bars = usize::MAX / BAR_FFT_SIZE + 1;
+        let amps = compute_bar_amplitudes(&[0.0; 10], bars);
+        assert_eq!(amps.len(), MAX_BARS);
+        assert!(amps.iter().all(|&a| a == 0.0));
     }
 }
