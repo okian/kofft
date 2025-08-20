@@ -120,8 +120,8 @@ export function CanvasWaveformSeekbar({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const width =
-      (canvas.width = numBars * (effectiveBarWidth + barGap) - barGap);
+    const width = (canvas.width =
+      numBars * (effectiveBarWidth + barGap) - barGap);
     const height = (canvas.height = maxBarHeight);
 
     const style = getComputedStyle(containerRef.current!);
@@ -151,6 +151,8 @@ export function CanvasWaveformSeekbar({
             barWidth: effectiveBarWidth,
             barGap,
             numBars,
+            disabled,
+            background: backgroundColor,
             colors: {
               played: playedColor,
               unplayed: unplayedColor,
@@ -342,7 +344,10 @@ export function CanvasWaveformSeekbar({
         className,
       )}
       // Background color uses CSS variable so theme changes propagate
-      style={{ height: maxBarHeight + 20, backgroundColor: "var(--seek-background)" }}
+      style={{
+        height: maxBarHeight + 20,
+        backgroundColor: "var(--seek-background)",
+      }}
       onPointerDown={handleSeekStart}
       onPointerMove={handleSeekMove}
       onPointerUp={handleSeekEnd}
@@ -380,6 +385,13 @@ function drawWithWebGL(
     barWidth: number;
     barGap: number;
     numBars: number;
+    /**
+     * When true all bars use the disabled color regardless of progress.
+     * We thread this state through so the WebGL path matches the 2D one.
+     */
+    disabled: boolean;
+    /** Background color used to clear the canvas. */
+    background: string;
     colors: {
       played: string;
       unplayed: string;
@@ -389,7 +401,7 @@ function drawWithWebGL(
     };
   },
 ) {
-  const { barWidth, barGap, numBars, colors } = opts;
+  const { barWidth, barGap, numBars, colors, background, disabled } = opts;
 
   const vertexSrc = `
     attribute vec2 a_position;
@@ -426,7 +438,8 @@ function drawWithWebGL(
 
   for (let i = 0; i < numBars; i++) {
     const amplitude = peaks[i];
-    const barHeight = Math.max(amplitude * height, 2);
+    // Ensure a minimum bar height so tiny peaks remain visible.
+    const barHeight = Math.max(amplitude * height, MIN_BAR_HEIGHT);
     const x = i * (barWidth + barGap);
     const left = (x / width) * 2 - 1;
     const right = ((x + barWidth) / width) * 2 - 1;
@@ -434,8 +447,11 @@ function drawWithWebGL(
     const top = barHeight / height;
     const bottom = -top;
 
+    // Determine bar color. When disabled we ignore progress/buffered state
+    // and draw every bar using the disabled palette for consistency.
     let color = colors.unplayed;
-    if (barPosition <= progress) color = colors.played;
+    if (disabled) color = colors.disabled;
+    else if (barPosition <= progress) color = colors.played;
     else if (barPosition <= buffered) color = colors.buffered;
 
     const rgb = hexToRgb(color.trim()).map((v) => v / 255) as [
@@ -479,7 +495,10 @@ function drawWithWebGL(
   gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
 
   gl.viewport(0, 0, width, height);
-  gl.clearColor(0, 0, 0, 0);
+  // WebGL defaults to transparent black. Explicitly clear with the computed
+  // background color so the canvas matches the CSS styling.
+  const bg = hexToRgb(background.trim());
+  gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 2);
 }
