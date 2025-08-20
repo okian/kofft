@@ -11,7 +11,7 @@ interface WASMModule {
     windowMs: number,
     smoothingSamples: number,
   ) => Float32Array;
-  compute_waveform_peaks: (
+  compute_bar_amplitudes: (
     audioData: Float32Array,
     numBars: number,
   ) => Float32Array;
@@ -31,6 +31,10 @@ interface MetadataWASMModule {
 let wasmModule: WASMModule | null = null;
 let isInitializing = false;
 let initPromise: Promise<WASMModule | null> | null = null;
+
+// Fixed number of samples used for each visualisation bar.  Matching the
+// constant used in the WASM implementation keeps the two paths in sync.
+const BAR_SAMPLES = 1024;
 
 // Initialize WASM module
 export async function initWASM(): Promise<WASMModule | null> {
@@ -96,11 +100,15 @@ export async function generateWaveform(
   audioData: Float32Array,
   numBars: number,
 ): Promise<Float32Array> {
+  const targetLength = numBars * BAR_SAMPLES;
+  const resampled =
+    (await resampleAudio(audioData, audioData.length, targetLength)) ??
+    linearResample(audioData, targetLength);
   try {
     const module = await initWASM();
     if (module && module.generate_waveform) {
       try {
-        return module.generate_waveform(audioData, numBars);
+        return module.generate_waveform(resampled, numBars);
       } catch (error) {
         // WASM waveform generation failed, falling back to JS
       }
@@ -108,7 +116,7 @@ export async function generateWaveform(
   } catch (error) {
     // WASM module not available for waveform generation
   }
-  return generateWaveformJS(audioData, numBars);
+  return generateWaveformJS(resampled, numBars);
 }
 
 // Generate amplitude envelope using WASM
@@ -151,11 +159,22 @@ export function computeWaveformPeaksWASM(
   audioData: Float32Array,
   numBars: number,
 ): Float32Array | null {
-  if (!wasmModule || !wasmModule.compute_waveform_peaks) {
+  if (!wasmModule || !wasmModule.compute_bar_amplitudes) {
     return null;
   }
   try {
-    return wasmModule.compute_waveform_peaks(audioData, numBars);
+    const targetLength = numBars * BAR_SAMPLES;
+    let buffer: Float32Array;
+    if (wasmModule.resample_audio) {
+      buffer = wasmModule.resample_audio(
+        audioData,
+        audioData.length,
+        targetLength,
+      );
+    } else {
+      buffer = linearResample(audioData, targetLength);
+    }
+    return wasmModule.compute_bar_amplitudes(buffer, numBars);
   } catch (error) {
     return null;
   }
@@ -182,17 +201,14 @@ function generateWaveformJS(
       continue;
     }
 
-    const chunk = audioData.slice(start, end);
-    if (chunk.length === 0) {
-      waveform[i] = 0;
-      continue;
+    let sumSquares = 0;
+    for (let j = start; j < end; j++) {
+      const sample = audioData[j];
+      sumSquares += sample * sample;
     }
+    const count = Math.max(end - start, 1);
+    const rms = Math.sqrt(sumSquares / count);
 
-    // Calculate RMS (Root Mean Square) for amplitude
-    const sumSquares = chunk.reduce((sum, sample) => sum + sample * sample, 0);
-    const rms = Math.sqrt(sumSquares / chunk.length);
-
-    // Normalize to 0.0-1.0 range and apply some smoothing
     const amplitude = Math.min(rms * 2, 1.0); // Scale up and clamp
     waveform[i] = amplitude;
   }
@@ -214,7 +230,6 @@ function generateAmplitudeEnvelopeJS(
 
   const envelope = new Float32Array(targetBars);
   const samplesPerBar = Math.ceil(audioData.length / targetBars);
-  const windowSize = Math.round((sampleRate * windowMs) / 1000);
   const smoothingWindow = Math.round((sampleRate * smoothingSamples) / 1000);
 
   for (let i = 0; i < targetBars; i++) {
@@ -226,22 +241,48 @@ function generateAmplitudeEnvelopeJS(
       continue;
     }
 
-    const chunk = audioData.slice(start, end);
-    if (chunk.length === 0) {
-      envelope[i] = 0;
-      continue;
+    let sumSquares = 0;
+    for (let j = start; j < end; j++) {
+      const sample = audioData[j];
+      sumSquares += sample * sample;
     }
-
-    // Calculate RMS (Root Mean Square) for amplitude
-    const sumSquares = chunk.reduce((sum, sample) => sum + sample * sample, 0);
-    const rms = Math.sqrt(sumSquares / chunk.length);
+    const count = Math.max(end - start, 1);
+    const rms = Math.sqrt(sumSquares / count);
 
     // Apply windowing and smoothing
-    const windowedRms = rms * (1 - Math.exp(-(i + 1) / smoothingWindow)); // Exponential smoothing
+    const windowedRms =
+      rms * (1 - Math.exp(-(i + 1) / smoothingWindow)); // Exponential smoothing
     envelope[i] = windowedRms;
   }
 
   return envelope;
+}
+
+// Linear resampler used when the WASM helper is unavailable.  Resamples to a
+// specific target length while ensuring the final sample of the output matches
+// the final input sample.
+function linearResample(
+  input: Float32Array,
+  targetLength: number,
+): Float32Array {
+  if (targetLength <= 0 || input.length === 0) {
+    return new Float32Array(targetLength);
+  }
+  const output = new Float32Array(targetLength);
+  if (targetLength === 1) {
+    output[0] = input[input.length - 1];
+    return output;
+  }
+  const ratio = (input.length - 1) / (targetLength - 1);
+  for (let i = 0; i < targetLength; i++) {
+    const pos = i * ratio;
+    const idx = Math.floor(pos);
+    const frac = pos - idx;
+    const s0 = input[idx];
+    const s1 = input[idx + 1 < input.length ? idx + 1 : idx];
+    output[i] = s0 + (s1 - s0) * frac;
+  }
+  return output;
 }
 
 // Check if WASM is available

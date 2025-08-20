@@ -172,6 +172,35 @@ export function normalize_audio(audio_data) {
   return v2;
 }
 
+/**
+ * @param {Float32Array} audio_data
+ * @param {number} src_rate
+ * @param {number} dst_rate
+ * @returns {Float32Array}
+ */
+export function resample_audio(audio_data, src_rate, dst_rate) {
+  const ptr0 = passArrayF32ToWasm0(audio_data, wasm.__wbindgen_malloc);
+  const len0 = WASM_VECTOR_LEN;
+  const ret = wasm.resample_audio(ptr0, len0, src_rate, dst_rate);
+  var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+  wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+  return v4;
+}
+
+/**
+ * @param {Float32Array} audio_data
+ * @param {number} num_bars
+ * @returns {Float32Array}
+ */
+export function compute_bar_amplitudes(audio_data, num_bars) {
+  const ptr0 = passArrayF32ToWasm0(audio_data, wasm.__wbindgen_malloc);
+  const len0 = WASM_VECTOR_LEN;
+  const ret = wasm.compute_bar_amplitudes(ptr0, len0, num_bars);
+  var v3 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+  wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+  return v3;
+}
+
 export function start() {
   wasm.start();
 }
