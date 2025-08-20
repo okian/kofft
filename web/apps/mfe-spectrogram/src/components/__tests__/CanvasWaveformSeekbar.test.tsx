@@ -1,4 +1,4 @@
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi, beforeAll } from "vitest";
 // Minimal browser APIs for modules that depend on animation frames.
 (globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
@@ -29,7 +29,6 @@ describe("CanvasWaveformSeekbar", () => {
     fillStyle: "",
   } as unknown as CanvasRenderingContext2D;
   let resizeCb: any;
-  let mutationCb: any;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -42,7 +41,6 @@ describe("CanvasWaveformSeekbar", () => {
       (type: string) => (type === "2d" ? mockCtx : null),
     );
     resizeCb = undefined;
-    mutationCb = undefined;
     (global as any).ResizeObserver = class {
       constructor(cb: any) {
         resizeCb = cb;
@@ -50,16 +48,19 @@ describe("CanvasWaveformSeekbar", () => {
       observe() {}
       disconnect() {}
     };
-    (global as any).MutationObserver = class {
-      constructor(cb: any) {
-        mutationCb = cb;
-      }
-      observe() {}
-      disconnect() {}
-    };
-    getComputedStyleSpy = vi
-      .spyOn(window, "getComputedStyle")
-      .mockReturnValue({ getPropertyValue: () => "" } as any);
+    // Provide default colour variables so the component can render.
+    getComputedStyleSpy = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      getPropertyValue: (prop: string) =>
+        (
+          ({
+            "--seek-played": "#010101",
+            "--seek-unplayed": "#020202",
+            "--seek-buffered": "#030303",
+            "--seek-disabled": "#040404",
+            "--seek-playhead": "#050505",
+          }) as Record<string, string>
+        )[prop] || "",
+    } as any);
     // Provide browser APIs required by imported utilities
     (global as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
       setTimeout(cb, 0);
@@ -81,7 +82,11 @@ describe("CanvasWaveformSeekbar", () => {
     await Promise.resolve();
     expect(mockCtx.roundRect).toHaveBeenCalled();
     const barCall = mockCtx.roundRect.mock.calls[0];
-    expect({ y: barCall[1], h: barCall[3], r: barCall[4] }).toMatchInlineSnapshot(
+    expect({
+      y: barCall[1],
+      h: barCall[3],
+      r: barCall[4],
+    }).toMatchInlineSnapshot(
       `{
   "y": 19,
   "h": 2,
@@ -321,8 +326,9 @@ describe("CanvasWaveformSeekbar", () => {
       />,
     );
     expect(mockCtx.clearRect).toHaveBeenCalledTimes(1);
-    // Trigger MutationObserver callback to simulate theme change.
-    mutationCb([{ attributeName: "class" }]);
+    // Changing the theme in the store should trigger a redraw.
+    const { useSettingsStore } = await import("@/shared/stores/settingsStore");
+    useSettingsStore.getState().setTheme("light");
     await Promise.resolve();
     expect(mockCtx.clearRect).toHaveBeenCalledTimes(2);
   });
@@ -385,6 +391,46 @@ describe("CanvasWaveformSeekbar", () => {
     await Promise.resolve();
     const disabled = ctx.getImageData(9, y, 1, 1).data;
     expect(Array.from(disabled)).toEqual([10, 11, 12, 255]);
+  });
+
+  it("updates bar colours when theme toggles", async () => {
+    // Use a real canvas and real CSS variable updates via the settings store.
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+    (global as any).ResizeObserver = class {
+      constructor() {}
+      observe() {}
+      disconnect() {}
+    };
+
+    const { useSettingsStore } = await import("@/shared/stores/settingsStore");
+    const audioData = new Float32Array([1, 1, 1, 1]);
+    const { getByTestId } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={2}
+        duration={4}
+        onSeek={() => {}}
+      />,
+    );
+
+    resizeCb([{ contentRect: { width: 40 } }]);
+    await Promise.resolve();
+    const canvas = getByTestId("progress-bar").querySelector("canvas")!;
+    const ctx = canvas.getContext("2d")!;
+    const y = Math.floor(canvas.height / 2);
+
+    let played = ctx.getImageData(9, y, 1, 1).data;
+    expect(Array.from(played)).toEqual([59, 130, 246, 255]); // dark theme accent
+
+    await act(async () => {
+      useSettingsStore.getState().setTheme("light");
+    });
+    resizeCb([{ contentRect: { width: 40 } }]);
+    await Promise.resolve();
+
+    played = ctx.getImageData(9, y, 1, 1).data;
+    expect(Array.from(played)).toEqual([37, 99, 235, 255]); // light theme accent
   });
 
   it("prefers WebGPU when available", async () => {

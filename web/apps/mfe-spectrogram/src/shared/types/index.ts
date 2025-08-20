@@ -128,6 +128,16 @@ export interface SpectrogramSettings {
   colormap: string;
   showLegend: boolean;
   enableToastNotifications: boolean;
+  /**
+   * Optional override for the played portion of the seekbar.
+   * When empty, the active theme's accent color is used.
+   */
+  seekPlayedColor?: string;
+  /**
+   * Optional override for the unplayed portion of the seekbar.
+   * Falls back to the theme's primary color when unset.
+   */
+  seekUnplayedColor?: string;
   // API Keys
   apiKeys: APIKeys;
   apiKeyStatus: APIKeyStatus;
