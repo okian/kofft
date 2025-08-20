@@ -4,11 +4,14 @@ import { describe, it, expect, beforeEach, vi, beforeAll } from "vitest";
 (globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
   setTimeout(cb, 0);
 (globalThis as any).cancelAnimationFrame = (id: number) => clearTimeout(id);
+// Mock WASM module used by waveform utilities to avoid resolution errors
+vi.mock("@wasm/react_spectrogram_wasm", () => ({ default: async () => {} }), {
+  virtual: true,
+});
 let CanvasWaveformSeekbar: any;
 beforeAll(async () => {
-  CanvasWaveformSeekbar = (
-    await import("../spectrogram/CanvasWaveformSeekbar")
-  ).CanvasWaveformSeekbar;
+  CanvasWaveformSeekbar = (await import("../spectrogram/CanvasWaveformSeekbar"))
+    .CanvasWaveformSeekbar;
 });
 
 describe("CanvasWaveformSeekbar", () => {
@@ -271,5 +274,70 @@ describe("CanvasWaveformSeekbar", () => {
     mutationCb([{ attributeName: "class" }]);
     await Promise.resolve();
     expect(mockCtx.clearRect).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders correct colors for played, unplayed and disabled states", async () => {
+    // Use a real canvas to inspect pixel data instead of the mocked context.
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+    (global as any).ResizeObserver = class {
+      constructor() {}
+      observe() {}
+      disconnect() {}
+    };
+    (global as any).MutationObserver = class {
+      constructor() {}
+      observe() {}
+      disconnect() {}
+    };
+    const colorVars: Record<string, string> = {
+      "--seek-played": "#010203",
+      "--seek-unplayed": "#040506",
+      "--seek-background": "#000000",
+      "--seek-buffered": "#070809",
+      "--seek-disabled": "#0a0b0c",
+      "--seek-playhead": "#ffffff",
+    };
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      getPropertyValue: (prop: string) => colorVars[prop] || "",
+    } as any);
+
+    const audioData = new Float32Array([1, 1, 1, 1]);
+    const { getByTestId, rerender } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={2}
+        duration={4}
+        onSeek={() => {}}
+        numBars={4}
+        barWidth={2}
+        barGap={1}
+      />,
+    );
+    await Promise.resolve();
+    const canvas = getByTestId("progress-bar").querySelector("canvas")!;
+    const ctx = canvas.getContext("2d")!;
+    const y = Math.floor(canvas.height / 2);
+    const played = ctx.getImageData(1, y, 1, 1).data;
+    const unplayed = ctx.getImageData(10, y, 1, 1).data;
+    expect(Array.from(played)).toEqual([1, 2, 3, 255]);
+    expect(Array.from(unplayed)).toEqual([4, 5, 6, 255]);
+
+    // Disabled state paints every bar using the disabled color.
+    rerender(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={4}
+        onSeek={() => {}}
+        numBars={4}
+        barWidth={2}
+        barGap={1}
+        disabled
+      />,
+    );
+    await Promise.resolve();
+    const disabled = ctx.getImageData(1, y, 1, 1).data;
+    expect(Array.from(disabled)).toEqual([10, 11, 12, 255]);
   });
 });
