@@ -1,6 +1,15 @@
 import { render, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { CanvasWaveformSeekbar } from "../spectrogram/CanvasWaveformSeekbar";
+import { describe, it, expect, beforeEach, vi, beforeAll } from "vitest";
+// Minimal browser APIs for modules that depend on animation frames.
+(globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
+  setTimeout(cb, 0);
+(globalThis as any).cancelAnimationFrame = (id: number) => clearTimeout(id);
+let CanvasWaveformSeekbar: any;
+beforeAll(async () => {
+  CanvasWaveformSeekbar = (
+    await import("../spectrogram/CanvasWaveformSeekbar")
+  ).CanvasWaveformSeekbar;
+});
 
 describe("CanvasWaveformSeekbar", () => {
   const mockCtx = {
@@ -8,19 +17,39 @@ describe("CanvasWaveformSeekbar", () => {
     clearRect: vi.fn(),
     fillStyle: "",
   } as unknown as CanvasRenderingContext2D;
+  let resizeCb: any;
+  let mutationCb: any;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockCtx.fillRect.mockReset();
+    mockCtx.clearRect.mockReset();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
       mockCtx,
     );
+    resizeCb = undefined;
+    mutationCb = undefined;
     (global as any).ResizeObserver = class {
+      constructor(cb: any) {
+        resizeCb = cb;
+      }
+      observe() {}
+      disconnect() {}
+    };
+    (global as any).MutationObserver = class {
+      constructor(cb: any) {
+        mutationCb = cb;
+      }
       observe() {}
       disconnect() {}
     };
     vi.spyOn(window, "getComputedStyle").mockReturnValue({
       getPropertyValue: () => "",
     } as any);
+    // Provide browser APIs required by imported utilities
+    (global as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
+      setTimeout(cb, 0);
+    (global as any).cancelAnimationFrame = (id: number) => clearTimeout(id);
   });
 
   it("renders waveform bars centered on canvas", () => {
@@ -34,9 +63,28 @@ describe("CanvasWaveformSeekbar", () => {
       />,
     );
     expect(mockCtx.fillRect).toHaveBeenCalled();
-    const firstCall = mockCtx.fillRect.mock.calls[0];
-    expect(firstCall[1]).toBe(19); // y position centered for barHeight 2
-    expect(firstCall[3]).toBe(2); // barHeight
+    // First fillRect paints the background. The second represents the first bar.
+    const barCall = mockCtx.fillRect.mock.calls[1];
+    expect(barCall[1]).toBe(19); // y position centered for barHeight 2
+    expect(barCall[3]).toBe(2); // barHeight
+  });
+
+  it("renders a fixed number of bars", () => {
+    const audioData = new Float32Array(1000);
+    render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={10}
+        onSeek={() => {}}
+        numBars={10}
+      />,
+    );
+    const firstBarWidth = mockCtx.fillRect.mock.calls[1][2];
+    const barCalls = mockCtx.fillRect.mock.calls.filter(
+      (c) => c[2] === firstBarWidth,
+    );
+    expect(barCalls.length).toBe(10);
   });
 
   it("handles click to seek", () => {
@@ -206,5 +254,22 @@ describe("CanvasWaveformSeekbar", () => {
     fireEvent.pointerUp(bar, { clientX: 30 });
     expect(onSeek).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+
+  it("redraws when theme changes", async () => {
+    const audioData = new Float32Array(1000);
+    render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={10}
+        onSeek={() => {}}
+      />,
+    );
+    expect(mockCtx.clearRect).toHaveBeenCalledTimes(1);
+    // Trigger MutationObserver callback to simulate theme change.
+    mutationCb([{ attributeName: "class" }]);
+    await Promise.resolve();
+    expect(mockCtx.clearRect).toHaveBeenCalledTimes(2);
   });
 });
