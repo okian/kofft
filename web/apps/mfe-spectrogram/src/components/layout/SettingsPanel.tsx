@@ -23,7 +23,7 @@ import {
 } from "@/types";
 import { THEME_COLORS } from "@/shared/theme";
 import { cn } from "@/utils/cn";
-import { directToast } from "@/utils/toast";
+import { conditionalToast, directToast } from "@/utils/toast";
 import { MetadataStorePanel } from "./MetadataStorePanel";
 import { StatisticsPanel } from "./StatisticsPanel";
 
@@ -97,6 +97,11 @@ export function SettingsPanel({
     });
   };
 
+  /**
+   * Validate a user-supplied API key.
+   * Fetches the validation function lazily from the settings store and
+   * surfaces any errors instead of failing silently.
+   */
   const validateAPIKey = async (service: "acoustid" | "musicbrainz") => {
     setValidatingKeys((prev) => ({ ...prev, [service]: true }));
 
@@ -115,7 +120,10 @@ export function SettingsPanel({
         });
       }
     } catch (error) {
-      // Silently handle API key validation error
+      console.error("API key validation failed", error);
+      conditionalToast.error(
+        "API key validation failed. Please verify the key and network connection.",
+      );
     } finally {
       setValidatingKeys((prev) => ({ ...prev, [service]: false }));
     }
@@ -321,7 +329,9 @@ export function SettingsPanel({
                 </h4>
                 {/* Mode selection */}
                 <div className="mb-3">
-                  <span className="block text-xs text-neutral-400 mb-1">Mode</span>
+                  <span className="block text-xs text-neutral-400 mb-1">
+                    Mode
+                  </span>
                   <div className="flex flex-col gap-1">
                     {[
                       { value: "live", label: "Live" },
