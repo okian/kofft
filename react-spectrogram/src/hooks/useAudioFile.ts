@@ -84,7 +84,7 @@ export const useAudioFile = () => {
       }
 
       if (shuffle) {
-        if (playlistLength <= 1 && loopMode === 'off') {
+        if (playlistLength === 1 && loopMode === 'off') {
           setPlaying(false)
           setPaused(false)
           setStopped(true)
