@@ -10,8 +10,18 @@ const mockSettings = {
   refreshRate: 60 as const,
   colormap: "viridis",
   showLegend: true,
+  enableToastNotifications: false,
   seekPlayedColor: "",
   seekUnplayedColor: "",
+  seekbarMode: "waveform" as const,
+  seekbarSignificance: 0.5,
+  seekbarAmplitudeScale: 1,
+  apiKeys: {},
+  apiKeyStatus: { acoustid: { valid: false }, musicbrainz: { valid: false } },
+  enableExternalArtwork: true,
+  enableAcoustID: true,
+  enableMusicBrainz: true,
+  enablePlaceholderArtwork: true,
 };
 
 const mockOnSettingsChange = vi.fn();
@@ -156,8 +166,21 @@ describe("SettingsPanel", () => {
       refreshRate: 60,
       colormap: "viridis",
       showLegend: true,
+      enableToastNotifications: false,
       seekPlayedColor: "",
       seekUnplayedColor: "",
+      seekbarMode: "waveform",
+      seekbarSignificance: 0.5,
+      seekbarAmplitudeScale: 1,
+      enableExternalArtwork: true,
+      enableAcoustID: true,
+      enableMusicBrainz: true,
+      enablePlaceholderArtwork: true,
+      apiKeys: {},
+      apiKeyStatus: {
+        acoustid: { valid: false },
+        musicbrainz: { valid: false },
+      },
     });
   });
 
@@ -188,6 +211,37 @@ describe("SettingsPanel", () => {
     expect(mockOnSettingsChange).toHaveBeenCalledWith({
       seekPlayedColor: "",
       seekUnplayedColor: "",
+    });
+  });
+
+  it("handles seekbar mode and scaling options", () => {
+    render(
+      <SettingsPanel
+        settings={mockSettings}
+        isOpen={true}
+        onClose={mockOnClose}
+        onSettingsChange={mockOnSettingsChange}
+      />,
+    );
+
+    // Change mode
+    fireEvent.click(screen.getByLabelText("Animated Frequency Bars"));
+    expect(mockOnSettingsChange).toHaveBeenCalledWith({
+      seekbarMode: "frequency",
+    });
+
+    // Change significance level
+    const sigInput = screen.getByLabelText("Significance") as HTMLInputElement;
+    fireEvent.input(sigInput, { target: { value: "0.7" } });
+    expect(mockOnSettingsChange).toHaveBeenCalledWith({
+      seekbarSignificance: 0.7,
+    });
+
+    // Change amplitude scale
+    const ampInput = screen.getByLabelText("Amplitude Scale") as HTMLInputElement;
+    fireEvent.input(ampInput, { target: { value: "2" } });
+    expect(mockOnSettingsChange).toHaveBeenCalledWith({
+      seekbarAmplitudeScale: 2,
     });
   });
 });

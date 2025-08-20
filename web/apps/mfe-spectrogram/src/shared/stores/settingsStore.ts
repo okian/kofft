@@ -27,6 +27,12 @@ interface SettingsStore extends SpectrogramSettings {
   setSeekUnplayedColor: (color: string) => void;
   /** Clears both colour overrides, reverting to theme defaults. */
   resetSeekbarColors: () => void;
+  /** Selects how the seek bar visualises audio data. */
+  setSeekbarMode: (mode: "live" | "frequency" | "waveform") => void;
+  /** Adjusts the statistical significance level used when drawing bars. */
+  setSeekbarSignificance: (level: number) => void;
+  /** Scales bar amplitudes without altering audio. */
+  setSeekbarAmplitudeScale: (scale: number) => void;
   updateSettings: (settings: Partial<SpectrogramSettings>) => void;
   resetToDefaults: () => void;
   loadFromStorage: () => void;
@@ -56,6 +62,10 @@ const defaultSettings: SpectrogramSettings = {
   // Seekbar color overrides: empty strings mean use theme defaults.
   seekPlayedColor: "",
   seekUnplayedColor: "",
+  // Seekbar visualisation defaults
+  seekbarMode: "waveform",
+  seekbarSignificance: 0.5,
+  seekbarAmplitudeScale: 1,
   // API Keys
   apiKeys: {},
   apiKeyStatus: {
@@ -90,6 +100,24 @@ export const useSettingsStore = create<SettingsStore>()(
     // Reset both colours back to theme-driven defaults in one cheap update.
     resetSeekbarColors: () =>
       set({ seekPlayedColor: "", seekUnplayedColor: "" }),
+
+    // Seek bar configuration setters with basic validation to fail fast on
+    // invalid input. Each setter clamps or verifies inputs instead of silently
+    // accepting broken values that could later crash rendering code.
+    setSeekbarMode: (seekbarMode) => {
+      if (!['live', 'frequency', 'waveform'].includes(seekbarMode))
+        throw new Error('invalid seekbar mode');
+      set({ seekbarMode });
+    },
+    setSeekbarSignificance: (seekbarSignificance) => {
+      const level = Math.min(1, Math.max(0, seekbarSignificance));
+      set({ seekbarSignificance: level });
+    },
+    setSeekbarAmplitudeScale: (seekbarAmplitudeScale) => {
+      if (!Number.isFinite(seekbarAmplitudeScale) || seekbarAmplitudeScale <= 0)
+        throw new Error('seekbarAmplitudeScale must be positive');
+      set({ seekbarAmplitudeScale });
+    },
 
     updateSettings: (settings) => {
       set((state) => ({ ...state, ...settings }));
