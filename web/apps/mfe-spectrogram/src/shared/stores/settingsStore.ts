@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+import { THEME_COLORS } from "@/shared/theme";
 import {
   SpectrogramSettings,
   Theme,
@@ -50,6 +51,7 @@ interface SettingsStore extends SpectrogramSettings {
   setEnablePlaceholderArtwork: (enable: boolean) => void;
 }
 
+/** Default settings used when no user overrides are present. */
 const defaultSettings: SpectrogramSettings = {
   theme: "dark",
   amplitudeScale: "db",
@@ -79,7 +81,64 @@ const defaultSettings: SpectrogramSettings = {
   enablePlaceholderArtwork: true,
 };
 
-const STORAGE_KEY = "spectrogram-settings";
+/** Key used for persisting settings in localStorage. */
+export const STORAGE_KEY = "spectrogram-settings";
+
+/** Allowed seekbar modes. Exported for validation in tests. */
+export const VALID_SEEKBAR_MODES = ["live", "frequency", "waveform"] as const;
+/** Minimum accepted seekbar significance. */
+const SEEKBAR_MIN_SIGNIFICANCE = 0;
+/** Maximum accepted seekbar significance. */
+const SEEKBAR_MAX_SIGNIFICANCE = 1;
+
+/** Trim and validate a CSS colour string. Returns empty string if invalid. */
+function sanitiseColor(color: string): string {
+  const trimmed = color.trim();
+  if (trimmed) {
+    const cssSupported =
+      typeof CSS !== "undefined" && (CSS as any).supports?.("color", trimmed);
+    const hexMatch = /^#([0-9a-fA-F]{3}){1,2}$/.test(trimmed);
+    if (!cssSupported && !hexMatch) {
+      console.warn("Invalid colour override", trimmed);
+      return "";
+    }
+  }
+  return trimmed;
+}
+
+/** Filter and validate a partially loaded settings object. */
+function sanitiseSettings(input: any): SpectrogramSettings {
+  const result: SpectrogramSettings = { ...defaultSettings };
+  if (typeof input !== "object" || !input) return result;
+
+  if (typeof input.theme === "string" && input.theme in THEME_COLORS)
+    result.theme = input.theme as Theme;
+
+  if (typeof input.seekPlayedColor === "string")
+    result.seekPlayedColor = sanitiseColor(input.seekPlayedColor);
+
+  if (typeof input.seekUnplayedColor === "string")
+    result.seekUnplayedColor = sanitiseColor(input.seekUnplayedColor);
+
+  if (VALID_SEEKBAR_MODES.includes(input.seekbarMode))
+    result.seekbarMode = input.seekbarMode as any;
+
+  if (typeof input.seekbarSignificance === "number") {
+    const level = Math.min(
+      SEEKBAR_MAX_SIGNIFICANCE,
+      Math.max(SEEKBAR_MIN_SIGNIFICANCE, input.seekbarSignificance),
+    );
+    result.seekbarSignificance = level;
+  }
+
+  if (
+    typeof input.seekbarAmplitudeScale === "number" &&
+    input.seekbarAmplitudeScale > 0
+  )
+    result.seekbarAmplitudeScale = input.seekbarAmplitudeScale;
+
+  return result;
+}
 
 export const useSettingsStore = create<SettingsStore>()(
   subscribeWithSelector((set, get) => ({
@@ -95,8 +154,10 @@ export const useSettingsStore = create<SettingsStore>()(
     setEnableToastNotifications: (enableToastNotifications) =>
       set({ enableToastNotifications }),
     // Store colour overrides individually to avoid unnecessary object copies.
-    setSeekPlayedColor: (seekPlayedColor) => set({ seekPlayedColor }),
-    setSeekUnplayedColor: (seekUnplayedColor) => set({ seekUnplayedColor }),
+    setSeekPlayedColor: (color) =>
+      set({ seekPlayedColor: sanitiseColor(color) }),
+    setSeekUnplayedColor: (color) =>
+      set({ seekUnplayedColor: sanitiseColor(color) }),
     // Reset both colours back to theme-driven defaults in one cheap update.
     resetSeekbarColors: () =>
       set({ seekPlayedColor: "", seekUnplayedColor: "" }),
@@ -105,22 +166,46 @@ export const useSettingsStore = create<SettingsStore>()(
     // invalid input. Each setter clamps or verifies inputs instead of silently
     // accepting broken values that could later crash rendering code.
     setSeekbarMode: (seekbarMode) => {
-      if (!['live', 'frequency', 'waveform'].includes(seekbarMode))
-        throw new Error('invalid seekbar mode');
+      if (!VALID_SEEKBAR_MODES.includes(seekbarMode as any)) {
+        console.error("invalid seekbar mode", seekbarMode);
+        throw new Error("invalid seekbar mode");
+      }
       set({ seekbarMode });
     },
     setSeekbarSignificance: (seekbarSignificance) => {
-      const level = Math.min(1, Math.max(0, seekbarSignificance));
+      if (!Number.isFinite(seekbarSignificance)) {
+        console.error(
+          "seekbarSignificance must be finite",
+          seekbarSignificance,
+        );
+        throw new Error("seekbarSignificance must be finite");
+      }
+      const level = Math.min(
+        SEEKBAR_MAX_SIGNIFICANCE,
+        Math.max(SEEKBAR_MIN_SIGNIFICANCE, seekbarSignificance),
+      );
+      if (level !== seekbarSignificance) {
+        console.warn("seekbarSignificance clamped", seekbarSignificance);
+      }
       set({ seekbarSignificance: level });
     },
     setSeekbarAmplitudeScale: (seekbarAmplitudeScale) => {
-      if (!Number.isFinite(seekbarAmplitudeScale) || seekbarAmplitudeScale <= 0)
-        throw new Error('seekbarAmplitudeScale must be positive');
+      if (
+        !Number.isFinite(seekbarAmplitudeScale) ||
+        seekbarAmplitudeScale <= 0
+      ) {
+        console.error(
+          "seekbarAmplitudeScale must be a positive finite number",
+          seekbarAmplitudeScale,
+        );
+        throw new Error("seekbarAmplitudeScale must be positive");
+      }
       set({ seekbarAmplitudeScale });
     },
 
     updateSettings: (settings) => {
-      set((state) => ({ ...state, ...settings }));
+      const sanitised = sanitiseSettings(settings);
+      set((state) => ({ ...state, ...sanitised }));
     },
 
     resetToDefaults: () => {
@@ -131,13 +216,12 @@ export const useSettingsStore = create<SettingsStore>()(
       try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
-          const settings = JSON.parse(stored);
-          // Ensure all required fields are present
-          const mergedSettings = { ...defaultSettings, ...settings };
-          set((state) => ({ ...state, ...mergedSettings }));
+          const parsed = JSON.parse(stored);
+          const settings = sanitiseSettings(parsed);
+          set((state) => ({ ...state, ...settings }));
         }
       } catch (error) {
-        // Failed to load settings from storage
+        console.error("Failed to load settings", error);
       }
     },
 
@@ -146,7 +230,7 @@ export const useSettingsStore = create<SettingsStore>()(
         const settings = get();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
       } catch (error) {
-        // Failed to save settings to storage
+        console.error("Failed to save settings", error);
       }
     },
 
