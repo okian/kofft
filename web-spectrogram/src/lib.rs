@@ -6,9 +6,6 @@ use kofft::window::hann;
 use kofft::{dct, wavelet};
 use wasm_bindgen::prelude::*;
 
-pub mod seek_bar;
-pub use seek_bar::{compute_seek_bar, SeekBar};
-
 const WIN_LEN: usize = 1024;
 const HOP: usize = WIN_LEN / 2;
 const FLOOR_DB: f32 = -80.0;
@@ -123,7 +120,13 @@ impl FftResult {
 
     #[wasm_bindgen(getter)]
     pub fn im(&self) -> Vec<f32> {
-        self.im.clone()
+    pub fn re(&self) -> Float32Array {
+        Float32Array::from(self.re.as_slice())
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn im(&self) -> Float32Array {
+        Float32Array::from(self.im.as_slice())
     }
 }
 
@@ -161,7 +164,13 @@ impl HaarResult {
 
     #[wasm_bindgen(getter)]
     pub fn diff(&self) -> Vec<f32> {
-        self.diff.clone()
+    pub fn avg(&self) -> Array {
+        self.avg.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn diff(&self) -> Array {
+        self.diff.iter().map(|&x| JsValue::from_f64(x as f64)).collect()
     }
 }
 
