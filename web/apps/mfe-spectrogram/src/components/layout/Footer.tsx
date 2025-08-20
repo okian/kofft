@@ -578,9 +578,6 @@ export const Footer: React.FC = () => {
               }
             }
           }}
-          numBars={isMobile ? 150 : 300}
-          barWidth={isMobile ? 1 : 2}
-          barGap={isMobile ? 0.5 : 1}
           maxBarHeight={isMobile ? 16 : 24}
           disabled={!currentTrack}
           bufferedTime={duration * 0.8} // Mock buffered time for demo
