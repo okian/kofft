@@ -1,4 +1,4 @@
-import { AudioMetadata } from '@/types'
+import { AudioMetadata } from '@/shared/types'
 import { audioPlayer } from './audioPlayer'
 
 // Constants used during fallback probing
@@ -39,7 +39,7 @@ export async function extractMetadata (file: File): Promise<AudioMetadata> {
 
   // ---- Primary extraction -------------------------------------------------
   try {
-    const { parseBlob } = await import('music-metadata-browser')
+    const { parseBlob } = await import('music-metadata')
     const parsed = await parseBlob(file, { duration: true })
     const { common, format } = parsed
 

@@ -1,4 +1,4 @@
-import { AudioTrack, AudioMetadata } from "@/types";
+import { AudioTrack, AudioMetadata } from "@/shared/types";
 import { extractMetadata, resampleAudio } from "./wasm";
 
 export const SUPPORTED_AUDIO_FORMATS = [

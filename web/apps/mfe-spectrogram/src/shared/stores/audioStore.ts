@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import { AudioState, AudioTrack, LoopMode } from "@/types";
+import { AudioState, AudioTrack, LoopMode } from "@/shared/types";
 import { playbackEngine } from "@/shared/utils/PlaybackEngine";
 // The playback engine registers callbacks with the store upon import.
 // We reference it to satisfy TypeScript/ESLint that the import is

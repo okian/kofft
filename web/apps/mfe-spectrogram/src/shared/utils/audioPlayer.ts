@@ -1,4 +1,4 @@
-import type { AudioTrack } from "@/types";
+import type { AudioTrack } from "@/shared/types";
 import { createTimeUpdater, TIME_UPDATE_INTERVAL_MS } from "./timeUpdater";
 
 interface AudioPlayerState {
