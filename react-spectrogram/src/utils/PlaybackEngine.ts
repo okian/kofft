@@ -1,5 +1,6 @@
 import type { AudioTrack } from "@/types";
 import { useAudioStore } from "@/stores/audioStore";
+import { createTimeUpdater } from "./timeUpdater";
 
 interface PlaybackState {
   isPlaying: boolean;
@@ -27,7 +28,26 @@ class PlaybackEngine {
   private isPaused = false;
   private callbacks: Set<PlaybackCallback> = new Set();
   private currentTime = 0;
-  private animationFrameId: number | null = null;
+
+  /**
+   * Shared time updater driven by `requestAnimationFrame`.  Using the utility
+   * ensures consistent timing semantics across different playback engines and
+   * avoids duplicated boilerplate.
+   */
+  private timeUpdater = createTimeUpdater({
+    getTime: () => {
+      if (!this.audioContext || !this.source) return this.currentTime;
+      return Math.min(
+        this.audioContext.currentTime - this.startTime,
+        this.getDuration(),
+      );
+    },
+    onUpdate: (time) => {
+      this.currentTime = time;
+      this.notify();
+    },
+    shouldContinue: () => !!this.source && !!this.audioContext,
+  });
 
   private playRequestId = 0;
   private loadController: AbortController | null = null;
@@ -61,7 +81,10 @@ class PlaybackEngine {
 
   private async initContext(): Promise<AudioContext> {
     if (!this.audioContext) {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
       this.audioContext = new Ctx();
       this.gainNode = this.audioContext.createGain();
       this.analyser = this.audioContext.createAnalyser();
@@ -127,7 +150,7 @@ class PlaybackEngine {
       if (controller.signal.aborted || requestId !== this.playRequestId)
         throw new DOMException("Aborted", "AbortError");
       const decoded = await this.abortable(
-        (context.decodeAudioData as any)(arrayBuffer),
+        context.decodeAudioData(arrayBuffer),
         controller,
       );
       if (controller.signal.aborted || requestId !== this.playRequestId)
@@ -136,8 +159,8 @@ class PlaybackEngine {
       this.pausedAt = 0;
       this.isPaused = false;
       this.notify();
-    } catch (err: any) {
-      if (err.name === "AbortError") {
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
         // Don't throw AbortError, just return silently
         return;
       }
@@ -163,7 +186,8 @@ class PlaybackEngine {
     this.startTime = context.currentTime - startAt;
     this.source = source;
     this.isPaused = false;
-    this.updateTime();
+    // Start dispatching time updates using the shared updater.
+    this.timeUpdater.start();
     this.notify();
   }
 
@@ -171,15 +195,15 @@ class PlaybackEngine {
     if (this.source && this.audioContext) {
       try {
         this.source.stop();
-      } catch {}
+      } catch {
+        // Source might already be stopped
+      }
       this.pausedAt = this.audioContext.currentTime - this.startTime;
       this.source.disconnect();
       this.source = null;
       this.isPaused = true;
-      if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = null;
-      }
+      // Stop updating time while paused to avoid stale frames.
+      this.timeUpdater.stop();
       this.notify();
     }
   }
@@ -216,7 +240,9 @@ class PlaybackEngine {
     this.stopSource();
     try {
       this.micSource?.disconnect();
-    } catch {}
+    } catch {
+      // Ignore disconnection errors
+    }
     this.micSource = context.createMediaStreamSource(stream);
     this.micSource.connect(this.gainNode!);
     this.currentBuffer = null;
@@ -230,7 +256,9 @@ class PlaybackEngine {
     if (this.micSource) {
       try {
         this.micSource.disconnect();
-      } catch {}
+      } catch {
+        // Ignore disconnection errors
+      }
       this.micSource = null;
       this.notify();
     }
@@ -250,17 +278,6 @@ class PlaybackEngine {
       this.notify();
     }
   }
-
-  private updateTime = () => {
-    if (this.source && this.audioContext) {
-      this.currentTime = Math.min(
-        this.audioContext.currentTime - this.startTime,
-        this.getDuration(),
-      );
-      this.animationFrameId = requestAnimationFrame(this.updateTime);
-      this.notify();
-    }
-  };
 
   private handleEnded(): void {
     this.stopSource();
@@ -332,16 +349,18 @@ class PlaybackEngine {
     if (this.source) {
       try {
         this.source.stop();
-      } catch {}
+      } catch {
+        // Source might already be stopped
+      }
       try {
         this.source.disconnect();
-      } catch {}
+      } catch {
+        // Source might already be disconnected
+      }
       this.source = null;
     }
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    // Ensure the shared updater is halted whenever playback stops.
+    this.timeUpdater.stop();
   }
 
   // State getters
