@@ -1,8 +1,15 @@
 import type { AudioTrack } from "@/types";
+import { createTimeUpdater, TIME_UPDATE_INTERVAL_MS } from "./timeUpdater";
 
-// Throttle interval for time update dispatches.
-// 20ms (~50Hz) balances responsiveness with overhead.
-const TIME_UPDATE_INTERVAL_MS = 20;
+interface AudioPlayerState {
+  isPlaying: boolean;
+  isPaused: boolean;
+  isStopped: boolean;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  isMuted: boolean;
+}
 
 /**
  * State callback signature used by subscribers listening to playback
@@ -26,12 +33,20 @@ class AudioPlayerEngine {
   private startTime: number = 0;
   private pausedTime: number = 0;
   private isPaused: boolean = false;
-  private animationFrameId: number | null = null;
   private callbacks: Set<AudioPlayerCallback> = new Set();
   private currentTrack: AudioTrack | null = null;
   private currentTime: number = 0;
   private playRequestId = 0;
-  private lastDispatch = 0;
+  private timeUpdater = createTimeUpdater({
+    onUpdate: (now) => {
+      if (!this.audioContext) return;
+      const currentTime = this.audioContext.currentTime - this.startTime;
+      this.currentTime = Math.min(currentTime, this.getDuration());
+      this.notifySubscribers(now);
+    },
+    shouldUpdate: () => !!this.source && !this.isPaused && !!this.audioContext,
+    intervalMs: TIME_UPDATE_INTERVAL_MS,
+  });
   /**
    * Registered callbacks for when the current track finishes playback. We
    * keep a set so multiple listeners (e.g. tests or hooks) can respond
@@ -75,7 +90,7 @@ class AudioPlayerEngine {
 
   // Notify all subscribers of state changes and record dispatch time.
   private notifySubscribers(now: number = performance.now()) {
-    this.lastDispatch = now;
+    this.timeUpdater.record(now);
     const state: AudioPlayerState = {
       isPlaying: this.isPlaying(),
       isPaused: this.isPaused,
@@ -203,10 +218,7 @@ class AudioPlayerEngine {
       this.source = null;
     }
 
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    this.timeUpdater.stop();
   }
 
   // Play a track
@@ -254,11 +266,13 @@ class AudioPlayerEngine {
 
     // Notify immediately then begin update loop
     this.notifySubscribers();
-    this.updateTime();
+    this.timeUpdater.start();
   }
 
   // Pause playback
   pausePlayback(): void {
+    // Always stop updater to avoid stray callbacks.
+    this.timeUpdater.stop();
     if (this.source && !this.isPaused) {
       try {
         this.source.stop();
@@ -266,15 +280,9 @@ class AudioPlayerEngine {
         // Source might already be stopped
       }
 
-      if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = null;
-      }
-
       this.pausedTime = this.audioContext!.currentTime - this.startTime;
       this.isPaused = true;
       this.source = null;
-
       this.notifySubscribers();
     }
   }
@@ -299,7 +307,7 @@ class AudioPlayerEngine {
 
       // Notify immediately then restart update loop
       this.notifySubscribers();
-      this.updateTime();
+      this.timeUpdater.start();
     }
   }
 
@@ -346,7 +354,7 @@ class AudioPlayerEngine {
       this.source.start(0, clampedTime);
       // Notify immediately then restart update loop
       this.notifySubscribers();
-      this.updateTime();
+      this.timeUpdater.start();
     }
   }
 
@@ -393,20 +401,6 @@ class AudioPlayerEngine {
     return dataArray;
   }
 
-  // Update time and notify subscribers
-  // Use rAF for smoothness but throttle to TIME_UPDATE_INTERVAL_MS.
-  private updateTime = () => {
-    if (this.source && !this.isPaused && this.audioContext) {
-      const now = performance.now();
-      if (now - this.lastDispatch >= TIME_UPDATE_INTERVAL_MS) {
-        const currentTime = this.audioContext.currentTime - this.startTime;
-        this.currentTime = Math.min(currentTime, this.getDuration());
-        this.notifySubscribers(now);
-      }
-      this.animationFrameId = requestAnimationFrame(this.updateTime);
-    }
-  };
-
   // Handle track ended
   private handleTrackEnded(): void {
     this.isPaused = false;
@@ -415,11 +409,7 @@ class AudioPlayerEngine {
     this.source = null;
     this.currentTrack = null;
 
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-
+    this.timeUpdater.stop();
     this.notifySubscribers();
 
     // Inform any listeners that playback naturally reached the end. The
