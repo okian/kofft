@@ -1,7 +1,13 @@
 import { computeWaveformPeaksWASM } from "./wasm";
 
-// Keep in sync with the constant used by the WASM implementation.
+// ----- Constants -----
+// Number of audio samples represented by each visualisation bar.  Must mirror
+// the constant in the Rust/WASM implementation to keep both paths aligned.
 const BAR_SAMPLES = 1024;
+// Placeholder waveform parameters used when no audio data is provided.
+const PLACEHOLDER_BASE = 0.3;
+const PLACEHOLDER_VARIATION = 0.4;
+const PLACEHOLDER_FREQ = Math.PI * 4;
 
 export type PeaksCacheKey = { numBars: number };
 
@@ -17,10 +23,14 @@ export function computeWaveformPeaks(
   numBars: number,
 ): Float32Array {
   if (!audioData || audioData.length === 0) {
+    // Without audio we synthesise a deterministic placeholder so UI elements
+    // still render.  The shape is a simple sine wave for visual appeal.
     const placeholder = new Float32Array(numBars);
     for (let i = 0; i < numBars; i++) {
       const progress = i / numBars;
-      placeholder[i] = 0.3 + 0.4 * Math.sin(progress * Math.PI * 4);
+      placeholder[i] =
+        PLACEHOLDER_BASE +
+        PLACEHOLDER_VARIATION * Math.sin(progress * PLACEHOLDER_FREQ);
     }
     return placeholder;
   }
@@ -34,16 +44,20 @@ export function computeWaveformPeaks(
   const cached = cacheForBuffer.get(numBars);
   if (cached) return cached;
 
-  let peaks = computeWaveformPeaksWASM(audioData, numBars);
-  if (!peaks) {
-    peaks = computeWaveformPeaksJS(audioData, numBars);
-  }
+  // Delegate to WASM for heavy lifting.  Any failure is surfaced to the caller
+  // as an exception to avoid quietly using a slower, potentially divergent,
+  // JavaScript path.
+  const peaks = computeWaveformPeaksWASM(audioData, numBars);
 
   cacheForBuffer.set(numBars, peaks);
   return peaks;
 }
 
-function computeWaveformPeaksJS(
+/**
+ * Pure TypeScript implementation used for testing and as a conceptual
+ * reference.  Not used in production because the WASM path is mandatory.
+ */
+export function computeWaveformPeaksJS(
   audioData: Float32Array,
   numBars: number,
 ): Float32Array {
@@ -62,7 +76,7 @@ function computeWaveformPeaksJS(
     peaks[i] = rms;
   }
 
-  // Normalise amplitudes so the maximum is 1.0
+  // Normalise amplitudes so the maximum is 1.0.
   let max = 0;
   for (let i = 0; i < numBars; i++) {
     if (peaks[i] > max) max = peaks[i];
@@ -76,7 +90,14 @@ function computeWaveformPeaksJS(
   return peaks;
 }
 
-function linearResample(input: Float32Array, targetLength: number): Float32Array {
+/** Linear interpolation resampler that guarantees the last sample aligns with
+ * the final output index.  This mirrors the Rust implementation and is exposed
+ * for test parity only.
+ */
+function linearResample(
+  input: Float32Array,
+  targetLength: number,
+): Float32Array {
   if (targetLength <= 0 || input.length === 0) {
     return new Float32Array(targetLength);
   }

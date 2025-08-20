@@ -107,17 +107,18 @@ export async function resampleAudioData(
   targetSampleRate: number,
   originalSampleRate: number,
 ): Promise<Float32Array> {
-  const wasmResult = await resampleAudio(
-    audioData,
-    originalSampleRate,
-    targetSampleRate,
-  );
-  if (wasmResult) return wasmResult;
-  return resampleAudioDataFallback(
-    audioData,
-    targetSampleRate,
-    originalSampleRate,
-  );
+  try {
+    // WASM path is preferred for performance and correct last-sample mapping.
+    return await resampleAudio(audioData, originalSampleRate, targetSampleRate);
+  } catch {
+    // Any failure falls back to the pure TypeScript implementation.  Errors are
+    // intentionally swallowed to keep the caller API simple.
+    return resampleAudioDataFallback(
+      audioData,
+      targetSampleRate,
+      originalSampleRate,
+    );
+  }
 }
 
 export function resampleAudioDataFallback(

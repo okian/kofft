@@ -59,7 +59,7 @@ vi.mock("../../hooks/useScreenSize", () => ({
 }));
 
 vi.mock("../../utils/wasm", () => ({
-  initWASM: vi.fn(),
+  initWASM: vi.fn(async () => ({})),
 }));
 
 describe("App", () => {
