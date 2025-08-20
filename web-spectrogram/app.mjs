@@ -1,5 +1,3 @@
-import { drawSeekBar } from "./seek_bar.mjs";
-
 export function ensureBuffer() {
   if (typeof globalThis.Buffer === "undefined") {
     globalThis.Buffer = class Buffer extends Uint8Array {
@@ -198,5 +196,3 @@ if (typeof window !== "undefined") {
   initApp();
 }
 /* c8 ignore stop */
-
-export { drawSeekBar };
