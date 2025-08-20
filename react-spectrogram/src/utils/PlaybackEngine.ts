@@ -1,9 +1,6 @@
 import type { AudioTrack } from "@/types";
 import { useAudioStore } from "@/stores/audioStore";
-
-// Dispatch progress updates at most every 20ms.
-// 20ms (~50Hz) keeps UI responsive while avoiding unnecessary work.
-const TIME_UPDATE_INTERVAL_MS = 20;
+import { createTimeUpdater, TIME_UPDATE_INTERVAL_MS } from "./timeUpdater";
 
 interface PlaybackState {
   isPlaying: boolean;
@@ -31,8 +28,18 @@ class PlaybackEngine {
   private isPaused = false;
   private callbacks: Set<PlaybackCallback> = new Set();
   private currentTime = 0;
-  private animationFrameId: number | null = null;
-  private lastDispatch = 0;
+  private timeUpdater = createTimeUpdater({
+    onUpdate: (now) => {
+      if (!this.audioContext) return;
+      this.currentTime = Math.min(
+        this.audioContext.currentTime - this.startTime,
+        this.getDuration(),
+      );
+      this.notify(now);
+    },
+    shouldUpdate: () => !!this.source && !!this.audioContext,
+    intervalMs: TIME_UPDATE_INTERVAL_MS,
+  });
 
   private playRequestId = 0;
   private loadController: AbortController | null = null;
@@ -52,7 +59,7 @@ class PlaybackEngine {
   }
 
   private notify(now = performance.now()) {
-    this.lastDispatch = now;
+    this.timeUpdater.record(now);
     const state: PlaybackState = {
       isPlaying: this.isPlaying(),
       isPaused: this.isPaused,
@@ -184,7 +191,7 @@ class PlaybackEngine {
     this.source = source;
     this.isPaused = false;
     this.notify();
-    this.updateTime();
+    this.timeUpdater.start();
   }
 
   pause(): void {
@@ -198,10 +205,7 @@ class PlaybackEngine {
       this.source.disconnect();
       this.source = null;
       this.isPaused = true;
-      if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = null;
-      }
+      this.timeUpdater.stop();
       this.notify();
     }
   }
@@ -283,21 +287,6 @@ class PlaybackEngine {
     }
   }
 
-  // Smoothly poll progress using rAF while throttling notifications.
-  private updateTime = () => {
-    if (this.source && this.audioContext) {
-      const now = performance.now();
-      if (now - this.lastDispatch >= TIME_UPDATE_INTERVAL_MS) {
-        this.currentTime = Math.min(
-          this.audioContext.currentTime - this.startTime,
-          this.getDuration(),
-        );
-        this.notify(now);
-      }
-      this.animationFrameId = requestAnimationFrame(this.updateTime);
-    }
-  };
-
   private handleEnded(): void {
     this.stopSource();
     this.isPaused = false;
@@ -378,10 +367,7 @@ class PlaybackEngine {
       }
       this.source = null;
     }
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    this.timeUpdater.stop();
   }
 
   // State getters
