@@ -1,12 +1,10 @@
-import React, {
-  useRef,
-  useCallback,
-  useEffect,
-  useState,
-  useMemo,
-} from "react";
+import React, { useRef, useCallback, useEffect, useState } from "react";
 import { cn } from "@/shared/utils/cn";
-import { computeWaveformPeaks } from "@/shared/utils/waveform";
+import {
+  computeWaveformPeaks,
+  createIdlePeaksAnimator,
+  createLivePeaksAnimator,
+} from "@/shared/utils/waveform";
 import { useSeekbarColors } from "@/hooks/useSeekbarColors";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
 
@@ -40,6 +38,11 @@ interface CanvasWaveformSeekbarProps {
   maxBarHeight?: number;
   disabled?: boolean;
   bufferedTime?: number;
+  /**
+   * Optional function returning time-domain audio samples for live mode. When
+   * provided and audioData is null, the waveform displays these live samples.
+   */
+  getTimeData?: () => Uint8Array | null;
 }
 
 // Simple utility to convert hex color to rgb array
@@ -58,6 +61,7 @@ export function CanvasWaveformSeekbar({
   maxBarHeight = DEFAULT_MAX_BAR_HEIGHT,
   disabled = false,
   bufferedTime = 0,
+  getTimeData,
 }: CanvasWaveformSeekbarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -68,6 +72,10 @@ export function CanvasWaveformSeekbar({
   const [containerWidth, setContainerWidth] = useState(0);
   // numBars is derived from the container width and constants.
   const [numBars, setNumBars] = useState(1);
+  // Peaks are stored in a ref to avoid reallocating on every animation frame.
+  const peaksRef = useRef<Float32Array>(new Float32Array(0));
+  // Updating this counter forces the drawing effect to rerun with new peaks.
+  const [drawTick, setDrawTick] = useState(0);
   // Sync CSS variables with theme/overrides and redraw when they change.
   useSeekbarColors();
   const { theme, seekPlayedColor, seekUnplayedColor } = useSettingsStore(
@@ -111,21 +119,38 @@ export function CanvasWaveformSeekbar({
     return value;
   };
 
-  // Pre-compute waveform peaks, caching by the audio buffer reference
-  // and the configured bar count.
-  const peaks = useMemo(
-    () => computeWaveformPeaks(audioData, numBars),
-    [audioData, numBars],
-  );
+  // Pre-compute waveform peaks when static audio data is present. The result
+  // is stored in a ref so animations can mutate it without triggering React
+  // re-renders each frame.
+  useEffect(() => {
+    peaksRef.current = computeWaveformPeaks(audioData, numBars);
+    setDrawTick((t) => t + 1);
+  }, [audioData, numBars]);
+
+  // When no static audio data exists, animate either a placeholder idle wave or
+  // live microphone data using requestAnimationFrame.
+  useEffect(() => {
+    if (audioData) return;
+    let stop: (() => void) | undefined;
+    const update = (p: Float32Array) => {
+      peaksRef.current = p;
+      setDrawTick((t) => t + 1);
+    };
+    stop = getTimeData
+      ? createLivePeaksAnimator(getTimeData, numBars, update)
+      : createIdlePeaksAnimator(numBars, update);
+    return () => stop && stop();
+  }, [audioData, numBars, getTimeData]);
 
   const currentPosition = duration > 0 ? currentTime / duration : 0;
   const bufferedPosition = duration > 0 ? bufferedTime / duration : 0;
   const progressPosition = isSeeking ? seekPosition : currentPosition;
 
-  // Draw waveform on canvas
+  // Draw waveform on canvas whenever peaks or layout change.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || containerWidth === 0) return;
+    const peaks = peaksRef.current;
 
     // Canvas width matches the container; bars are offset so that the final
     // bar terminates exactly at the right edge to avoid partial bars.
@@ -236,7 +261,7 @@ export function CanvasWaveformSeekbar({
       }
     })();
   }, [
-    peaks,
+    drawTick,
     numBars,
     containerWidth,
     maxBarHeight,

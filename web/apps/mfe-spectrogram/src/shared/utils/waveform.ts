@@ -1,6 +1,20 @@
 import { computeWaveformPeaksWASM } from "./wasm";
 
-const BAR_SAMPLES = 1024;
+//
+// Constants
+// Keeping numeric values named prevents magic numbers and clarifies intent.
+// BAR_SAMPLES must mirror the Rust implementation so peak calculations match.
+export const BAR_SAMPLES = 1024;
+// Baseline amplitude for placeholder waveforms.
+export const PLACEHOLDER_BASE = 0.3;
+// Amplitude variation applied to the placeholder baseline.
+export const PLACEHOLDER_VARIATION = 0.4;
+// Spatial frequency of the placeholder sine wave; chosen to show a few
+// oscillations across the control for visual interest.
+export const PLACEHOLDER_FREQ = Math.PI * 4;
+// Temporal frequency controlling idle animation speed in radians per ms.
+// A small value keeps movement subtle and low impact on CPU usage.
+export const IDLE_TIME_FREQ = 0.002;
 
 export type PeaksCacheKey = { numBars: number };
 
@@ -16,10 +30,13 @@ export function computeWaveformPeaks(
   numBars: number,
 ): Float32Array {
   if (!audioData || audioData.length === 0) {
+    // Synthesize a deterministic placeholder so UI elements still render.
     const placeholder = new Float32Array(numBars);
     for (let i = 0; i < numBars; i++) {
       const progress = i / numBars;
-      placeholder[i] = 0.3 + 0.4 * Math.sin(progress * Math.PI * 4);
+      placeholder[i] =
+        PLACEHOLDER_BASE +
+        PLACEHOLDER_VARIATION * Math.sin(progress * PLACEHOLDER_FREQ);
     }
     return placeholder;
   }
@@ -74,7 +91,10 @@ function computeWaveformPeaksJS(
   return peaks;
 }
 
-function linearResample(input: Float32Array, targetLength: number): Float32Array {
+function linearResample(
+  input: Float32Array,
+  targetLength: number,
+): Float32Array {
   if (targetLength <= 0 || input.length === 0) {
     return new Float32Array(targetLength);
   }
@@ -97,4 +117,80 @@ function linearResample(input: Float32Array, targetLength: number): Float32Array
 
 export function clearWaveformPeaksCache() {
   peaksCache = new WeakMap();
+}
+
+//
+// Animators
+// These helpers drive placeholder and live waveforms via requestAnimationFrame.
+// Both return a cleanup function to halt the animation when no longer needed.
+
+/**
+ * Create an animator that generates a slowly moving sine wave when no audio
+ * data is available. The provided callback receives the reused peaks array on
+ * each frame. Returns a function that cancels the animation.
+ */
+export function createIdlePeaksAnimator(
+  numBars: number,
+  cb: (peaks: Float32Array) => void,
+): () => void {
+  if (!Number.isFinite(numBars) || numBars <= 0)
+    throw new Error("numBars must be a positive finite number");
+
+  const peaks = new Float32Array(numBars);
+  let raf = 0;
+
+  const animate = (time: number) => {
+    const phase = time * IDLE_TIME_FREQ;
+    for (let i = 0; i < numBars; i++) {
+      const progress = i / numBars;
+      peaks[i] =
+        PLACEHOLDER_BASE +
+        PLACEHOLDER_VARIATION * Math.sin(progress * PLACEHOLDER_FREQ + phase);
+    }
+    cb(peaks);
+    raf = requestAnimationFrame(animate);
+  };
+
+  raf = requestAnimationFrame(animate);
+  return () => cancelAnimationFrame(raf);
+}
+
+/**
+ * Create an animator that samples live audio via the supplied function and
+ * converts it into RMS peaks. The callback receives the reused peaks array on
+ * each frame. Returns a function that cancels the animation.
+ */
+export function createLivePeaksAnimator(
+  getTimeData: () => Uint8Array | null,
+  numBars: number,
+  cb: (peaks: Float32Array) => void,
+): () => void {
+  if (!Number.isFinite(numBars) || numBars <= 0)
+    throw new Error("numBars must be a positive finite number");
+
+  const peaks = new Float32Array(numBars);
+  let raf = 0;
+
+  const animate = () => {
+    const data = getTimeData();
+    if (data && data.length > 0) {
+      const step = data.length / numBars;
+      for (let i = 0; i < numBars; i++) {
+        const start = Math.floor(i * step);
+        const end = Math.floor((i + 1) * step);
+        let sum = 0;
+        for (let j = start; j < end; j++) {
+          const sample = (data[j] - 128) / 128;
+          sum += sample * sample;
+        }
+        const count = Math.max(1, end - start);
+        peaks[i] = Math.sqrt(sum / count);
+      }
+    }
+    cb(peaks);
+    raf = requestAnimationFrame(animate);
+  };
+
+  raf = requestAnimationFrame(animate);
+  return () => cancelAnimationFrame(raf);
 }
