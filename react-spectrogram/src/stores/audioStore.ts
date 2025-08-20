@@ -1,9 +1,66 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import { AudioState, AudioTrack } from "@/types";
+import { AudioState, AudioTrack, LoopMode } from "@/types";
 import { playbackEngine } from "@/utils/PlaybackEngine";
+// The playback engine registers callbacks with the store upon import.
+// We reference it to satisfy TypeScript/ESLint that the import is
+// intentional even though we don't call methods directly here.
+void playbackEngine;
 import { audioPlayer } from "@/utils/audioPlayer";
 import { revokeTrackUrl } from "@/utils/audio";
+
+// Persistent storage key. Using a constant avoids magic strings and
+// keeps the key consistent across the application and tests.
+export const AUDIO_PERSISTENCE_KEY = "audio-preferences";
+
+// Allowed loop mode values for runtime validation. A plain object is
+// cheaper than an array+includes and provides O(1) lookups.
+const VALID_LOOP_MODES: Record<LoopMode, true> = {
+  off: true,
+  one: true,
+  all: true,
+};
+
+/**
+ * Safely load persisted playback preferences from localStorage.
+ * Any failure results in safe defaults. This function is intentionally
+ * defensive because localStorage is mutable and may contain garbage.
+ */
+const loadPersistedPreferences = (): Pick<AudioState, "shuffle" | "loopMode"> => {
+  try {
+    const raw = localStorage.getItem(AUDIO_PERSISTENCE_KEY);
+    if (!raw) return { shuffle: false, loopMode: "off" };
+    const parsed = JSON.parse(raw) as Partial<AudioState>;
+    const shuffle = typeof parsed.shuffle === "boolean" ? parsed.shuffle : false;
+    const loopMode =
+      typeof parsed.loopMode === "string" && parsed.loopMode in VALID_LOOP_MODES
+        ? (parsed.loopMode as LoopMode)
+        : "off";
+    return { shuffle, loopMode };
+  } catch {
+    // localStorage access can fail (e.g., security settings or invalid JSON)
+    // In such cases we revert to known-safe defaults.
+    return { shuffle: false, loopMode: "off" };
+  }
+};
+
+/**
+ * Persist playback preferences. Persistence failures are intentionally
+ * swallowed: missing storage should not crash the application.
+ */
+const persistPreferences = (
+  prefs: Pick<AudioState, "shuffle" | "loopMode">
+): void => {
+  try {
+    localStorage.setItem(AUDIO_PERSISTENCE_KEY, JSON.stringify(prefs));
+  } catch {
+    /* ignore persistence errors */
+  }
+};
+
+// Exported only for unit tests to verify persistence behaviour without
+// re-importing the module repeatedly (which is unreliable in Vitest).
+export const __loadPersistedPreferencesForTest = loadPersistedPreferences;
 
 interface AudioStore extends AudioState {
   // Actions
@@ -25,7 +82,7 @@ interface AudioStore extends AudioState {
   setMicrophoneActive: (active: boolean) => void;
   setInputDevice: (device: string | null) => void;
   setShuffle: (shuffle: boolean) => void;
-  setLoopMode: (mode: "off" | "one" | "all") => void;
+  setLoopMode: (mode: LoopMode) => void;
   nextTrack: () => Promise<void>;
   previousTrack: () => Promise<void>;
   playTrack: (index: number) => Promise<void>;
@@ -35,6 +92,10 @@ interface AudioStore extends AudioState {
   seekTo: (time: number) => void;
   updateVolume: (volume: number) => void;
 }
+
+// Load persisted user preferences once during module initialization to
+// avoid repeatedly touching localStorage.
+const persisted = loadPersistedPreferences();
 
 const initialState: AudioState = {
   isPlaying: false,
@@ -50,8 +111,9 @@ const initialState: AudioState = {
   isLive: false,
   isMicrophoneActive: false,
   inputDevice: null,
-  shuffle: false,
-  loopMode: "off",
+  // User preferences loaded from storage
+  shuffle: persisted.shuffle,
+  loopMode: persisted.loopMode,
 };
 
 export const useAudioStore = create<AudioStore>()(
@@ -151,12 +213,24 @@ export const useAudioStore = create<AudioStore>()(
       setMicrophoneActive: (active) => set({ isMicrophoneActive: active }),
       setInputDevice: (device) => set({ inputDevice: device }),
       setShuffle: (shuffle) => {
+        if (typeof shuffle !== "boolean") {
+          throw new Error("shuffle must be a boolean");
+        }
         const current = get().currentTrackIndex;
         shuffleHistory = shuffle && current >= 0 ? [current] : [];
         historyIndex = shuffleHistory.length - 1;
         set({ shuffle });
+        // Persist alongside current loopMode to maintain coherence
+        persistPreferences({ shuffle, loopMode: get().loopMode });
       },
-      setLoopMode: (mode) => set({ loopMode: mode }),
+      setLoopMode: (mode) => {
+        if (!(mode in VALID_LOOP_MODES)) {
+          throw new Error(`Invalid loop mode: ${mode}`);
+        }
+        set({ loopMode: mode });
+        // Persist alongside current shuffle state
+        persistPreferences({ shuffle: get().shuffle, loopMode: mode });
+      },
 
       nextTrack: async () => {
         const { playlist, currentTrackIndex, shuffle } = get();
@@ -294,3 +368,8 @@ export const useAudioStore = create<AudioStore>()(
     };
   }),
 );
+
+// Selectors keep components decoupled from the store shape and help
+// minimize re-renders by allowing narrow subscriptions.
+export const selectShuffle = (state: AudioStore) => state.shuffle;
+export const selectLoopMode = (state: AudioStore) => state.loopMode;
