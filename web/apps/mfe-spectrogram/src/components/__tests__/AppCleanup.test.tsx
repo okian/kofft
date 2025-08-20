@@ -58,7 +58,7 @@ vi.mock("../../hooks/useScreenSize", () => ({
 }));
 
 vi.mock("../../utils/wasm", () => ({
-  initWASM: vi.fn(() => Promise.resolve()),
+  initWASM: vi.fn(async () => ({})),
   extractMetadata: vi.fn().mockResolvedValue({}),
   generateAmplitudeEnvelope: vi.fn().mockResolvedValue(new Float32Array()),
 }));

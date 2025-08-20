@@ -2,8 +2,11 @@ import { audioPlayer } from "./audioPlayer";
 
 // WASM module types
 interface WASMModule {
+  /** Install panic hook for friendlier stack traces. */
   init_panic_hook: () => void;
+  /** Generate legacy waveform data for visualisation. */
   generate_waveform: (audioData: Float32Array, numBars: number) => Float32Array;
+  /** Compute an amplitude envelope for seek bar rendering. */
   generate_amplitude_envelope: (
     audioData: Float32Array,
     sampleRate: number,
@@ -11,10 +14,12 @@ interface WASMModule {
     windowMs: number,
     smoothingSamples: number,
   ) => Float32Array;
+  /** Resample input and compute per-bar RMS amplitudes. */
   compute_bar_amplitudes: (
     audioData: Float32Array,
     numBars: number,
   ) => Float32Array;
+  /** Optional helper for direct resampling calls. */
   resample_audio?: (
     audioData: Float32Array,
     srcRate: number,
@@ -30,14 +35,16 @@ interface MetadataWASMModule {
 
 let wasmModule: WASMModule | null = null;
 let isInitializing = false;
-let initPromise: Promise<WASMModule | null> | null = null;
+let initPromise: Promise<WASMModule> | null = null;
 
 // Fixed number of samples used for each visualisation bar.  Matching the
 // constant used in the WASM implementation keeps the two paths in sync.
 const BAR_SAMPLES = 1024;
 
-// Initialize WASM module
-export async function initWASM(): Promise<WASMModule | null> {
+// Initialize WASM module.  All callers must await this before invoking any
+// WASM-backed helpers.  Failure to load results in a descriptive error rather
+// than silently falling back to a slower JavaScript implementation.
+export async function initWASM(): Promise<WASMModule> {
   if (wasmModule) return wasmModule;
   if (initPromise) return initPromise;
 
@@ -49,21 +56,23 @@ export async function initWASM(): Promise<WASMModule | null> {
       // @ts-ignore - resolved by Vite at runtime
       const module: any = await import("@wasm/react_spectrogram_wasm");
 
-      // Initialize the wasm instance by calling the default init
+      // Instantiate the module if it exposes a default init function.
       if (typeof module.default === "function") {
         await module.default();
       }
 
-      // Initialize panic hook
+      // Install panic hook for cleaner Rust panics.
       if (typeof module.init_panic_hook === "function") {
         module.init_panic_hook();
       }
 
       wasmModule = module as unknown as WASMModule;
-
       return wasmModule;
-    } catch (error) {
-      return null;
+    } catch (error: any) {
+      // Surface a descriptive error to aid debugging.
+      throw new Error(
+        `Failed to initialise WASM module: ${error?.message ?? error}`,
+      );
     } finally {
       isInitializing = false;
     }
@@ -79,20 +88,16 @@ export async function resampleAudio(
   audioData: Float32Array,
   srcRate: number,
   dstRate: number,
-): Promise<Float32Array | null> {
-  try {
-    const module = await initWASM();
-    if (module && module.resample_audio) {
-      try {
-        return module.resample_audio(audioData, srcRate, dstRate);
-      } catch (error) {
-        console.warn("WASM resampling failed, using fallback", error);
-      }
-    }
-  } catch (error) {
-    console.warn("WASM module not available for resampling", error);
+): Promise<Float32Array> {
+  const module = await initWASM();
+  if (!module.resample_audio) {
+    throw new Error("WASM resampler not available");
   }
-  return null;
+  try {
+    return module.resample_audio(audioData, srcRate, dstRate);
+  } catch (error: any) {
+    throw new Error(`WASM resampling failed: ${error?.message ?? error}`);
+  }
 }
 
 // Generate waveform data using WASM
@@ -158,25 +163,19 @@ export async function generateAmplitudeEnvelope(
 export function computeWaveformPeaksWASM(
   audioData: Float32Array,
   numBars: number,
-): Float32Array | null {
+): Float32Array {
   if (!wasmModule || !wasmModule.compute_bar_amplitudes) {
-    return null;
+    throw new Error("WASM module not initialised");
   }
+  // The Rust helper internally performs a resample so that the final output bar
+  // corresponds to the final input sample.  This ensures visual alignment
+  // between the waveform and the original audio without redundant JS work.
   try {
-    const targetLength = numBars * BAR_SAMPLES;
-    let buffer: Float32Array;
-    if (wasmModule.resample_audio) {
-      buffer = wasmModule.resample_audio(
-        audioData,
-        audioData.length,
-        targetLength,
-      );
-    } else {
-      buffer = linearResample(audioData, targetLength);
-    }
-    return wasmModule.compute_bar_amplitudes(buffer, numBars);
-  } catch (error) {
-    return null;
+    return wasmModule.compute_bar_amplitudes(audioData, numBars);
+  } catch (error: any) {
+    throw new Error(
+      `WASM compute_bar_amplitudes failed: ${error?.message ?? error}`,
+    );
   }
 }
 
@@ -250,8 +249,7 @@ function generateAmplitudeEnvelopeJS(
     const rms = Math.sqrt(sumSquares / count);
 
     // Apply windowing and smoothing
-    const windowedRms =
-      rms * (1 - Math.exp(-(i + 1) / smoothingWindow)); // Exponential smoothing
+    const windowedRms = rms * (1 - Math.exp(-(i + 1) / smoothingWindow)); // Exponential smoothing
     envelope[i] = windowedRms;
   }
 

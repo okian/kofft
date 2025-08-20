@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fc from "fast-check";
-import { computeWaveformPeaks, clearWaveformPeaksCache } from "../waveform";
+import {
+  computeWaveformPeaks,
+  computeWaveformPeaksJS,
+  clearWaveformPeaksCache,
+} from "../waveform";
 import { computeWaveformPeaksWASM } from "../wasm";
 
 vi.mock("../wasm", () => ({
@@ -21,11 +25,12 @@ describe("computeWaveformPeaks", () => {
     expect(peaks).toBe(fake);
   });
 
-  it("falls back to JS when wasm unavailable", () => {
+  it("throws when wasm invocation fails", () => {
     const data = new Float32Array([0, 0, 0, 1]);
-    vi.mocked(computeWaveformPeaksWASM).mockReturnValue(null);
-    const peaks = computeWaveformPeaks(data, 4);
-    expect(peaks[peaks.length - 1]).toBeCloseTo(1, 5);
+    vi.mocked(computeWaveformPeaksWASM).mockImplementation(() => {
+      throw new Error("no wasm");
+    });
+    expect(() => computeWaveformPeaks(data, 4)).toThrow("no wasm");
   });
 
   it("caches results per buffer and bar count", () => {
@@ -38,7 +43,9 @@ describe("computeWaveformPeaks", () => {
   });
 
   it("maintains bar count and last-bar alignment across lengths", () => {
-    vi.mocked(computeWaveformPeaksWASM).mockReturnValue(null);
+    vi.mocked(computeWaveformPeaksWASM).mockImplementation(
+      computeWaveformPeaksJS,
+    );
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 2048 }),
@@ -49,13 +56,16 @@ describe("computeWaveformPeaks", () => {
           const peaks = computeWaveformPeaks(data, bars);
           expect(peaks.length).toBe(bars);
           expect(peaks[bars - 1]).toBeCloseTo(1, 5);
+          expect(computeWaveformPeaksWASM).toHaveBeenCalled();
         },
       ),
     );
   });
 
   it("normalizes constant signals", () => {
-    vi.mocked(computeWaveformPeaksWASM).mockReturnValue(null);
+    vi.mocked(computeWaveformPeaksWASM).mockImplementation(
+      computeWaveformPeaksJS,
+    );
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 1024 }),
@@ -72,6 +82,7 @@ describe("computeWaveformPeaks", () => {
           for (const p of peaks) {
             expect(p).toBeCloseTo(1, 5);
           }
+          expect(computeWaveformPeaksWASM).toHaveBeenCalled();
         },
       ),
     );
