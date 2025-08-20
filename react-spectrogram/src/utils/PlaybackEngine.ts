@@ -1,6 +1,10 @@
 import type { AudioTrack } from "@/types";
 import { useAudioStore } from "@/stores/audioStore";
 
+// Dispatch progress updates at most every 20ms.
+// 20ms (~50Hz) keeps UI responsive while avoiding unnecessary work.
+const TIME_UPDATE_INTERVAL_MS = 20;
+
 interface PlaybackState {
   isPlaying: boolean;
   isPaused: boolean;
@@ -28,6 +32,7 @@ class PlaybackEngine {
   private callbacks: Set<PlaybackCallback> = new Set();
   private currentTime = 0;
   private animationFrameId: number | null = null;
+  private lastDispatch = 0;
 
   private playRequestId = 0;
   private loadController: AbortController | null = null;
@@ -46,7 +51,8 @@ class PlaybackEngine {
     return () => this.callbacks.delete(cb);
   }
 
-  private notify() {
+  private notify(now = performance.now()) {
+    this.lastDispatch = now;
     const state: PlaybackState = {
       isPlaying: this.isPlaying(),
       isPaused: this.isPaused,
@@ -61,7 +67,10 @@ class PlaybackEngine {
 
   private async initContext(): Promise<AudioContext> {
     if (!this.audioContext) {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const win = window as Window & {
+        webkitAudioContext?: typeof AudioContext;
+      };
+      const Ctx = window.AudioContext || win.webkitAudioContext;
       this.audioContext = new Ctx();
       this.gainNode = this.audioContext.createGain();
       this.analyser = this.audioContext.createAnalyser();
@@ -127,7 +136,9 @@ class PlaybackEngine {
       if (controller.signal.aborted || requestId !== this.playRequestId)
         throw new DOMException("Aborted", "AbortError");
       const decoded = await this.abortable(
-        (context.decodeAudioData as any)(arrayBuffer),
+        new Promise<AudioBuffer>((resolve, reject) =>
+          context.decodeAudioData(arrayBuffer, resolve, reject),
+        ),
         controller,
       );
       if (controller.signal.aborted || requestId !== this.playRequestId)
@@ -136,17 +147,26 @@ class PlaybackEngine {
       this.pausedAt = 0;
       this.isPaused = false;
       this.notify();
-    } catch (err: any) {
-      if (err.name === "AbortError") {
+    } catch (err) {
+      const error = err as DOMException;
+      if (error.name === "AbortError") {
         // Don't throw AbortError, just return silently
         return;
       }
-      throw err;
+      throw error;
     }
   }
 
   play(startAt = 0): void {
     if (!this.currentBuffer || !this.audioContext) return;
+
+    // Clamp start time to a valid range before scheduling playback.
+    const duration = this.currentBuffer.duration;
+    const safeStart = Math.max(
+      0,
+      Math.min(Number.isFinite(startAt) ? startAt : 0, duration),
+    );
+
     const context = this.audioContext;
     this.stopSource();
 
@@ -159,19 +179,21 @@ class PlaybackEngine {
         this.handleEnded();
       }
     };
-    source.start(0, startAt);
-    this.startTime = context.currentTime - startAt;
+    source.start(0, safeStart);
+    this.startTime = context.currentTime - safeStart;
     this.source = source;
     this.isPaused = false;
-    this.updateTime();
     this.notify();
+    this.updateTime();
   }
 
   pause(): void {
     if (this.source && this.audioContext) {
       try {
         this.source.stop();
-      } catch {}
+      } catch {
+        /* ignore stop errors */
+      }
       this.pausedAt = this.audioContext.currentTime - this.startTime;
       this.source.disconnect();
       this.source = null;
@@ -202,12 +224,18 @@ class PlaybackEngine {
 
   seek(time: number): void {
     if (!this.currentBuffer) return;
-    const clamped = Math.max(0, Math.min(time, this.currentBuffer.duration));
+
+    // Clamp seek time to valid range.
+    const duration = this.currentBuffer.duration;
+    const safeTime = Math.max(
+      0,
+      Math.min(Number.isFinite(time) ? time : 0, duration),
+    );
     if (this.isPaused) {
-      this.pausedAt = clamped;
+      this.pausedAt = safeTime;
       this.notify();
     } else {
-      this.play(clamped);
+      this.play(safeTime);
     }
   }
 
@@ -216,7 +244,9 @@ class PlaybackEngine {
     this.stopSource();
     try {
       this.micSource?.disconnect();
-    } catch {}
+    } catch {
+      /* ignore disconnect errors */
+    }
     this.micSource = context.createMediaStreamSource(stream);
     this.micSource.connect(this.gainNode!);
     this.currentBuffer = null;
@@ -230,7 +260,9 @@ class PlaybackEngine {
     if (this.micSource) {
       try {
         this.micSource.disconnect();
-      } catch {}
+      } catch {
+        /* ignore disconnect errors */
+      }
       this.micSource = null;
       this.notify();
     }
@@ -251,14 +283,18 @@ class PlaybackEngine {
     }
   }
 
+  // Smoothly poll progress using rAF while throttling notifications.
   private updateTime = () => {
     if (this.source && this.audioContext) {
-      this.currentTime = Math.min(
-        this.audioContext.currentTime - this.startTime,
-        this.getDuration(),
-      );
+      const now = performance.now();
+      if (now - this.lastDispatch >= TIME_UPDATE_INTERVAL_MS) {
+        this.currentTime = Math.min(
+          this.audioContext.currentTime - this.startTime,
+          this.getDuration(),
+        );
+        this.notify(now);
+      }
       this.animationFrameId = requestAnimationFrame(this.updateTime);
-      this.notify();
     }
   };
 
@@ -332,10 +368,14 @@ class PlaybackEngine {
     if (this.source) {
       try {
         this.source.stop();
-      } catch {}
+      } catch {
+        /* ignore stop errors */
+      }
       try {
         this.source.disconnect();
-      } catch {}
+      } catch {
+        /* ignore disconnect errors */
+      }
       this.source = null;
     }
     if (this.animationFrameId) {
