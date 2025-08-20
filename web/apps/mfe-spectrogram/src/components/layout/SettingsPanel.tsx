@@ -314,6 +314,76 @@ export function SettingsPanel({
                 </div>
               </div>
 
+              {/* Seekbar Visualisation Options */}
+              <div className="mt-4">
+                <h4 className="text-sm font-medium text-neutral-100 mb-3">
+                  Seekbar Visualisation
+                </h4>
+                {/* Mode selection */}
+                <div className="mb-3">
+                  <span className="block text-xs text-neutral-400 mb-1">Mode</span>
+                  <div className="flex flex-col gap-1">
+                    {[
+                      { value: "live", label: "Live" },
+                      { value: "frequency", label: "Animated Frequency Bars" },
+                      { value: "waveform", label: "Fixed Waveform" },
+                    ].map((m) => (
+                      <label
+                        key={m.value}
+                        className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          name="seekbarMode"
+                          value={m.value}
+                          checked={settings.seekbarMode === m.value}
+                          onChange={(e) =>
+                            onSettingsChange({
+                              seekbarMode: e.target.value as any,
+                            })
+                          }
+                          className="text-accent-blue"
+                        />
+                        {m.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* Significance level */}
+                <label className="flex items-center gap-2 text-sm text-neutral-300 mb-2">
+                  Significance
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={settings.seekbarSignificance}
+                    onChange={(e) =>
+                      onSettingsChange({
+                        seekbarSignificance: parseFloat(e.target.value),
+                      })
+                    }
+                    className="w-16 p-1 rounded bg-neutral-900 border border-neutral-700"
+                  />
+                </label>
+                {/* Amplitude scaling */}
+                <label className="flex items-center gap-2 text-sm text-neutral-300">
+                  Amplitude Scale
+                  <input
+                    type="number"
+                    min={0.1}
+                    step={0.1}
+                    value={settings.seekbarAmplitudeScale}
+                    onChange={(e) =>
+                      onSettingsChange({
+                        seekbarAmplitudeScale: parseFloat(e.target.value),
+                      })
+                    }
+                    className="w-16 p-1 rounded bg-neutral-900 border border-neutral-700"
+                  />
+                </label>
+              </div>
+
               {/* Amplitude Scale */}
               <div>
                 <h4 className="text-sm font-medium text-neutral-100 mb-3">
@@ -706,8 +776,12 @@ export function SettingsPanel({
                 refreshRate: 60,
                 colormap: "viridis",
                 showLegend: true,
+                enableToastNotifications: false,
                 seekPlayedColor: "",
                 seekUnplayedColor: "",
+                seekbarMode: "waveform",
+                seekbarSignificance: 0.5,
+                seekbarAmplitudeScale: 1,
                 enableExternalArtwork: true,
                 enableAcoustID: true,
                 enableMusicBrainz: true,

@@ -138,6 +138,24 @@ export interface SpectrogramSettings {
    * Falls back to the theme's primary color when unset.
    */
   seekUnplayedColor?: string;
+  /**
+   * Controls how the seek bar visualises audio. "live" syncs with current
+   * playback data, "frequency" animates FFT bins from low to high frequencies
+   * across the bar, and "waveform" renders a static waveform computed from the
+   * entire track.
+   */
+  seekbarMode: "live" | "frequency" | "waveform";
+  /**
+   * Statistical significance level used when down-mixing data for the bars.
+   * 0 disables filtering while 1 only retains peaks that exceed the maximum
+   * possible value. Values outside [0,1] are rejected at runtime.
+   */
+  seekbarSignificance: number;
+  /**
+   * Global multiplier applied to bar amplitudes. This allows users to boost or
+   * soften the visual intensity without altering the underlying audio.
+   */
+  seekbarAmplitudeScale: number;
   // API Keys
   apiKeys: APIKeys;
   apiKeyStatus: APIKeyStatus;
