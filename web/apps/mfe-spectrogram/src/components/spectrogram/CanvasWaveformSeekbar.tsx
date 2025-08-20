@@ -8,6 +8,21 @@ import React, {
 import { cn } from "@/shared/utils/cn";
 import { computeWaveformPeaks } from "@/shared/utils/waveform";
 
+//
+// Constants
+// Using named constants avoids magic numbers and documents the intent.
+// The values mirror previous defaults but are centralized for clarity.
+//
+const DEFAULT_NUM_BARS = 300;
+const DEFAULT_BAR_WIDTH = 2;
+const DEFAULT_BAR_GAP = 1;
+const DEFAULT_MAX_BAR_HEIGHT = 40;
+const MIN_BAR_HEIGHT = 2; // keep tiny peaks visible
+const SEEK_DISPATCH_MS = 200; // throttle dispatch interval
+const SEEK_DISPATCH_THRESHOLD = 0.01; // minimum movement before dispatch
+const SMALL_STEP = 1; // keyboard seek step
+const LARGE_STEP = 5; // keyboard seek step when holding shift
+
 interface CanvasWaveformSeekbarProps {
   audioData: Float32Array | null;
   currentTime: number;
@@ -36,10 +51,10 @@ export function CanvasWaveformSeekbar({
   duration,
   onSeek,
   className,
-  numBars = 300,
-  barWidth = 2,
-  barGap = 1,
-  maxBarHeight = 40,
+  numBars = DEFAULT_NUM_BARS,
+  barWidth = DEFAULT_BAR_WIDTH,
+  barGap = DEFAULT_BAR_GAP,
+  maxBarHeight = DEFAULT_MAX_BAR_HEIGHT,
   disabled = false,
   bufferedTime = 0,
   useWebGL = false,
@@ -48,30 +63,52 @@ export function CanvasWaveformSeekbar({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
-  const [barCount, setBarCount] = useState(numBars);
   const lastDispatchRef = useRef({ time: 0, pos: 0 });
   const hasDispatchedRef = useRef(false);
+  const [effectiveBarWidth, setEffectiveBarWidth] = useState(barWidth);
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  useEffect(() => {
-    if (numBars) setBarCount(numBars);
-  }, [numBars]);
+  // Validate numeric props early to fail fast on misuse
+  if (!Number.isFinite(numBars) || numBars <= 0)
+    throw new Error("numBars must be a positive finite number");
+  if (!Number.isFinite(barGap) || barGap < 0)
+    throw new Error("barGap must be a non-negative finite number");
+  if (!Number.isFinite(maxBarHeight) || maxBarHeight <= 0)
+    throw new Error("maxBarHeight must be a positive finite number");
 
+  // Track container width to scale bar width while keeping bar count constant
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      const width = entry.contentRect.width;
-      const calculated = Math.max(1, Math.floor(width / (barWidth + barGap)));
-      setBarCount(calculated);
+      const width = entries[0].contentRect.width;
+      const available = width - (numBars - 1) * barGap;
+      setEffectiveBarWidth(Math.max(1, available / numBars));
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [barWidth, barGap]);
+  }, [numBars, barGap]);
 
+  // React to theme changes by watching for class changes on <html>
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.attributeName === "class") {
+          setThemeVersion((v) => v + 1);
+          break;
+        }
+      }
+    });
+    observer.observe(root, { attributes: true });
+    return () => observer.disconnect();
+  }, []);
+
+  // Pre-compute waveform peaks, caching by the audio buffer reference
+  // and the configured bar count.
   const peaks = useMemo(
-    () => computeWaveformPeaks(audioData, barCount),
-    [audioData, barCount],
+    () => computeWaveformPeaks(audioData, numBars),
+    [audioData, numBars],
   );
 
   const currentPosition = duration > 0 ? currentTime / duration : 0;
@@ -83,13 +120,16 @@ export function CanvasWaveformSeekbar({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const width = (canvas.width = barCount * (barWidth + barGap) - barGap);
+    const width =
+      (canvas.width = numBars * (effectiveBarWidth + barGap) - barGap);
     const height = (canvas.height = maxBarHeight);
 
     const style = getComputedStyle(containerRef.current!);
     const playedColor = style.getPropertyValue("--seek-played") || "#3b82f6";
     const unplayedColor =
       style.getPropertyValue("--seek-unplayed") || "#3f3f46";
+    const backgroundColor =
+      style.getPropertyValue("--seek-background") || "#000000";
     const bufferedColor =
       style.getPropertyValue("--seek-buffered") || "#737373";
     const disabledColor =
@@ -108,9 +148,9 @@ export function CanvasWaveformSeekbar({
           progressPosition,
           bufferedPosition,
           {
-            barWidth,
+            barWidth: effectiveBarWidth,
             barGap,
-            numBars: barCount,
+            numBars,
             colors: {
               played: playedColor,
               unplayed: unplayedColor,
@@ -128,13 +168,16 @@ export function CanvasWaveformSeekbar({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, width, height);
+    // Fill background so gaps between bars are not transparent/white.
+    ctx.fillStyle = backgroundColor.trim();
+    ctx.fillRect(0, 0, width, height);
 
     const centerY = height / 2;
-    for (let i = 0; i < barCount; i++) {
+    for (let i = 0; i < numBars; i++) {
       const amplitude = peaks[i];
-      const barHeight = Math.max(amplitude * maxBarHeight, 2);
-      const x = i * (barWidth + barGap);
-      const barPosition = i / (barCount - 1);
+      const barHeight = Math.max(amplitude * maxBarHeight, MIN_BAR_HEIGHT);
+      const x = i * (effectiveBarWidth + barGap);
+      const barPosition = i / (numBars - 1);
 
       let color = unplayedColor.trim();
       if (disabled) {
@@ -146,7 +189,7 @@ export function CanvasWaveformSeekbar({
       }
 
       ctx.fillStyle = color;
-      ctx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+      ctx.fillRect(x, centerY - barHeight / 2, effectiveBarWidth, barHeight);
     }
 
     // Playhead line
@@ -157,14 +200,15 @@ export function CanvasWaveformSeekbar({
     }
   }, [
     peaks,
-    barCount,
-    barWidth,
+    numBars,
+    effectiveBarWidth,
     barGap,
     maxBarHeight,
     progressPosition,
     bufferedPosition,
     disabled,
     useWebGL,
+    themeVersion,
   ]);
 
   const getPositionFromEvent = useCallback((event: React.PointerEvent) => {
@@ -194,8 +238,9 @@ export function CanvasWaveformSeekbar({
       setSeekPosition(position);
       const now = performance.now();
       if (
-        Math.abs(position - lastDispatchRef.current.pos) > 0.01 &&
-        now - lastDispatchRef.current.time > 200
+        Math.abs(position - lastDispatchRef.current.pos) >
+          SEEK_DISPATCH_THRESHOLD &&
+        now - lastDispatchRef.current.time > SEEK_DISPATCH_MS
       ) {
         onSeek(position * duration);
         lastDispatchRef.current = { time: now, pos: position };
@@ -215,8 +260,9 @@ export function CanvasWaveformSeekbar({
       const now = performance.now();
       if (
         !hasDispatchedRef.current ||
-        Math.abs(position - lastDispatchRef.current.pos) > 0.01 ||
-        now - lastDispatchRef.current.time > 200
+        Math.abs(position - lastDispatchRef.current.pos) >
+          SEEK_DISPATCH_THRESHOLD ||
+        now - lastDispatchRef.current.time > SEEK_DISPATCH_MS
       ) {
         onSeek(seekTime);
         lastDispatchRef.current = { time: now, pos: position };
@@ -231,7 +277,7 @@ export function CanvasWaveformSeekbar({
       if (disabled) return;
 
       let newTime = currentTime;
-      const step = event.shiftKey ? 5 : 1;
+      const step = event.shiftKey ? LARGE_STEP : SMALL_STEP;
 
       switch (event.key) {
         case "ArrowLeft":
@@ -295,7 +341,8 @@ export function CanvasWaveformSeekbar({
         disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
         className,
       )}
-      style={{ height: maxBarHeight + 20 }}
+      // Background color uses CSS variable so theme changes propagate
+      style={{ height: maxBarHeight + 20, backgroundColor: "var(--seek-background)" }}
       onPointerDown={handleSeekStart}
       onPointerMove={handleSeekMove}
       onPointerUp={handleSeekEnd}

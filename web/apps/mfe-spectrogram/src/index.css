@@ -10,6 +10,7 @@
     114,
     128
   ); /* gray-500 - brighter for better visibility */
+  --seek-background: rgb(39, 39, 42); /* neutral-800 for gap fill */
   --seek-buffered: rgba(59, 130, 246, 0.6); /* blue-500 with more opacity */
   --seek-focus: rgb(59, 130, 246); /* blue-500 */
   --seek-disabled: rgba(156, 163, 175, 0.4); /* gray-400 with more opacity */
@@ -26,6 +27,7 @@
     114,
     128
   ); /* gray-500 - brighter for better visibility */
+  --seek-background: rgb(24, 24, 27); /* neutral-900 */
   --seek-buffered: rgba(59, 130, 246, 0.6); /* blue-500 with more opacity */
   --seek-focus: rgb(59, 130, 246); /* blue-500 */
   --seek-disabled: rgba(156, 163, 175, 0.4); /* gray-400 with more opacity */
@@ -38,6 +40,7 @@
 .light {
   --seek-played: rgb(37, 99, 235); /* blue-600 */
   --seek-unplayed: rgb(156, 163, 175); /* gray-400 */
+  --seek-background: rgb(229, 231, 235); /* gray-200 */
   --seek-buffered: rgba(37, 99, 235, 0.5); /* blue-600 with opacity */
   --seek-focus: rgb(37, 99, 235); /* blue-600 */
   --seek-disabled: rgba(156, 163, 175, 0.3); /* gray-400 with opacity */
