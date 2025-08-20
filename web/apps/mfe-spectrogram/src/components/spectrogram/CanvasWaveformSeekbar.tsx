@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { cn } from "@/shared/utils/cn";
 import { computeWaveformPeaks } from "@/shared/utils/waveform";
+import { useSeekbarColors } from "@/hooks/useSeekbarColors";
+import { useSettingsStore } from "@/shared/stores/settingsStore";
 
 //
 // Constants
@@ -66,7 +68,15 @@ export function CanvasWaveformSeekbar({
   const [containerWidth, setContainerWidth] = useState(0);
   // numBars is derived from the container width and constants.
   const [numBars, setNumBars] = useState(1);
-  const [themeVersion, setThemeVersion] = useState(0);
+  // Sync CSS variables with theme/overrides and redraw when they change.
+  useSeekbarColors();
+  const { theme, seekPlayedColor, seekUnplayedColor } = useSettingsStore(
+    (s) => ({
+      theme: s.theme,
+      seekPlayedColor: s.seekPlayedColor,
+      seekUnplayedColor: s.seekUnplayedColor,
+    }),
+  );
 
   // Validate numeric props early to fail fast on misuse
   if (!Number.isFinite(maxBarHeight) || maxBarHeight <= 0)
@@ -90,20 +100,16 @@ export function CanvasWaveformSeekbar({
     return () => observer.disconnect();
   }, []);
 
-  // React to theme changes by watching for class changes on <html>
-  useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        if (m.attributeName === "class") {
-          setThemeVersion((v) => v + 1);
-          break;
-        }
-      }
-    });
-    observer.observe(root, { attributes: true });
-    return () => observer.disconnect();
-  }, []);
+  /**
+   * Retrieve a CSS variable value or throw immediately when missing.
+   * Failing fast here prevents silent theming errors that would otherwise
+   * produce invisible bars.
+   */
+  const getCssVar = (style: CSSStyleDeclaration, name: string): string => {
+    const value = style.getPropertyValue(name).trim();
+    if (!value) throw new Error(`Missing CSS variable: ${name}`);
+    return value;
+  };
 
   // Pre-compute waveform peaks, caching by the audio buffer reference
   // and the configured bar count.
@@ -129,15 +135,11 @@ export function CanvasWaveformSeekbar({
     const xOffset = width - totalBarsWidth;
 
     const style = getComputedStyle(containerRef.current!);
-    const playedColor = style.getPropertyValue("--seek-played") || "#3b82f6";
-    const unplayedColor =
-      style.getPropertyValue("--seek-unplayed") || "#3f3f46";
-    const bufferedColor =
-      style.getPropertyValue("--seek-buffered") || "#737373";
-    const disabledColor =
-      style.getPropertyValue("--seek-disabled") || "#52525b";
-    const playheadColor =
-      style.getPropertyValue("--seek-playhead") || "#60a5fa";
+    const playedColor = getCssVar(style, "--seek-played");
+    const unplayedColor = getCssVar(style, "--seek-unplayed");
+    const bufferedColor = getCssVar(style, "--seek-buffered");
+    const disabledColor = getCssVar(style, "--seek-disabled");
+    const playheadColor = getCssVar(style, "--seek-playhead");
 
     const commonOpts = {
       barWidth: BAR_WIDTH,
@@ -241,7 +243,9 @@ export function CanvasWaveformSeekbar({
     progressPosition,
     bufferedPosition,
     disabled,
-    themeVersion,
+    theme,
+    seekPlayedColor,
+    seekUnplayedColor,
   ]);
 
   const getPositionFromEvent = useCallback((event: React.PointerEvent) => {
@@ -374,7 +378,7 @@ export function CanvasWaveformSeekbar({
         disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
         className,
       )}
-        style={{ height: maxBarHeight + 20 }}
+      style={{ height: maxBarHeight + 20 }}
       onPointerDown={handleSeekStart}
       onPointerMove={handleSeekMove}
       onPointerUp={handleSeekEnd}
@@ -620,7 +624,9 @@ function buildGeometry(
   const SEGMENTS = 8;
   const vertsPerBar = 6 + SEGMENTS * 6; // center rect + caps
   const playheadVerts = disabled ? 0 : 6;
-  const vertices = new Float32Array(numBars * vertsPerBar * 2 + playheadVerts * 2);
+  const vertices = new Float32Array(
+    numBars * vertsPerBar * 2 + playheadVerts * 2,
+  );
   const colorValues = new Float32Array(
     numBars * vertsPerBar * 3 + playheadVerts * 3,
   );

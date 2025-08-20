@@ -2,48 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Theme colour variables
+  ----------------------
+  --accent-color and --primary-color are the canonical theme colours. The
+  seekbar variables reference these to ensure consistency across themes and
+  user customisation. Values are overridden by theme-specific classes and can
+  be further overridden via settings.
+*/
 :root {
+  --accent-color: #3b82f6;
+  --primary-color: #6b7280;
   /* Seekbar theme variables */
-  --seek-played: rgb(59, 130, 246); /* blue-500 */
-  --seek-unplayed: rgb(
-    107,
-    114,
-    128
-  ); /* gray-500 - brighter for better visibility */
+  --seek-played: var(--accent-color);
+  --seek-unplayed: var(--primary-color);
   --seek-buffered: rgba(59, 130, 246, 0.6); /* blue-500 with more opacity */
-  --seek-focus: rgb(59, 130, 246); /* blue-500 */
+  --seek-focus: var(--accent-color);
   --seek-disabled: rgba(156, 163, 175, 0.4); /* gray-400 with more opacity */
   --seek-hover-played: rgb(96, 165, 250); /* blue-400 */
   --seek-hover-unplayed: rgb(156, 163, 175); /* gray-400 - brighter on hover */
   --seek-time-label: rgb(156, 163, 175); /* gray-400 */
 }
 
-/* Dark theme overrides */
-.dark {
-  --seek-played: rgb(59, 130, 246); /* blue-500 */
-  --seek-unplayed: rgb(
-    107,
-    114,
-    128
-  ); /* gray-500 - brighter for better visibility */
-  --seek-buffered: rgba(59, 130, 246, 0.6); /* blue-500 with more opacity */
-  --seek-focus: rgb(59, 130, 246); /* blue-500 */
-  --seek-disabled: rgba(156, 163, 175, 0.4); /* gray-400 with more opacity */
-  --seek-hover-played: rgb(96, 165, 250); /* blue-400 */
-  --seek-hover-unplayed: rgb(156, 163, 175); /* gray-400 - brighter on hover */
-  --seek-time-label: rgb(156, 163, 175); /* gray-400 */
+/* Theme overrides matching the body class applied by the app */
+.theme-dark {
+  --accent-color: #3b82f6;
+  --primary-color: #6b7280;
 }
 
-/* Light theme overrides */
-.light {
-  --seek-played: rgb(37, 99, 235); /* blue-600 */
-  --seek-unplayed: rgb(156, 163, 175); /* gray-400 */
-  --seek-buffered: rgba(37, 99, 235, 0.5); /* blue-600 with opacity */
-  --seek-focus: rgb(37, 99, 235); /* blue-600 */
-  --seek-disabled: rgba(156, 163, 175, 0.3); /* gray-400 with opacity */
-  --seek-hover-played: rgb(59, 130, 246); /* blue-500 */
-  --seek-hover-unplayed: rgb(107, 114, 128); /* gray-500 */
-  --seek-time-label: rgb(107, 114, 128); /* gray-500 */
+.theme-light {
+  --accent-color: #2563eb;
+  --primary-color: #9ca3af;
+}
+
+.theme-neon {
+  --accent-color: #14b8a6;
+  --primary-color: #a3a3a3;
+}
+
+.theme-high-contrast {
+  --accent-color: #ffffff;
+  --primary-color: #000000;
 }
 
 /* Custom scrollbar styles */
