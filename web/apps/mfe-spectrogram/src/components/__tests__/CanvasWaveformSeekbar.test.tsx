@@ -11,6 +11,7 @@ vi.mock("@wasm/react_spectrogram_wasm", () => ({ default: async () => {} }), {
 let CanvasWaveformSeekbar: any;
 let BAR_WIDTH: number;
 let BAR_GAP: number;
+let getComputedStyleSpy: any;
 beforeAll(async () => {
   const mod = await import("../spectrogram/CanvasWaveformSeekbar");
   CanvasWaveformSeekbar = mod.CanvasWaveformSeekbar;
@@ -20,8 +21,11 @@ beforeAll(async () => {
 
 describe("CanvasWaveformSeekbar", () => {
   const mockCtx = {
-    fillRect: vi.fn(),
+    fillRect: vi.fn(), // used for playhead drawing
     clearRect: vi.fn(),
+    beginPath: vi.fn(),
+    roundRect: vi.fn(),
+    fill: vi.fn(),
     fillStyle: "",
   } as unknown as CanvasRenderingContext2D;
   let resizeCb: any;
@@ -30,6 +34,9 @@ describe("CanvasWaveformSeekbar", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockCtx.fillRect.mockReset();
+    mockCtx.roundRect.mockReset();
+    mockCtx.beginPath.mockReset();
+    mockCtx.fill.mockReset();
     mockCtx.clearRect.mockReset();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
       (type: string) => (type === "2d" ? mockCtx : null),
@@ -50,16 +57,16 @@ describe("CanvasWaveformSeekbar", () => {
       observe() {}
       disconnect() {}
     };
-    vi.spyOn(window, "getComputedStyle").mockReturnValue({
-      getPropertyValue: () => "",
-    } as any);
+    getComputedStyleSpy = vi
+      .spyOn(window, "getComputedStyle")
+      .mockReturnValue({ getPropertyValue: () => "" } as any);
     // Provide browser APIs required by imported utilities
     (global as any).requestAnimationFrame = (cb: FrameRequestCallback) =>
       setTimeout(cb, 0);
     (global as any).cancelAnimationFrame = (id: number) => clearTimeout(id);
   });
 
-  it("renders waveform bars centered on canvas", () => {
+  it("renders pill-shaped bars centered on canvas", async () => {
     const audioData = new Float32Array(1000);
     render(
       <CanvasWaveformSeekbar
@@ -69,18 +76,50 @@ describe("CanvasWaveformSeekbar", () => {
         onSeek={() => {}}
       />,
     );
-    expect(mockCtx.fillRect).toHaveBeenCalled();
-    // First fillRect paints the background. The second represents the first bar.
-    const barCall = mockCtx.fillRect.mock.calls[1];
-    expect(barCall[1]).toBe(19); // y position centered for barHeight 2
-    expect(barCall[3]).toBe(2); // barHeight
+    // Simulate initial resize to trigger drawing
+    resizeCb([{ contentRect: { width: 100 } }]);
+    await Promise.resolve();
+    expect(mockCtx.roundRect).toHaveBeenCalled();
+    const barCall = mockCtx.roundRect.mock.calls[0];
+    expect({ y: barCall[1], h: barCall[3], r: barCall[4] }).toMatchInlineSnapshot(
+      `{
+  "y": 19,
+  "h": 2,
+  "r": 2.5,
+}`,
+    );
+  });
+
+  it("omits borders and background", async () => {
+    const audioData = new Float32Array(10);
+    const { getByTestId } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={10}
+        onSeek={() => {}}
+      />,
+    );
+    resizeCb([{ contentRect: { width: 100 } }]);
+    await Promise.resolve();
+    const bar = getByTestId("progress-bar");
+    // Restore real getComputedStyle to inspect computed values.
+    getComputedStyleSpy.mockRestore();
+    const style = getComputedStyle(bar);
+    expect({
+      bg: style.backgroundColor,
+      border: style.border,
+    }).toMatchInlineSnapshot(`{
+  "bg": "rgba(0, 0, 0, 0)",
+  "border": "0px none rgb(0, 0, 0)",
+}`);
   });
 
   it("avoids partial bars across varying widths", async () => {
     const audioData = new Float32Array(1000);
     const widths = [100, 123, 157];
     for (const w of widths) {
-      mockCtx.fillRect.mockReset();
+      mockCtx.roundRect.mockReset();
       const { unmount } = render(
         <CanvasWaveformSeekbar
           audioData={audioData}
@@ -92,7 +131,7 @@ describe("CanvasWaveformSeekbar", () => {
       // Simulate container resize
       resizeCb([{ contentRect: { width: w } }]);
       await Promise.resolve();
-      const barCalls = mockCtx.fillRect.mock.calls.slice(1, -1); // skip bg & playhead
+      const barCalls = mockCtx.roundRect.mock.calls; // only bars
       const expectedBars = Math.floor((w + BAR_GAP) / (BAR_WIDTH + BAR_GAP));
       expect(barCalls.length).toBe(expectedBars);
       const lastBar = barCalls[barCalls.length - 1];
@@ -305,7 +344,6 @@ describe("CanvasWaveformSeekbar", () => {
     const colorVars: Record<string, string> = {
       "--seek-played": "#010203",
       "--seek-unplayed": "#040506",
-      "--seek-background": "#000000",
       "--seek-buffered": "#070809",
       "--seek-disabled": "#0a0b0c",
       "--seek-playhead": "#ffffff",
@@ -449,6 +487,7 @@ describe("CanvasWaveformSeekbar", () => {
         onSeek={() => {}}
       />,
     );
+    resizeCb([{ contentRect: { width: 100 } }]);
     await Promise.resolve();
     expect(ctxSpy).toHaveBeenCalledWith("2d");
     expect(mockCtx.fillRect).toHaveBeenCalled();

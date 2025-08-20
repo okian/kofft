@@ -132,8 +132,6 @@ export function CanvasWaveformSeekbar({
     const playedColor = style.getPropertyValue("--seek-played") || "#3b82f6";
     const unplayedColor =
       style.getPropertyValue("--seek-unplayed") || "#3f3f46";
-    const backgroundColor =
-      style.getPropertyValue("--seek-background") || "#000000";
     const bufferedColor =
       style.getPropertyValue("--seek-buffered") || "#737373";
     const disabledColor =
@@ -147,7 +145,6 @@ export function CanvasWaveformSeekbar({
       numBars,
       offset: xOffset,
       disabled,
-      background: backgroundColor,
       colors: {
         played: playedColor,
         unplayed: unplayedColor,
@@ -199,10 +196,6 @@ export function CanvasWaveformSeekbar({
       if (!ctx) return;
 
       ctx.clearRect(0, 0, width, height);
-      // Fill background so gaps between bars are not transparent/white.
-      ctx.fillStyle = backgroundColor.trim();
-      ctx.fillRect(0, 0, width, height);
-
       const centerY = height / 2;
       for (let i = 0; i < numBars; i++) {
         const amplitude = peaks[i];
@@ -220,7 +213,17 @@ export function CanvasWaveformSeekbar({
         }
 
         ctx.fillStyle = color;
-        ctx.fillRect(x, centerY - barHeight / 2, BAR_WIDTH, barHeight);
+        // Draw each bar with fully rounded corners. This keeps gaps transparent
+        // while ensuring bars resemble pills rather than hard rectangles.
+        ctx.beginPath();
+        ctx.roundRect(
+          x,
+          centerY - barHeight / 2,
+          BAR_WIDTH,
+          barHeight,
+          BAR_WIDTH / 2,
+        );
+        ctx.fill();
       }
 
       // Playhead line
@@ -367,15 +370,11 @@ export function CanvasWaveformSeekbar({
     <div
       ref={containerRef}
       className={cn(
-        "relative w-full select-none border border-neutral-700/50 rounded-lg",
+        "relative w-full select-none rounded-lg",
         disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
         className,
       )}
-      // Background color uses CSS variable so theme changes propagate
-      style={{
-        height: maxBarHeight + 20,
-        backgroundColor: "var(--seek-background)",
-      }}
+        style={{ height: maxBarHeight + 20 }}
       onPointerDown={handleSeekStart}
       onPointerMove={handleSeekMove}
       onPointerUp={handleSeekEnd}
@@ -419,8 +418,6 @@ function drawWithWebGL(
      * We thread this state through so the WebGL path matches the 2D one.
      */
     disabled: boolean;
-    /** Background color used to clear the canvas. */
-    background: string;
     colors: {
       played: string;
       unplayed: string;
@@ -430,7 +427,6 @@ function drawWithWebGL(
     };
   },
 ) {
-  const { background } = opts;
   const { vertices, colors, vertexCount } = buildGeometry(
     width,
     height,
@@ -485,8 +481,8 @@ function drawWithWebGL(
   gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
 
   gl.viewport(0, 0, width, height);
-  const bg = hexToRgb(background.trim());
-  gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
+  // Clear to transparent to keep gaps between bars see-through.
+  gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
 }
@@ -504,7 +500,6 @@ async function drawWithWebGPU(
     numBars: number;
     offset: number;
     disabled: boolean;
-    background: string;
     colors: {
       played: string;
       unplayed: string;
@@ -519,9 +514,7 @@ async function drawWithWebGPU(
   if (!adapter) throw new Error("WebGPU adapter not available");
   const device = await adapter.requestDevice();
   const format = gpu.getPreferredCanvasFormat();
-  ctx.configure({ device, format, alphaMode: "opaque" });
-
-  const { background } = opts;
+  ctx.configure({ device, format, alphaMode: "premultiplied" });
   const { vertices, colors, vertexCount } = buildGeometry(
     width,
     height,
@@ -583,17 +576,11 @@ async function drawWithWebGPU(
   });
 
   const encoder = device.createCommandEncoder();
-  const bg = hexToRgb(background.trim());
   const pass = encoder.beginRenderPass({
     colorAttachments: [
       {
         view: ctx.getCurrentTexture().createView(),
-        clearValue: {
-          r: bg[0] / 255,
-          g: bg[1] / 255,
-          b: bg[2] / 255,
-          a: 1,
-        },
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
         loadOp: "clear",
         storeOp: "store",
       },
@@ -628,52 +615,102 @@ function buildGeometry(
   },
 ) {
   const { barWidth, barGap, numBars, offset, colors, disabled } = opts;
-  const rects = numBars + (disabled ? 0 : 1);
-  const vertices = new Float32Array(rects * 6 * 2);
-  const colorValues = new Float32Array(rects * 6 * 3);
+  // Each bar is composed of a rectangle plus two semicircular end caps. We use
+  // eight segments per semicircle as a balance between quality and performance.
+  const SEGMENTS = 8;
+  const vertsPerBar = 6 + SEGMENTS * 6; // center rect + caps
+  const playheadVerts = disabled ? 0 : 6;
+  const vertices = new Float32Array(numBars * vertsPerBar * 2 + playheadVerts * 2);
+  const colorValues = new Float32Array(
+    numBars * vertsPerBar * 3 + playheadVerts * 3,
+  );
   let v = 0;
   let c = 0;
 
+  const radiusPx = barWidth / 2;
   for (let i = 0; i < numBars; i++) {
     const amplitude = peaks[i];
     const barHeight = Math.max(amplitude * height, MIN_BAR_HEIGHT);
     const x = offset + i * (barWidth + barGap);
-    const left = (x / width) * 2 - 1;
-    const right = ((x + barWidth) / width) * 2 - 1;
     const barPosition = i / (numBars - 1);
-    const top = barHeight / height;
-    const bottom = -top;
 
     let color = colors.unplayed;
     if (disabled) color = colors.disabled;
     else if (barPosition <= progress) color = colors.played;
     else if (barPosition <= buffered) color = colors.buffered;
-
     const rgb = hexToRgb(color.trim()).map((v2) => v2 / 255) as [
       number,
       number,
       number,
     ];
 
-    const arr = [
-      left,
-      bottom,
-      right,
-      bottom,
-      right,
-      top,
-      left,
-      bottom,
-      right,
-      top,
-      left,
-      top,
+    const rectTop = barHeight / 2 - radiusPx;
+    const rectBottom = -barHeight / 2 + radiusPx;
+
+    // Convert helper
+    const toX = (px: number) => (px / width) * 2 - 1;
+    const toY = (px: number) => (px / height) * 2;
+
+    // Central rectangle
+    const rect = [
+      toX(x),
+      toY(rectBottom),
+      toX(x + barWidth),
+      toY(rectBottom),
+      toX(x + barWidth),
+      toY(rectTop),
+      toX(x),
+      toY(rectBottom),
+      toX(x + barWidth),
+      toY(rectTop),
+      toX(x),
+      toY(rectTop),
     ];
-    vertices.set(arr, v);
-    v += arr.length;
+    vertices.set(rect, v);
+    v += rect.length;
     for (let j = 0; j < 6; j++) {
       colorValues.set(rgb, c);
       c += 3;
+    }
+
+    // Semicircle caps
+    const step = Math.PI / SEGMENTS;
+    const cx = x + radiusPx;
+    const topCy = rectTop + radiusPx;
+    const bottomCy = rectBottom - radiusPx;
+    for (let s = 0; s < SEGMENTS; s++) {
+      const a1 = Math.PI + s * step;
+      const a2 = Math.PI + (s + 1) * step;
+      const arrTop = [
+        toX(cx),
+        toY(topCy),
+        toX(cx + radiusPx * Math.cos(a1)),
+        toY(topCy + radiusPx * Math.sin(a1)),
+        toX(cx + radiusPx * Math.cos(a2)),
+        toY(topCy + radiusPx * Math.sin(a2)),
+      ];
+      vertices.set(arrTop, v);
+      v += arrTop.length;
+      for (let j = 0; j < 3; j++) {
+        colorValues.set(rgb, c);
+        c += 3;
+      }
+      const b1 = s * step;
+      const b2 = (s + 1) * step;
+      const arrBot = [
+        toX(cx),
+        toY(bottomCy),
+        toX(cx + radiusPx * Math.cos(b1)),
+        toY(bottomCy + radiusPx * Math.sin(b1)),
+        toX(cx + radiusPx * Math.cos(b2)),
+        toY(bottomCy + radiusPx * Math.sin(b2)),
+      ];
+      vertices.set(arrBot, v);
+      v += arrBot.length;
+      for (let j = 0; j < 3; j++) {
+        colorValues.set(rgb, c);
+        c += 3;
+      }
     }
   }
 
