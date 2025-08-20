@@ -13,6 +13,10 @@ import { revokeTrackUrl } from "@/utils/audio";
 // keeps the key consistent across the application and tests.
 export const AUDIO_PERSISTENCE_KEY = "audio-preferences";
 
+// Minimum legal playback position in seconds. Using a constant makes
+// the domain assumptions explicit and avoids scattering magic numbers.
+const MIN_AUDIO_TIME = 0;
+
 // Allowed loop mode values for runtime validation. A plain object is
 // cheaper than an array+includes and provides O(1) lookups.
 const VALID_LOOP_MODES: Record<LoopMode, true> = {
@@ -26,12 +30,16 @@ const VALID_LOOP_MODES: Record<LoopMode, true> = {
  * Any failure results in safe defaults. This function is intentionally
  * defensive because localStorage is mutable and may contain garbage.
  */
-const loadPersistedPreferences = (): Pick<AudioState, "shuffle" | "loopMode"> => {
+const loadPersistedPreferences = (): Pick<
+  AudioState,
+  "shuffle" | "loopMode"
+> => {
   try {
     const raw = localStorage.getItem(AUDIO_PERSISTENCE_KEY);
     if (!raw) return { shuffle: false, loopMode: "off" };
     const parsed = JSON.parse(raw) as Partial<AudioState>;
-    const shuffle = typeof parsed.shuffle === "boolean" ? parsed.shuffle : false;
+    const shuffle =
+      typeof parsed.shuffle === "boolean" ? parsed.shuffle : false;
     const loopMode =
       typeof parsed.loopMode === "string" && parsed.loopMode in VALID_LOOP_MODES
         ? (parsed.loopMode as LoopMode)
@@ -49,7 +57,7 @@ const loadPersistedPreferences = (): Pick<AudioState, "shuffle" | "loopMode"> =>
  * swallowed: missing storage should not crash the application.
  */
 const persistPreferences = (
-  prefs: Pick<AudioState, "shuffle" | "loopMode">
+  prefs: Pick<AudioState, "shuffle" | "loopMode">,
 ): void => {
   try {
     localStorage.setItem(AUDIO_PERSISTENCE_KEY, JSON.stringify(prefs));
@@ -128,8 +136,21 @@ export const useAudioStore = create<AudioStore>()(
       setPaused: (paused) => set({ isPaused: paused, isPlaying: !paused }),
       setStopped: (stopped) =>
         set({ isStopped: stopped, isPlaying: false, isPaused: false }),
-      setCurrentTime: (time) =>
-        set({ currentTime: Math.max(0, Math.min(time, get().duration)) }),
+      setCurrentTime: (time) => {
+        // Guard against non-finite input; failing fast keeps the store
+        // in a consistent state and surfaces programming errors early.
+        if (!Number.isFinite(time)) {
+          throw new Error("setCurrentTime requires a finite number");
+        }
+        const { currentTime, duration } = get();
+        // Clamp provided time to the valid playback window.
+        const clamped = Math.max(MIN_AUDIO_TIME, Math.min(time, duration));
+        // Avoid redundant state updates that would trigger unnecessary
+        // re-renders and subscriber notifications.
+        if (clamped !== currentTime) {
+          set({ currentTime: clamped });
+        }
+      },
       setDuration: (duration) => set({ duration: Math.max(0, duration) }),
       setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
       setMuted: (muted) => set({ isMuted: muted }),
