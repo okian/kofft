@@ -11,11 +11,12 @@ import { computeWaveformPeaks } from "@/shared/utils/waveform";
 //
 // Constants
 // Using named constants avoids magic numbers and documents the intent.
-// The values mirror previous defaults but are centralized for clarity.
 //
-const DEFAULT_NUM_BARS = 300;
-const DEFAULT_BAR_WIDTH = 2;
-const DEFAULT_BAR_GAP = 1;
+// Public width/gap values. They are exported for tests and any consumer
+// that needs to know the drawing geometry.
+export const BAR_WIDTH = 5;
+export const BAR_GAP = 4;
+// Height can still be customised via props but defaults remain internal.
 const DEFAULT_MAX_BAR_HEIGHT = 40;
 const MIN_BAR_HEIGHT = 2; // keep tiny peaks visible
 const SEEK_DISPATCH_MS = 200; // throttle dispatch interval
@@ -34,9 +35,6 @@ interface CanvasWaveformSeekbarProps {
   duration: number;
   onSeek: (time: number) => void;
   className?: string;
-  numBars?: number;
-  barWidth?: number;
-  barGap?: number;
   maxBarHeight?: number;
   disabled?: boolean;
   bufferedTime?: number;
@@ -55,9 +53,6 @@ export function CanvasWaveformSeekbar({
   duration,
   onSeek,
   className,
-  numBars = DEFAULT_NUM_BARS,
-  barWidth = DEFAULT_BAR_WIDTH,
-  barGap = DEFAULT_BAR_GAP,
   maxBarHeight = DEFAULT_MAX_BAR_HEIGHT,
   disabled = false,
   bufferedTime = 0,
@@ -68,29 +63,32 @@ export function CanvasWaveformSeekbar({
   const [seekPosition, setSeekPosition] = useState(0);
   const lastDispatchRef = useRef({ time: 0, pos: 0 });
   const hasDispatchedRef = useRef(false);
-  const [effectiveBarWidth, setEffectiveBarWidth] = useState(barWidth);
+  const [containerWidth, setContainerWidth] = useState(0);
+  // numBars is derived from the container width and constants.
+  const [numBars, setNumBars] = useState(1);
   const [themeVersion, setThemeVersion] = useState(0);
 
   // Validate numeric props early to fail fast on misuse
-  if (!Number.isFinite(numBars) || numBars <= 0)
-    throw new Error("numBars must be a positive finite number");
-  if (!Number.isFinite(barGap) || barGap < 0)
-    throw new Error("barGap must be a non-negative finite number");
   if (!Number.isFinite(maxBarHeight) || maxBarHeight <= 0)
     throw new Error("maxBarHeight must be a positive finite number");
 
-  // Track container width to scale bar width while keeping bar count constant
+  // Track container width and compute bar count so the last bar aligns with
+  // the track end. We fail fast by ensuring at least one bar is rendered.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0].contentRect.width;
-      const available = width - (numBars - 1) * barGap;
-      setEffectiveBarWidth(Math.max(1, available / numBars));
+      const bars = Math.max(
+        1,
+        Math.floor((width + BAR_GAP) / (BAR_WIDTH + BAR_GAP)),
+      );
+      setContainerWidth(width);
+      setNumBars(bars);
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [numBars, barGap]);
+  }, []);
 
   // React to theme changes by watching for class changes on <html>
   useEffect(() => {
@@ -121,11 +119,14 @@ export function CanvasWaveformSeekbar({
   // Draw waveform on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || containerWidth === 0) return;
 
-    const width = (canvas.width =
-      numBars * (effectiveBarWidth + barGap) - barGap);
+    // Canvas width matches the container; bars are offset so that the final
+    // bar terminates exactly at the right edge to avoid partial bars.
+    const width = (canvas.width = containerWidth);
     const height = (canvas.height = maxBarHeight);
+    const totalBarsWidth = numBars * (BAR_WIDTH + BAR_GAP) - BAR_GAP;
+    const xOffset = width - totalBarsWidth;
 
     const style = getComputedStyle(containerRef.current!);
     const playedColor = style.getPropertyValue("--seek-played") || "#3b82f6";
@@ -141,9 +142,10 @@ export function CanvasWaveformSeekbar({
       style.getPropertyValue("--seek-playhead") || "#60a5fa";
 
     const commonOpts = {
-      barWidth: effectiveBarWidth,
-      barGap,
+      barWidth: BAR_WIDTH,
+      barGap: BAR_GAP,
       numBars,
+      offset: xOffset,
       disabled,
       background: backgroundColor,
       colors: {
@@ -205,7 +207,7 @@ export function CanvasWaveformSeekbar({
       for (let i = 0; i < numBars; i++) {
         const amplitude = peaks[i];
         const barHeight = Math.max(amplitude * maxBarHeight, MIN_BAR_HEIGHT);
-        const x = i * (effectiveBarWidth + barGap);
+        const x = xOffset + i * (BAR_WIDTH + BAR_GAP);
         const barPosition = i / (numBars - 1);
 
         let color = unplayedColor.trim();
@@ -218,7 +220,7 @@ export function CanvasWaveformSeekbar({
         }
 
         ctx.fillStyle = color;
-        ctx.fillRect(x, centerY - barHeight / 2, effectiveBarWidth, barHeight);
+        ctx.fillRect(x, centerY - barHeight / 2, BAR_WIDTH, barHeight);
       }
 
       // Playhead line
@@ -231,8 +233,7 @@ export function CanvasWaveformSeekbar({
   }, [
     peaks,
     numBars,
-    effectiveBarWidth,
-    barGap,
+    containerWidth,
     maxBarHeight,
     progressPosition,
     bufferedPosition,
@@ -412,6 +413,7 @@ function drawWithWebGL(
     barWidth: number;
     barGap: number;
     numBars: number;
+    offset: number;
     /**
      * When true all bars use the disabled color regardless of progress.
      * We thread this state through so the WebGL path matches the 2D one.
@@ -500,6 +502,7 @@ async function drawWithWebGPU(
     barWidth: number;
     barGap: number;
     numBars: number;
+    offset: number;
     disabled: boolean;
     background: string;
     colors: {
@@ -613,6 +616,7 @@ function buildGeometry(
     barWidth: number;
     barGap: number;
     numBars: number;
+    offset: number;
     disabled: boolean;
     colors: {
       played: string;
@@ -623,7 +627,7 @@ function buildGeometry(
     };
   },
 ) {
-  const { barWidth, barGap, numBars, colors, disabled } = opts;
+  const { barWidth, barGap, numBars, offset, colors, disabled } = opts;
   const rects = numBars + (disabled ? 0 : 1);
   const vertices = new Float32Array(rects * 6 * 2);
   const colorValues = new Float32Array(rects * 6 * 3);
@@ -633,7 +637,7 @@ function buildGeometry(
   for (let i = 0; i < numBars; i++) {
     const amplitude = peaks[i];
     const barHeight = Math.max(amplitude * height, MIN_BAR_HEIGHT);
-    const x = i * (barWidth + barGap);
+    const x = offset + i * (barWidth + barGap);
     const left = (x / width) * 2 - 1;
     const right = ((x + barWidth) / width) * 2 - 1;
     const barPosition = i / (numBars - 1);

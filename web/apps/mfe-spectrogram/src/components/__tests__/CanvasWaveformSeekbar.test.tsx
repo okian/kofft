@@ -9,9 +9,13 @@ vi.mock("@wasm/react_spectrogram_wasm", () => ({ default: async () => {} }), {
   virtual: true,
 });
 let CanvasWaveformSeekbar: any;
+let BAR_WIDTH: number;
+let BAR_GAP: number;
 beforeAll(async () => {
-  CanvasWaveformSeekbar = (await import("../spectrogram/CanvasWaveformSeekbar"))
-    .CanvasWaveformSeekbar;
+  const mod = await import("../spectrogram/CanvasWaveformSeekbar");
+  CanvasWaveformSeekbar = mod.CanvasWaveformSeekbar;
+  BAR_WIDTH = mod.BAR_WIDTH;
+  BAR_GAP = mod.BAR_GAP;
 });
 
 describe("CanvasWaveformSeekbar", () => {
@@ -72,22 +76,30 @@ describe("CanvasWaveformSeekbar", () => {
     expect(barCall[3]).toBe(2); // barHeight
   });
 
-  it("renders a fixed number of bars", () => {
+  it("avoids partial bars across varying widths", async () => {
     const audioData = new Float32Array(1000);
-    render(
-      <CanvasWaveformSeekbar
-        audioData={audioData}
-        currentTime={0}
-        duration={10}
-        onSeek={() => {}}
-        numBars={10}
-      />,
-    );
-    const firstBarWidth = mockCtx.fillRect.mock.calls[1][2];
-    const barCalls = mockCtx.fillRect.mock.calls.filter(
-      (c) => c[2] === firstBarWidth,
-    );
-    expect(barCalls.length).toBe(10);
+    const widths = [100, 123, 157];
+    for (const w of widths) {
+      mockCtx.fillRect.mockReset();
+      const { unmount } = render(
+        <CanvasWaveformSeekbar
+          audioData={audioData}
+          currentTime={0}
+          duration={10}
+          onSeek={() => {}}
+        />,
+      );
+      // Simulate container resize
+      resizeCb([{ contentRect: { width: w } }]);
+      await Promise.resolve();
+      const barCalls = mockCtx.fillRect.mock.calls.slice(1, -1); // skip bg & playhead
+      const expectedBars = Math.floor((w + BAR_GAP) / (BAR_WIDTH + BAR_GAP));
+      expect(barCalls.length).toBe(expectedBars);
+      const lastBar = barCalls[barCalls.length - 1];
+      expect(lastBar[0] + lastBar[2]).toBe(w); // no partial bar
+      expect(lastBar[2]).toBe(BAR_WIDTH);
+      unmount();
+    }
   });
 
   it("handles click to seek", () => {
@@ -309,17 +321,15 @@ describe("CanvasWaveformSeekbar", () => {
         currentTime={2}
         duration={4}
         onSeek={() => {}}
-        numBars={4}
-        barWidth={2}
-        barGap={1}
       />,
     );
+    resizeCb([{ contentRect: { width: 40 } }]);
     await Promise.resolve();
     const canvas = getByTestId("progress-bar").querySelector("canvas")!;
     const ctx = canvas.getContext("2d")!;
     const y = Math.floor(canvas.height / 2);
-    const played = ctx.getImageData(1, y, 1, 1).data;
-    const unplayed = ctx.getImageData(10, y, 1, 1).data;
+    const played = ctx.getImageData(9, y, 1, 1).data;
+    const unplayed = ctx.getImageData(37, y, 1, 1).data;
     expect(Array.from(played)).toEqual([1, 2, 3, 255]);
     expect(Array.from(unplayed)).toEqual([4, 5, 6, 255]);
 
@@ -330,14 +340,12 @@ describe("CanvasWaveformSeekbar", () => {
         currentTime={0}
         duration={4}
         onSeek={() => {}}
-        numBars={4}
-        barWidth={2}
-        barGap={1}
         disabled
       />,
     );
+    resizeCb([{ contentRect: { width: 40 } }]);
     await Promise.resolve();
-    const disabled = ctx.getImageData(1, y, 1, 1).data;
+    const disabled = ctx.getImageData(9, y, 1, 1).data;
     expect(Array.from(disabled)).toEqual([10, 11, 12, 255]);
   });
 
