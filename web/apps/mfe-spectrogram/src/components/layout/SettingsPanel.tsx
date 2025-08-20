@@ -87,6 +87,7 @@ export function SettingsPanel({
   const themeColours = THEME_COLORS[settings.theme];
   const playedColour = settings.seekPlayedColor || themeColours.accent;
   const unplayedColour = settings.seekUnplayedColor || themeColours.primary;
+  const playheadColour = settings.seekPlayheadColor || themeColours.accent;
 
   const handleAPIKeyChange = (
     service: "acoustid" | "musicbrainz",
@@ -308,17 +309,45 @@ export function SettingsPanel({
                       className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
                     />
                   </label>
+                  <label className="flex items-center gap-2 text-sm text-neutral-300">
+                    Playhead
+                    <input
+                      type="color"
+                      value={playheadColour}
+                      onChange={(e) =>
+                        onSettingsChange({ seekPlayheadColor: e.target.value })
+                      }
+                      className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
+                    />
+                  </label>
                   <button
                     onClick={() =>
                       onSettingsChange({
                         seekPlayedColor: "",
                         seekUnplayedColor: "",
+                        seekPlayheadColor: "",
                       })
                     }
                     className="px-2 py-1 text-xs text-accent-blue border border-accent-blue rounded hover:bg-accent-blue/10"
                   >
                     Reset
                   </button>
+                </div>
+                {/* Playhead visibility toggle */}
+                <div className="mt-2">
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.showSeekbarPlayhead ?? true}
+                      onChange={(e) =>
+                        onSettingsChange({
+                          showSeekbarPlayhead: e.target.checked,
+                        })
+                      }
+                      className="text-accent-blue"
+                    />
+                    Show playhead (progress line)
+                  </label>
                 </div>
               </div>
 

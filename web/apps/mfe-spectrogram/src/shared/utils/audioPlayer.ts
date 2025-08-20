@@ -243,6 +243,21 @@ class AudioPlayerEngine {
     }
     this.currentBuffer = decodedBuffer;
 
+    // Extract audio data for waveform generation if not already present
+    if (!track.audioData) {
+      const channelData = decodedBuffer.getChannelData(0);
+      const audioData = new Float32Array(channelData.length);
+      audioData.set(channelData);
+      
+      // Update the track with audio data
+      track.audioData = audioData;
+      console.log("Extracted audio data for waveform:", { 
+        length: audioData.length, 
+        sampleRate: decodedBuffer.sampleRate,
+        duration: decodedBuffer.duration 
+      });
+    }
+
     // Clamp start offset to valid range before starting playback
     const duration = this.currentBuffer.duration;
     const safeStart = Math.max(

@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 
 use console_error_panic_hook;
-use js_sys::{Array, Uint32Array};
+use js_sys::Array;
 use kofft::fft::{self, new_fft_impl, Complex32, FftImpl};
 use kofft::visual::spectrogram::{self, Colormap as KColormap};
 use kofft::window::hann;
-use kofft::{dct, fuzzy, resample, wavelet};
+use kofft::{dct, resample, wavelet};
 use wasm_bindgen::prelude::*;
 use web_sys::console;
 
@@ -477,7 +477,7 @@ pub fn compute_bar_amplitudes(audio_data: &[f32], num_bars: usize) -> Vec<f32> {
     if let Some(max) = amplitudes
         .iter()
         .cloned()
-        .fold(None, |acc, v| Some(acc.map_or(v, |m| m.max(v))))
+        .fold(None, |acc, v| Some(acc.map_or(v, |m: f32| m.max(v))))
     {
         if max > 0.0 {
             for amp in &mut amplitudes {

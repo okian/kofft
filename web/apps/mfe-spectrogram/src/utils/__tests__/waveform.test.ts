@@ -17,43 +17,41 @@ describe("computeWaveformPeaks", () => {
     vi.mocked(computeWaveformPeaksWASM).mockReset();
   });
 
-  it("uses wasm when available", () => {
+  it("uses wasm when available", async () => {
     const data = new Float32Array([0.1, -0.2, 0.5, -0.6]);
     const fake = new Float32Array([0.6, 0.6]);
-    vi.mocked(computeWaveformPeaksWASM).mockReturnValue(fake);
-    const peaks = computeWaveformPeaks(data, 2);
+    vi.mocked(computeWaveformPeaksWASM).mockResolvedValue(fake);
+    const peaks = await computeWaveformPeaks(data, 2);
     expect(peaks).toBe(fake);
   });
 
-  it("throws when wasm invocation fails", () => {
+  it("throws when wasm invocation fails", async () => {
     const data = new Float32Array([0, 0, 0, 1]);
-    vi.mocked(computeWaveformPeaksWASM).mockImplementation(() => {
-      throw new Error("no wasm");
-    });
-    expect(() => computeWaveformPeaks(data, 4)).toThrow("no wasm");
+    vi.mocked(computeWaveformPeaksWASM).mockRejectedValue(new Error("no wasm"));
+    await expect(computeWaveformPeaks(data, 4)).rejects.toThrow("no wasm");
   });
 
-  it("caches results per buffer and bar count", () => {
+  it("caches results per buffer and bar count", async () => {
     const data = new Float32Array([1, -1, 1, -1]);
     const fake = new Float32Array([1, 1]);
-    vi.mocked(computeWaveformPeaksWASM).mockReturnValue(fake);
-    const first = computeWaveformPeaks(data, 2);
-    const second = computeWaveformPeaks(data, 2);
+    vi.mocked(computeWaveformPeaksWASM).mockResolvedValue(fake);
+    const first = await computeWaveformPeaks(data, 2);
+    const second = await computeWaveformPeaks(data, 2);
     expect(first).toBe(second);
   });
 
-  it("maintains bar count and last-bar alignment across lengths", () => {
+  it("maintains bar count and last-bar alignment across lengths", async () => {
     vi.mocked(computeWaveformPeaksWASM).mockImplementation(
-      computeWaveformPeaksJS,
+      async (data: Float32Array, bars: number) => computeWaveformPeaksJS(data, bars),
     );
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 2048 }),
         fc.integer({ min: 1, max: 64 }),
-        (len, bars) => {
+        async (len, bars) => {
           const data = new Float32Array(len);
           data[len - 1] = 1; // ensure final sample is non-zero
-          const peaks = computeWaveformPeaks(data, bars);
+          const peaks = await computeWaveformPeaks(data, bars);
           expect(peaks.length).toBe(bars);
           expect(peaks[bars - 1]).toBeCloseTo(1, 5);
           expect(computeWaveformPeaksWASM).toHaveBeenCalled();
@@ -62,9 +60,9 @@ describe("computeWaveformPeaks", () => {
     );
   });
 
-  it("normalizes constant signals", () => {
+  it("normalizes constant signals", async () => {
     vi.mocked(computeWaveformPeaksWASM).mockImplementation(
-      computeWaveformPeaksJS,
+      async (data: Float32Array, bars: number) => computeWaveformPeaksJS(data, bars),
     );
     fc.assert(
       fc.property(
@@ -76,9 +74,9 @@ describe("computeWaveformPeaks", () => {
           noNaN: true,
           noDefaultInfinity: true,
         }),
-        (len, bars, amp) => {
+        async (len, bars, amp) => {
           const data = new Float32Array(len).fill(amp);
-          const peaks = computeWaveformPeaks(data, bars);
+          const peaks = await computeWaveformPeaks(data, bars);
           for (const p of peaks) {
             expect(p).toBeCloseTo(1, 5);
           }

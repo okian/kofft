@@ -18,10 +18,10 @@ let peaksCache = new WeakMap<Float32Array, Map<number, Float32Array>>();
  * Results are cached per audioData reference and number of bars
  * to avoid repeating expensive calculations.
  */
-export function computeWaveformPeaks(
+export async function computeWaveformPeaks(
   audioData: Float32Array | null,
   numBars: number,
-): Float32Array {
+): Promise<Float32Array> {
   if (!audioData || audioData.length === 0) {
     // Without audio we synthesise a deterministic placeholder so UI elements
     // still render.  The shape is a simple sine wave for visual appeal.
@@ -47,7 +47,7 @@ export function computeWaveformPeaks(
   // Delegate to WASM for heavy lifting.  Any failure is surfaced to the caller
   // as an exception to avoid quietly using a slower, potentially divergent,
   // JavaScript path.
-  const peaks = computeWaveformPeaksWASM(audioData, numBars);
+  const peaks = await computeWaveformPeaksWASM(audioData, numBars);
 
   cacheForBuffer.set(numBars, peaks);
   return peaks;
@@ -76,14 +76,17 @@ export function computeWaveformPeaksJS(
     peaks[i] = rms;
   }
 
-  // Normalise amplitudes so the maximum is 1.0.
+  // Apply dynamic range compression instead of simple normalization
+  // This preserves more contrast between loud and quiet parts
   let max = 0;
   for (let i = 0; i < numBars; i++) {
     if (peaks[i] > max) max = peaks[i];
   }
   if (max > 0) {
     for (let i = 0; i < numBars; i++) {
-      peaks[i] /= max;
+      // Apply compression curve: sqrt for more dramatic differences
+      const normalized = peaks[i] / max;
+      peaks[i] = Math.pow(normalized, 0.7); // 0.7 power curve for more contrast
     }
   }
 

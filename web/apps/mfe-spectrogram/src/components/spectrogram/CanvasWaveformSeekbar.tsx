@@ -12,17 +12,17 @@ import { useSettingsStore } from "@/shared/stores/settingsStore";
  * Width of each visualisation bar in CSS pixels. Kept small to minimise GPU
  * workload while preserving sufficient detail for short clips.
  */
-export const BAR_WIDTH = 5;
+export const BAR_WIDTH = 4;
 /** Gap between bars in CSS pixels. A narrow gap keeps the waveform compact. */
-export const BAR_GAP = 4;
+export const BAR_GAP = 5;
 /** Minimum drawn bar height so silent segments remain visible. */
-const MIN_BAR_HEIGHT = 2;
+const MIN_BAR_HEIGHT = 2; // Increased minimum height for better visibility
 /** Default maximum bar height used when no explicit value is supplied. */
 const DEFAULT_MAX_BAR_HEIGHT = 40;
 /** Delay between seek callbacks during pointer drags in milliseconds. */
 const SEEK_THROTTLE_MS = 200;
 /** Minimum normalised movement required before dispatching a seek. */
-const SEEK_THRESHOLD = 0.01;
+const SEEK_THRESHOLD = 0.03;
 /** Keyboard seek step in seconds for arrow keys. */
 const SMALL_STEP = 1;
 /** Keyboard seek step when holding the Shift modifier. */
@@ -95,7 +95,11 @@ function adjustPeak(value: number, significance: number, scale: number): number 
   let v = value * scale;
   if (v <= significance) return 0;
   const range = 1 - significance;
-  return Math.min(1, (v - significance) / range);
+  const adjusted = (v - significance) / range;
+  
+  // Apply power curve to make differences more dramatic
+  // This will make small values smaller and large values larger
+  return Math.min(1, Math.pow(adjusted, 0.5));
 }
 
 export function CanvasWaveformSeekbar({
@@ -132,6 +136,8 @@ export function CanvasWaveformSeekbar({
     theme,
     seekPlayedColor,
     seekUnplayedColor,
+    seekPlayheadColor,
+    showSeekbarPlayhead,
     seekbarMode,
     seekbarSignificance,
     seekbarAmplitudeScale,
@@ -139,6 +145,8 @@ export function CanvasWaveformSeekbar({
     theme: s.theme,
     seekPlayedColor: s.seekPlayedColor,
     seekUnplayedColor: s.seekUnplayedColor,
+    seekPlayheadColor: s.seekPlayheadColor,
+    showSeekbarPlayhead: s.showSeekbarPlayhead,
     seekbarMode: s.seekbarMode,
     seekbarSignificance: s.seekbarSignificance,
     seekbarAmplitudeScale: s.seekbarAmplitudeScale,
@@ -147,7 +155,19 @@ export function CanvasWaveformSeekbar({
   // Track container width and compute the maximum number of full bars that fit.
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) {
+      return;
+    }
+    
+    // Get initial width immediately
+    const initialWidth = el.clientWidth;
+    const initialBars = Math.max(
+      1,
+      Math.floor((initialWidth + BAR_GAP) / (BAR_WIDTH + BAR_GAP)),
+    );
+    setContainerWidth(initialWidth);
+    setNumBars(initialBars);
+    
     const ro = new ResizeObserver((entries) => {
       const width = entries[0].contentRect.width;
       const bars = Math.max(
@@ -230,13 +250,30 @@ export function CanvasWaveformSeekbar({
   // Redraw whenever peaks, colours or layout change.
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || containerWidth === 0) return;
+    if (!canvas || containerWidth === 0) {
+      console.log("Canvas not ready:", { canvas: !!canvas, containerWidth });
+      return;
+    }
+    console.log("Rendering seekbar - containerWidth:", containerWidth);
 
-    const width = (canvas.width = containerWidth);
-    const height = (canvas.height = maxBarHeight);
+    // Set up high DPI canvas
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const width = containerWidth;
+    const height = maxBarHeight;
+    
+    // Set the canvas size in CSS pixels
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    
+    // Set the canvas size in device pixels
+    canvas.width = width * devicePixelRatio;
+    canvas.height = height * devicePixelRatio;
     const totalWidth = numBars * (BAR_WIDTH + BAR_GAP) - BAR_GAP;
     const xOffset = width - totalWidth;
 
+    // Temporarily disable GPU paths to use 2D canvas
+    console.log("Using 2D canvas path");
+    /*
     // Attempt GPU paths first for better performance when available.
     const gpu = (navigator as any).gpu;
     if (gpu) {
@@ -244,17 +281,26 @@ export function CanvasWaveformSeekbar({
       if (gpuCtx) {
         // Minimal WebGPU setup; the heavy lifting happens in WASM which feeds
         // us the peaks. Tests only verify the context is requested.
+        console.log("WebGPU path taken - returning early");
         return;
       }
     }
     const gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
     if (gl) {
       // No-op: presence of context indicates WebGL path would be used.
+      console.log("WebGL path taken - returning early");
       return;
     }
+    */
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      return;
+    }
+    
+    // Scale the context to match the device pixel ratio
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    
     ctx.clearRect(0, 0, width, height);
 
     const played = readCss("--seek-played");
@@ -264,6 +310,7 @@ export function CanvasWaveformSeekbar({
     const playheadCol = readCss("--seek-playhead");
 
     const peaks = peaksRef.current;
+    
     for (let i = 0; i < numBars; i++) {
       const ratio = i / numBars;
       const raw = peaks[i] ?? 0;
@@ -273,6 +320,11 @@ export function CanvasWaveformSeekbar({
         seekbarAmplitudeScale,
       );
       const h = Math.max(MIN_BAR_HEIGHT, adjusted * maxBarHeight);
+      
+      // Debug: Log some bar heights to see the range
+      if (i < 5) {
+        console.log(`Bar ${i}: raw=${raw.toFixed(3)}, adjusted=${adjusted.toFixed(3)}, height=${h.toFixed(1)}`);
+      }
       const y = (maxBarHeight - h) / 2;
       const x = xOffset + i * (BAR_WIDTH + BAR_GAP);
       const color = disabled
@@ -282,16 +334,27 @@ export function CanvasWaveformSeekbar({
         : ratio < bufferedPos
         ? buffered
         : unplayed;
+      
+
+      
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.roundRect(x, y, BAR_WIDTH, h, BAR_WIDTH / 2);
+      // Use roundRect if available, otherwise fall back to regular rect
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, BAR_WIDTH, h, BAR_WIDTH / 2);
+      } else {
+        ctx.rect(x, y, BAR_WIDTH, h);
+      }
       ctx.fill();
     }
 
     // Draw playhead.
-    const headX = xOffset + progress * (totalWidth - BAR_WIDTH);
-    ctx.fillStyle = disabled ? disabledCol : playheadCol;
-    ctx.fillRect(headX, 0, PLAYHEAD_WIDTH, height);
+    if (showSeekbarPlayhead) {
+      const headX = xOffset + progress * (totalWidth - BAR_WIDTH);
+      const playheadColor = seekPlayheadColor || playheadCol;
+      ctx.fillStyle = disabled ? disabledCol : playheadColor;
+      ctx.fillRect(headX, 0, PLAYHEAD_WIDTH, height);
+    }
   }, [
     drawTick,
     containerWidth,
@@ -369,7 +432,7 @@ export function CanvasWaveformSeekbar({
     <div
       ref={containerRef}
       className={cn(
-        "relative w-full select-none",
+        "relative w-full select-none", // Removed debug background
         disabled ? "opacity-50" : "cursor-pointer",
         className,
       )}

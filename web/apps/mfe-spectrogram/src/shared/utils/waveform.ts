@@ -50,6 +50,7 @@ export async function computeWaveformPeaks(
   const cached = cacheForBuffer.get(numBars);
   if (cached) return cached;
 
+  let peaks: Float32Array;
   try {
     peaks = await computeWaveformPeaksWASM(audioData, numBars);
   } catch (error) {

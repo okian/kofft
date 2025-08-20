@@ -26,6 +26,10 @@ interface SettingsStore extends SpectrogramSettings {
   setSeekPlayedColor: (color: string) => void;
   /** User-defined override for the unplayed portion colour. */
   setSeekUnplayedColor: (color: string) => void;
+  /** User-defined override for the playhead colour. */
+  setSeekPlayheadColor: (color: string) => void;
+  /** Toggle playhead visibility. */
+  setShowSeekbarPlayhead: (show: boolean) => void;
   /** Clears both colour overrides, reverting to theme defaults. */
   resetSeekbarColors: () => void;
   /** Selects how the seek bar visualises audio data. */
@@ -64,10 +68,12 @@ const defaultSettings: SpectrogramSettings = {
   // Seekbar color overrides: empty strings mean use theme defaults.
   seekPlayedColor: "",
   seekUnplayedColor: "",
+  seekPlayheadColor: "",
+  showSeekbarPlayhead: true,
   // Seekbar visualisation defaults
-  seekbarMode: "waveform",
-  seekbarSignificance: 0.5,
-  seekbarAmplitudeScale: 1,
+  seekbarMode: "waveform", // Back to waveform mode
+  seekbarSignificance: 0.05, // Even lower significance to show more bars
+  seekbarAmplitudeScale: 8, // Much higher scale to make bars more visible
   // API Keys
   apiKeys: {},
   apiKeyStatus: {
@@ -120,6 +126,12 @@ function sanitiseSettings(input: any): SpectrogramSettings {
   if (typeof input.seekUnplayedColor === "string")
     result.seekUnplayedColor = sanitiseColor(input.seekUnplayedColor);
 
+  if (typeof input.seekPlayheadColor === "string")
+    result.seekPlayheadColor = sanitiseColor(input.seekPlayheadColor);
+
+  if (typeof input.showSeekbarPlayhead === "boolean")
+    result.showSeekbarPlayhead = input.showSeekbarPlayhead;
+
   if (VALID_SEEKBAR_MODES.includes(input.seekbarMode))
     result.seekbarMode = input.seekbarMode as any;
 
@@ -144,23 +156,26 @@ export const useSettingsStore = create<SettingsStore>()(
   subscribeWithSelector((set, get) => ({
     ...defaultSettings,
 
-    setTheme: (theme) => set({ theme }),
-    setAmplitudeScale: (amplitudeScale) => set({ amplitudeScale }),
-    setFrequencyScale: (frequencyScale) => set({ frequencyScale }),
-    setResolution: (resolution) => set({ resolution }),
-    setRefreshRate: (refreshRate) => set({ refreshRate }),
-    setColormap: (colormap) => set({ colormap }),
-    setShowLegend: (showLegend) => set({ showLegend }),
+    setTheme: (theme) => set((state) => ({ ...state, theme })),
+    setAmplitudeScale: (amplitudeScale) => set((state) => ({ ...state, amplitudeScale })),
+    setFrequencyScale: (frequencyScale) => set((state) => ({ ...state, frequencyScale })),
+    setResolution: (resolution) => set((state) => ({ ...state, resolution })),
+    setRefreshRate: (refreshRate) => set((state) => ({ ...state, refreshRate })),
+    setColormap: (colormap) => set((state) => ({ ...state, colormap })),
+    setShowLegend: (showLegend) => set((state) => ({ ...state, showLegend })),
     setEnableToastNotifications: (enableToastNotifications) =>
-      set({ enableToastNotifications }),
+      set((state) => ({ ...state, enableToastNotifications })),
     // Store colour overrides individually to avoid unnecessary object copies.
     setSeekPlayedColor: (color) =>
-      set({ seekPlayedColor: sanitiseColor(color) }),
+      set((state) => ({ ...state, seekPlayedColor: sanitiseColor(color) })),
     setSeekUnplayedColor: (color) =>
-      set({ seekUnplayedColor: sanitiseColor(color) }),
+      set((state) => ({ ...state, seekUnplayedColor: sanitiseColor(color) })),
+    setSeekPlayheadColor: (color) =>
+      set((state) => ({ ...state, seekPlayheadColor: sanitiseColor(color) })),
+    setShowSeekbarPlayhead: (show) => set((state) => ({ ...state, showSeekbarPlayhead: show })),
     // Reset both colours back to theme-driven defaults in one cheap update.
     resetSeekbarColors: () =>
-      set({ seekPlayedColor: "", seekUnplayedColor: "" }),
+      set((state) => ({ ...state, seekPlayedColor: "", seekUnplayedColor: "", seekPlayheadColor: "" })),
 
     // Seek bar configuration setters with basic validation to fail fast on
     // invalid input. Each setter clamps or verifies inputs instead of silently
@@ -170,7 +185,7 @@ export const useSettingsStore = create<SettingsStore>()(
         console.error("invalid seekbar mode", seekbarMode);
         throw new Error("invalid seekbar mode");
       }
-      set({ seekbarMode });
+      set((state) => ({ ...state, seekbarMode }));
     },
     setSeekbarSignificance: (seekbarSignificance) => {
       if (!Number.isFinite(seekbarSignificance)) {
@@ -187,7 +202,7 @@ export const useSettingsStore = create<SettingsStore>()(
       if (level !== seekbarSignificance) {
         console.warn("seekbarSignificance clamped", seekbarSignificance);
       }
-      set({ seekbarSignificance: level });
+      set((state) => ({ ...state, seekbarSignificance: level }));
     },
     setSeekbarAmplitudeScale: (seekbarAmplitudeScale) => {
       if (
@@ -200,12 +215,15 @@ export const useSettingsStore = create<SettingsStore>()(
         );
         throw new Error("seekbarAmplitudeScale must be positive");
       }
-      set({ seekbarAmplitudeScale });
+      set((state) => ({ ...state, seekbarAmplitudeScale }));
     },
 
     updateSettings: (settings) => {
-      const sanitised = sanitiseSettings(settings);
-      set((state) => ({ ...state, ...sanitised }));
+      // For partial updates, we need to merge with existing state
+      set((state) => {
+        const sanitised = sanitiseSettings({ ...state, ...settings });
+        return sanitised;
+      });
     },
 
     resetToDefaults: () => {
@@ -301,11 +319,11 @@ export const useSettingsStore = create<SettingsStore>()(
 
     // Artwork settings actions
     setEnableExternalArtwork: (enable) =>
-      set({ enableExternalArtwork: enable }),
-    setEnableAcoustID: (enable) => set({ enableAcoustID: enable }),
-    setEnableMusicBrainz: (enable) => set({ enableMusicBrainz: enable }),
+      set((state) => ({ ...state, enableExternalArtwork: enable })),
+    setEnableAcoustID: (enable) => set((state) => ({ ...state, enableAcoustID: enable })),
+    setEnableMusicBrainz: (enable) => set((state) => ({ ...state, enableMusicBrainz: enable })),
     setEnablePlaceholderArtwork: (enable) =>
-      set({ enablePlaceholderArtwork: enable }),
+      set((state) => ({ ...state, enablePlaceholderArtwork: enable })),
   })),
 );
 

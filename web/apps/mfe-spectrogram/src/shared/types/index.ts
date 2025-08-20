@@ -138,6 +138,15 @@ export interface SpectrogramSettings {
    * Falls back to the theme's primary color when unset.
    */
   seekUnplayedColor?: string;
+  /**
+   * Optional override for the playhead (progress line) color.
+   * Falls back to the theme's accent color when unset.
+   */
+  seekPlayheadColor?: string;
+  /**
+   * Whether to show the playhead (progress line) in the seekbar.
+   */
+  showSeekbarPlayhead?: boolean;
   // API Keys
   apiKeys: APIKeys;
   apiKeyStatus: APIKeyStatus;

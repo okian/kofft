@@ -579,8 +579,8 @@ export const Footer: React.FC = () => {
             }
           }}
           maxBarHeight={isMobile ? 16 : 24}
-          disabled={!currentTrack}
-          bufferedTime={duration * 0.8} // Mock buffered time for demo
+          disabled={false} // Always enable seekbar for testing
+          bufferedTime={0} // No buffered visualization for waveform seekbar
         />
       </div>
     </footer>

@@ -139,6 +139,15 @@ export interface SpectrogramSettings {
    */
   seekUnplayedColor?: string;
   /**
+   * Optional override for the playhead (progress line) color.
+   * Falls back to the theme's accent color when unset.
+   */
+  seekPlayheadColor?: string;
+  /**
+   * Whether to show the playhead (progress line) in the seekbar.
+   */
+  showSeekbarPlayhead?: boolean;
+  /**
    * Controls how the seek bar visualises audio. "live" syncs with current
    * playback data, "frequency" animates FFT bins from low to high frequencies
    * across the bar, and "waveform" renders a static waveform computed from the
