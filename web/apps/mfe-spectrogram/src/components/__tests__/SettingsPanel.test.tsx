@@ -1,5 +1,25 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock settings store and toast utilities before importing the component under test.
+const mockValidateAPIKey = vi.fn();
+const toastError = vi.fn();
+
+vi.mock("@/stores/settingsStore", () => ({
+  useSettingsStore: {
+    getState: () => ({ validateAPIKey: mockValidateAPIKey }),
+  },
+}));
+
+vi.mock("@/utils/toast", () => ({
+  conditionalToast: {
+    success: vi.fn(),
+    error: toastError,
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
 import { SettingsPanel } from "../layout/SettingsPanel";
 
 const mockSettings = {
@@ -238,10 +258,36 @@ describe("SettingsPanel", () => {
     });
 
     // Change amplitude scale
-    const ampInput = screen.getByLabelText("Amplitude Scale") as HTMLInputElement;
+    const ampInput = screen.getByLabelText(
+      "Amplitude Scale",
+    ) as HTMLInputElement;
     fireEvent.input(ampInput, { target: { value: "2" } });
     expect(mockOnSettingsChange).toHaveBeenCalledWith({
       seekbarAmplitudeScale: 2,
     });
+  });
+
+  it("notifies when API key validation fails", async () => {
+    const settingsWithKey = {
+      ...mockSettings,
+      apiKeys: { acoustid: "abc", musicbrainz: "" },
+    };
+
+    mockValidateAPIKey.mockRejectedValueOnce(new Error("network"));
+
+    render(
+      <SettingsPanel
+        settings={settingsWithKey}
+        isOpen={true}
+        onClose={mockOnClose}
+        onSettingsChange={mockOnSettingsChange}
+      />,
+    );
+
+    const testButtons = screen.getAllByText("Test");
+    await fireEvent.click(testButtons[0]);
+
+    expect(mockValidateAPIKey).toHaveBeenCalledWith("acoustid");
+    expect(toastError).toHaveBeenCalled();
   });
 });
