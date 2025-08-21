@@ -28,31 +28,12 @@ pub const MAX_CACHE_ENTRIES: usize = 64;
 
 /// Byte alignment required for safe SIMD loads and stores.
 ///
-/// The value depends on the enabled instruction set to ensure the most
-/// stringent requirement is met:
-/// - AVX-512 needs 64-byte alignment.
-/// - AVX (256-bit) needs 32-byte alignment.
-/// - NEON uses 16-byte alignment.
-/// - Scalar code works with any alignment.
-#[cfg(all(target_arch = "x86_64", feature = "x86_64", target_feature = "avx512f"))]
+/// A single 64-byte constant covers the most demanding alignment across
+/// supported instruction sets. AVX-512 mandates 64-byte alignment, while
+/// earlier extensions such as AVX and SSE require 32 and 16 bytes
+/// respectively. Choosing 64 bytes therefore satisfies all current SIMD
+/// backends and simplifies configuration.
 pub const SIMD_ALIGN: usize = 64;
-
-#[cfg(all(
-    target_arch = "x86_64",
-    feature = "x86_64",
-    not(target_feature = "avx512f")
-))]
-pub const SIMD_ALIGN: usize = 32;
-
-#[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
-pub const SIMD_ALIGN: usize = 16;
-
-// Fallback when no SIMD feature is enabled; alignment is irrelevant.
-#[cfg(not(any(
-    all(target_arch = "x86_64", feature = "x86_64"),
-    all(target_arch = "aarch64", feature = "aarch64"),
-)))]
-pub const SIMD_ALIGN: usize = 1;
 
 /// Determine whether a slice's starting pointer satisfies [`SIMD_ALIGN`] alignment.
 ///
