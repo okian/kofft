@@ -372,7 +372,7 @@ pub fn validate_ranges(
     time_range: Range<usize>,
     buffer: &[Vec<f32>],
 ) -> Result<(), FftError> {
-    if freq_range.start > freq_range.end || time_range.start > time_range.end {
+    if freq_range.is_empty() || time_range.is_empty() {
         return Err(FftError::InvalidValue);
     }
     if time_range.end > buffer.len() {
