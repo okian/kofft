@@ -44,7 +44,15 @@ const VAR_TERTIARY = "--color-tertiary" as const;
  */
 function applyPalette(palette: Palette): void {
   if (!palette)
-    throw new Error("applyPalette requires a palette to be provided");
+  if (
+    !palette ||
+    typeof palette !== "object" ||
+    !("background" in palette) ||
+    !("text" in palette) ||
+    !("accent" in palette)
+  ) {
+    throw new Error("applyPalette requires a valid palette with background, text, and accent properties");
+  }
   const root = document.documentElement;
   root.style.setProperty(VAR_BG, palette.background);
   root.style.setProperty(VAR_TEXT, palette.text);
