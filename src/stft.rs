@@ -795,6 +795,8 @@ mod tests {
     use super::*;
     // Import FFT traits and types for constructing test FFT wrappers.
     use crate::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
+    use alloc::vec;
+
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
