@@ -6,25 +6,24 @@
 */
 
 /* Common Bauhaus properties applied regardless of mode. */
-:root[data-design='bauhaus'] {
-  --anim-duration: 300ms;
-  font-family: 'Futura', sans-serif;
+:root[data-design="bauhaus"] {
+  font-family: "Futura", sans-serif;
   text-transform: none;
 }
 
 /* Light mode styles for Bauhaus design. */
-:root[data-design='bauhaus'][data-mode='light'] {
+:root[data-design="bauhaus"][data-mode="light"] {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
 
 /* Dark mode styles for Bauhaus design. */
-:root[data-design='bauhaus'][data-mode='dark'] {
+:root[data-design="bauhaus"][data-mode="dark"] {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
 
 /* Transition behaviour emphasising motion. */
-:root[data-design='bauhaus'] * {
+:root[data-design="bauhaus"] * {
   transition: transform var(--anim-duration) ease-in-out;
 }

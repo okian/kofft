@@ -42,8 +42,7 @@ const VAR_TERTIARY = "--color-tertiary" as const;
  * absent. Explicit removal prevents stale values from previous designs from
  * leaking into the current theme.
  */
-function applyPalette(palette: Palette): void {
-  if (!palette)
+export function applyPalette(palette: Palette): void {
   if (
     !palette ||
     typeof palette !== "object" ||
@@ -51,7 +50,9 @@ function applyPalette(palette: Palette): void {
     !("text" in palette) ||
     !("accent" in palette)
   ) {
-    throw new Error("applyPalette requires a valid palette with background, text, and accent properties");
+    throw new Error(
+      "applyPalette requires a valid palette with background, text, and accent properties",
+    );
   }
   const root = document.documentElement;
   root.style.setProperty(VAR_BG, palette.background);
