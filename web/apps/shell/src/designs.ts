@@ -1,8 +1,20 @@
 /**
- * Colour definitions for each supported design and colour mode.
- * Splitting these constants avoids scattering raw hex codes and
- * clarifies the intent of each palette entry.
+ * Centralised definitions of design systems and colour palettes.
+ * Palettes are imported from theme-specific modules to maintain
+ * separation of concerns and ensure reuse across components.
  */
+import {
+  JAPANESE_A_LIGHT_PALETTE,
+  JAPANESE_A_DARK_PALETTE,
+  JAPANESE_B_LIGHT_PALETTE,
+  JAPANESE_B_DARK_PALETTE,
+} from "./themes/japanese/palette";
+import {
+  BAUHAUS_LIGHT_PALETTE,
+  BAUHAUS_DARK_PALETTE,
+} from "./themes/bauhaus/palette";
+
+/** Supported colour modes. */
 export type Mode = "light" | "dark";
 
 /**
@@ -12,13 +24,6 @@ export type Mode = "light" | "dark";
  * "bauhaus"     -> Geometric palette using primary colours.
  */
 export type Design = "japanese-a" | "japanese-b" | "bauhaus";
-
-/** Distinct shades used across designs. */
-const WHITE = "#ffffff" as const;
-const BLACK = "#000000" as const;
-const RED = "#cc0000" as const; // Calm red to avoid eye strain
-const BAUHAUS_BLUE = "#0047ab" as const;
-const BAUHAUS_YELLOW = "#ffde00" as const;
 
 /**
  * Complete palette for each design + mode combination.
@@ -39,27 +44,15 @@ export interface Palette {
 /** Lookup table of palettes by design and mode. */
 export const PALETTES: Record<Design, Record<Mode, Palette>> = {
   "japanese-a": {
-    light: { background: WHITE, text: BLACK, accent: BLACK },
-    dark: { background: BLACK, text: WHITE, accent: WHITE },
+    light: JAPANESE_A_LIGHT_PALETTE,
+    dark: JAPANESE_A_DARK_PALETTE,
   },
   "japanese-b": {
-    light: { background: WHITE, text: BLACK, accent: RED },
-    dark: { background: BLACK, text: WHITE, accent: RED },
+    light: JAPANESE_B_LIGHT_PALETTE,
+    dark: JAPANESE_B_DARK_PALETTE,
   },
   bauhaus: {
-    light: {
-      background: WHITE,
-      text: BLACK,
-      accent: RED,
-      secondary: BAUHAUS_BLUE,
-      tertiary: BAUHAUS_YELLOW,
-    },
-    dark: {
-      background: BLACK,
-      text: WHITE,
-      accent: RED,
-      secondary: BAUHAUS_BLUE,
-      tertiary: BAUHAUS_YELLOW,
-    },
+    light: BAUHAUS_LIGHT_PALETTE,
+    dark: BAUHAUS_DARK_PALETTE,
   },
 } as const;
