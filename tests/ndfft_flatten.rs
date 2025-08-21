@@ -43,6 +43,16 @@ fn flatten_3d_non_rectangular() {
     assert_eq!(flatten_3d(data), Err(FftError::MismatchedLengths));
 }
 
+/// Planes with differing row counts must also trigger `MismatchedLengths`.
+#[test]
+fn flatten_3d_plane_mismatch() {
+    let data = vec![
+        vec![vec![Complex::new(0.0f32, 0.0); TWO]; TWO],
+        vec![vec![Complex::new(0.0f32, 0.0); TWO]],
+    ];
+    assert_eq!(flatten_3d(data), Err(FftError::MismatchedLengths));
+}
+
 /// Scratch buffer length is validated before any heavy work to fail fast.
 #[test]
 fn fft2d_inplace_fail_fast_scratch() {

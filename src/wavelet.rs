@@ -89,10 +89,10 @@ pub const DB2_ANALYSIS_LOW: [f32; 4] = [
 /// Daubechies-2 (db2) high-pass analysis filter coefficients.
 /// These coefficients are used during the forward transform to compute detail components.
 pub const DB2_ANALYSIS_HIGH: [f32; 4] = [
-    0.019787513117910776,  // g0: first detail coefficient
-    0.4463951772316719,    // g1: second detail coefficient
-    -0.5054728575456481,   // g2: third detail coefficient
-    0.16290171400361862,   // g3: fourth detail coefficient
+    0.019787513117910776, // g0: first detail coefficient
+    0.4463951772316719,   // g1: second detail coefficient
+    -0.5054728575456481,  // g2: third detail coefficient
+    0.16290171400361862,  // g3: fourth detail coefficient
 ];
 
 /// Daubechies-2 (db2) low-pass synthesis filter coefficients.
@@ -107,10 +107,10 @@ pub const DB2_SYNTHESIS_LOW: [f32; 4] = [
 /// Daubechies-2 (db2) high-pass synthesis filter coefficients.
 /// These coefficients are used during the inverse transform to reconstruct detail components.
 pub const DB2_SYNTHESIS_HIGH: [f32; 4] = [
-    0.019787513117910776,  // g0: first reconstruction detail coefficient
-    0.4463951772316719,    // g1: second reconstruction detail coefficient
-    -0.5054728575456481,   // g2: third reconstruction detail coefficient
-    0.16290171400361862,   // g3: fourth reconstruction detail coefficient
+    0.019787513117910776, // g0: first reconstruction detail coefficient
+    0.4463951772316719,   // g1: second reconstruction detail coefficient
+    -0.5054728575456481,  // g2: third reconstruction detail coefficient
+    0.16290171400361862,  // g3: fourth reconstruction detail coefficient
 ];
 
 /// Errors produced by wavelet operations.
@@ -193,7 +193,7 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
 pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
-#[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
