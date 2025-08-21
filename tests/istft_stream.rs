@@ -1,3 +1,4 @@
+// Test intent: verifies istft stream behavior including edge cases.
 #![cfg(all(feature = "simd", feature = "wasm"))]
 
 use kofft::fft::{Complex32, ScalarFftImpl};

@@ -1,3 +1,4 @@
+// Test intent: verifies inverse parallel behavior including edge cases.
 #![cfg(feature = "parallel")]
 
 use kofft::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};

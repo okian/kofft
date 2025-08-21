@@ -1,3 +1,4 @@
+// Test intent: verifies db scale behavior including edge cases.
 use kofft::visual::spectrogram::db_scale;
 
 /// Ensure zero or extremely small maximum magnitudes yield a neutral output

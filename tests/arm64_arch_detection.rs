@@ -1,3 +1,4 @@
+// Test intent: verifies arm64 arch detection behavior including edge cases.
 use std::env;
 use xtask::detect_config;
 

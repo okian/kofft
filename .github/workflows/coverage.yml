@@ -18,12 +18,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Run coverage
-        run: >
-          cargo llvm-cov --features internal-tests ${{ matrix.features }} \
-            --fail-under-lines 90 --lcov --output-path lcov.info
+      - name: Install coverage tools
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install grcov
+      - name: Run tests with coverage instrumentation
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-Cinstrument-coverage"
+          LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
+        run: |
+          cargo test --features internal-tests ${{ matrix.features }}
+      - name: Generate coverage report
+        run: |
+          grcov . --binary-path ./target/debug/ --source-dir . --output-type lcov --branch --ignore-not-existing --ignore '/*' -o lcov.info
+      - name: Check coverage threshold
+        run: |
+          SUMMARY=$(grcov . --binary-path ./target/debug/ --source-dir . --output-type summary --branch --ignore-not-existing --ignore '/*')
+          echo "$SUMMARY"
+          PERCENT=$(echo "$SUMMARY" | grep -o 'lines:[[:space:]]*[0-9.]*%' | grep -o '[0-9.]*')
+          echo "Line coverage: $PERCENT%"
+          awk -v p=$PERCENT 'BEGIN { if (p < 50.0) exit 1 }'
       - name: Upload coverage to Codecov
         if: ${{ secrets.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v4

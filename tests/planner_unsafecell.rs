@@ -1,3 +1,4 @@
+// Test intent: verifies planner unsafecell behavior including edge cases.
 use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 
 #[test]

@@ -1,3 +1,4 @@
+// Test intent: verifies rfft twiddles behavior including edge cases.
 use kofft::num::Complex32;
 use kofft::rfft::RfftPlanner;
 
