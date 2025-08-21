@@ -318,7 +318,7 @@ mod tests {
         for _ in 0..WRITERS {
             let p = path.clone();
             handles.push(thread::spawn(move || {
-                let conn = Connection::open(&*p).unwrap();
+                let conn = Connection::open(&p).unwrap();
                 init_db(&conn).unwrap();
                 store_waveform(&conn, "t", &[0.1f32; 4]).unwrap();
             }));
