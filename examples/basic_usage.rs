@@ -132,7 +132,7 @@ fn main() {
     // 5. Haar Wavelet Transform
     println!("5. Haar Wavelet Transform");
     let wavelet_input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let (avg, diff) = haar_forward(&wavelet_input);
+    let (avg, diff) = haar_forward(&wavelet_input).unwrap();
 
     println!("   Input: {:?}", wavelet_input);
     println!(
