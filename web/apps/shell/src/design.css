@@ -1,0 +1,34 @@
+/*
+  Base styles reading colour variables set by DesignProvider.
+  The file focuses purely on visual presentation and keeps
+  logic in TypeScript for clarity and testability.
+*/
+:root {
+  --anim-duration: 300ms;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Japanese minimalism uses neutral typography. */
+:root[data-design='japanese-a'],
+:root[data-design='japanese-b'] {
+  font-family: 'Noto Sans', sans-serif;
+}
+
+/* Bauhaus uses geometric fonts and uppercase labels for structure. */
+:root[data-design='bauhaus'] {
+  font-family: 'Futura', sans-serif;
+  text-transform: none;
+}
+
+/* Simple fade transitions for minimal designs. */
+:root[data-design='japanese-a'] *,
+:root[data-design='japanese-b'] * {
+  transition: background-color var(--anim-duration) ease-in-out,
+    color var(--anim-duration) ease-in-out;
+}
+
+/* Bauhaus embraces geometric motion via sliding reveals. */
+:root[data-design='bauhaus'] * {
+  transition: transform var(--anim-duration) ease-in-out;
+}
