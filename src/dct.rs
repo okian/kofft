@@ -245,34 +245,6 @@ pub fn dct4(input: &[f32]) -> Vec<f32> {
     output
 }
 
-#[cfg(test)]
-mod planner_tests {
-    use super::*;
-
-    #[test]
-    fn test_dct2_planner_matches_naive() {
-        let mut planner = DctPlanner::new();
-        let input = vec![1.0f32, 2.0, 3.0, 4.0];
-        let mut buf = input.clone();
-        let mut output = vec![0.0f32; input.len()];
-        let mut plan = planner.plan_dct2(input.len());
-        plan(&mut buf, &mut output).unwrap();
-        let expected = dct2(&input);
-        for (a, b) in output.iter().zip(expected.iter()) {
-            assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
-        }
-    }
-
-    #[test]
-    fn test_cache_limit() {
-        let mut planner = DctPlanner::new();
-        for len in 1..=MAX_DCT_CACHE + 5 {
-            let _ = planner.plan_dct2(len);
-        }
-        assert!(planner.cache.len() <= MAX_DCT_CACHE);
-    }
-}
-
 #[cfg(feature = "slow")]
 /// Naive DCT implementations retained for benchmarking and reference.
 pub mod slow {
@@ -386,6 +358,27 @@ pub fn multi_channel_iv(channels: &mut [Vec<f32>]) {
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
+    #[test]
+    fn test_dct2_planner_matches_naive() {
+        let mut planner = DctPlanner::new();
+        let input = vec![1.0f32, 2.0, 3.0, 4.0];
+        let mut buf = input.clone();
+        let mut output = vec![0.0f32; input.len()];
+        let mut plan = planner.plan_dct2(input.len());
+        plan(&mut buf, &mut output).unwrap();
+        let expected = dct2(&input);
+        for (a, b) in output.iter().zip(expected.iter()) {
+            assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
+        }
+    }
+    #[test]
+    fn test_cache_limit() {
+        let mut planner = DctPlanner::new();
+        for len in 1..=MAX_DCT_CACHE + 5 {
+            let _ = planner.plan_dct2(len);
+        }
+        assert!(planner.cache.len() <= MAX_DCT_CACHE);
+    }
     #[test]
     fn test_dct2_dct3_roundtrip() {
         let x: [f32; 4] = [1.0, 2.0, 3.0, 4.0];

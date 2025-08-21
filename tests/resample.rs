@@ -1,13 +1,6 @@
 use kofft::resample::{linear_resample, linear_resample_channels, ResampleError};
 use std::time::Instant;
 
-/// Naive nearest-neighbour resampler used to establish a correctness baseline.
-///
-/// This intentionally slow implementation helps verify that the linear
-/// interpolator performs at least as well in terms of error while providing a
-/// simple reference for boundary behaviour.
-
-
 /// Source rate used for extreme upsampling tests.
 const EXTREME_LOW_RATE: f32 = 1.0;
 /// Destination rate used for extreme upsampling tests.
@@ -17,6 +10,12 @@ const NAN_RATE: f32 = f32::NAN;
 /// Example invalid rate representing an infinite value.
 const INF_RATE: f32 = f32::INFINITY;
 
+/// Naive nearest-neighbour resampler used to establish a correctness
+/// baseline.
+///
+/// This intentionally slow implementation helps verify that the linear
+/// interpolator performs at least as well in terms of error while providing a
+/// simple reference for boundary behaviour.
 fn naive_nearest(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
     let ratio = src_rate / dst_rate;
     let out_len = (input.len() as f32 / ratio).ceil() as usize;

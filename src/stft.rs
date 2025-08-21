@@ -66,8 +66,6 @@ compile_error!("stft requires `wasm` and `simd` features to be enabled");
 extern crate alloc;
 #[cfg(all(feature = "parallel", feature = "std"))]
 use crate::fft::rayon_pool;
-#[cfg(test)]
-use crate::fft::FftStrategy;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
 #[cfg(feature = "parallel")]
