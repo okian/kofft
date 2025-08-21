@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { playbackEngine } from "../PlaybackEngine";
-import { useAudioStore } from "@/stores/audioStore";
+import { useAudioStore } from "@/shared/stores/audioStore";
 
 declare global {
   interface Window {

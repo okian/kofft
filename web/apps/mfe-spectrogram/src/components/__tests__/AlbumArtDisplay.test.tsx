@@ -5,7 +5,7 @@ import { Footer } from "../layout/Footer";
 import { AudioTrack } from "@/types";
 
 // Mock the stores and hooks
-vi.mock("../../../stores/audioStore", () => ({
+vi.mock("../../../shared/stores/audioStore", () => ({
   useAudioStore: () => ({
     isPlaying: false,
     isStopped: true,
@@ -151,7 +151,7 @@ describe("Album Art Display - Complete Test", () => {
 
     // Mock the store to return the track as current track
     vi.mocked(
-      require("../../../stores/audioStore").useAudioStore,
+      require("../../../shared/stores/audioStore").useAudioStore,
     ).mockReturnValue({
       isPlaying: false,
       isStopped: true,
@@ -197,7 +197,7 @@ describe("Album Art Display - Complete Test", () => {
 
     // Mock the store to return the track as current track
     vi.mocked(
-      require("../../../stores/audioStore").useAudioStore,
+      require("../../../shared/stores/audioStore").useAudioStore,
     ).mockReturnValue({
       isPlaying: false,
       isStopped: true,

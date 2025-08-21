@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useUIStore } from '@/stores/uiStore'
+import { useUIStore } from '@/shared/stores/uiStore'
 
 export function useScreenSize() {
   const { updateScreenSize, isMobile, isTablet } = useUIStore()

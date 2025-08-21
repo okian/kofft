@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useAudioStore } from '@/stores/audioStore'
+import { useAudioStore } from '@/shared/stores/audioStore'
 import { audioPlayer, type AudioPlayerState } from '@/utils/audioPlayer'
 import { AudioTrack, AudioMetadata, ArtworkSource } from '@/types'
 import { extractMetadata, generateAmplitudeEnvelope } from '@/utils/wasm'
