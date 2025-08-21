@@ -855,7 +855,6 @@ mod tests {
     #[cfg(feature = "parallel")]
     use crate::fft::FftStrategy;
     use crate::fft::{Complex32, ScalarFftImpl};
-    use alloc::vec::Vec;
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
