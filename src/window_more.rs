@@ -7,6 +7,17 @@ use alloc::vec::Vec;
 use core::f32::consts::PI;
 use libm::{cosf, fabsf, floorf, sinf};
 
+/// Unity value used to express amplitude normalization.
+const UNITY: f32 = 1.0;
+/// Fractional constant representing one half.
+const HALF: f32 = 0.5;
+/// Constant `2.0` used repeatedly in window equations.
+const TWO: f32 = 2.0;
+/// Constant `3.0` used in the Nuttall window.
+const THREE: f32 = 3.0;
+/// Reciprocal of π used in the Bohman window computation.
+const INV_PI: f32 = 1.0 / PI;
+
 /// Leading cosine coefficient for the Nuttall window.
 const NUTTALL_A0: f32 = 0.355_768;
 /// Second cosine coefficient for the Nuttall window.
@@ -17,89 +28,95 @@ const NUTTALL_A2: f32 = 0.144_232;
 const NUTTALL_A3: f32 = 0.012_604;
 
 /// Generates a Tukey window of length `len` with taper factor `alpha`.
-/// Returns an empty vector when `len` is zero and a single unity sample
-/// when `len` equals one to avoid division by zero in later computations.
+///
+/// The window is amplitude-normalized so that its peak equals one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn tukey(len: usize, alpha: f32) -> Vec<f32> {
-    if len == 0 {
-        return Vec::new();
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
-        return vec![1.0];
+        return vec![UNITY];
     }
     let alpha = alpha.clamp(0.0, 1.0);
     let mut w = vec![0.0; len];
     // Number of samples in each cosine taper region.
-    let edge = floorf(alpha * (len as f32 - 1.0) / 2.0) as usize;
+    let edge = floorf(alpha * (len as f32 - UNITY) / TWO) as usize;
     for (n, w_n) in w.iter_mut().enumerate() {
         *w_n = if n < edge {
             // Rising cosine section at the beginning of the window.
-            0.5 * (1.0 + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 1.0)).cos())
+            HALF * (UNITY + (PI * (TWO * n as f32 / (alpha * (len as f32 - UNITY)) - UNITY)).cos())
         } else if n < len - edge {
-            1.0
+            UNITY
         } else {
             // Falling cosine section at the end of the window.
-            0.5 * (1.0
-                + (PI * (2.0 * n as f32 / (alpha * (len as f32 - 1.0)) - 2.0 / alpha + 1.0)).cos())
+            HALF * (UNITY
+                + (PI * (TWO * n as f32 / (alpha * (len as f32 - UNITY)) - TWO / alpha + UNITY))
+                    .cos())
         };
     }
     w
 }
 
 /// Generates a Bartlett (triangular) window of length `len`.
-/// Handles zero and single-length inputs by returning a vector of ones or
-/// an empty vector accordingly to prevent divide-by-zero errors.
+///
+/// The window is amplitude-normalized with a maximum value of one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn bartlett(len: usize) -> Vec<f32> {
-    if len == 0 {
-        return Vec::new();
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
-        return vec![1.0];
+        return vec![UNITY];
     }
     let mut w = vec![0.0; len];
     let n = len as f32;
     for (i, w_i) in w.iter_mut().enumerate() {
         // Normalize index to [-1, 1] range.
-        let x = (i as f32 - (n - 1.0) / 2.0) / ((n - 1.0) / 2.0);
-        *w_i = 1.0 - fabsf(x);
+        let x = (i as f32 - (n - UNITY) / TWO) / ((n - UNITY) / TWO);
+        *w_i = UNITY - fabsf(x);
     }
     w
 }
 
 /// Generates a Bohman window of length `len`.
-/// Zero and single-length inputs are handled gracefully to avoid
-/// invalid arithmetic operations.
+///
+/// The window is amplitude-normalized such that its peak equals one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn bohman(len: usize) -> Vec<f32> {
-    if len == 0 {
-        return Vec::new();
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
-        return vec![1.0];
+        return vec![UNITY];
     }
     let mut w = vec![0.0; len];
     let n = len as f32;
     for (i, w_i) in w.iter_mut().enumerate() {
         // Map index into [-0.5, 0.5] interval.
-        let x = (i as f32 / (n - 1.0)) - 0.5;
-        *w_i = (1.0 - fabsf(x)) * cosf(PI * x) + 1.0 / PI * sinf(PI * x);
+        let x = (i as f32 / (n - UNITY)) - HALF;
+        *w_i = (UNITY - fabsf(x)) * cosf(PI * x) + INV_PI * sinf(PI * x);
     }
     w
 }
 
 /// Generates a Nuttall window of length `len` using pre-defined cosine
-/// coefficients. Zero or single-length inputs are treated specially to
-/// avoid divisions by zero.
+/// coefficients.
+///
+/// The window is amplitude-normalized so that its peak equals one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn nuttall(len: usize) -> Vec<f32> {
-    if len == 0 {
-        return Vec::new();
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
-        return vec![1.0];
+        return vec![UNITY];
     }
     let mut w = vec![0.0; len];
     for (n, w_n) in w.iter_mut().enumerate() {
-        let x = 2.0 * PI * n as f32 / (len as f32 - 1.0);
-        *w_n = NUTTALL_A0 - NUTTALL_A1 * cosf(x) + NUTTALL_A2 * cosf(2.0 * x)
-            - NUTTALL_A3 * cosf(3.0 * x);
+        let x = TWO * PI * n as f32 / (len as f32 - UNITY);
+        *w_n = NUTTALL_A0 - NUTTALL_A1 * cosf(x) + NUTTALL_A2 * cosf(TWO * x)
+            - NUTTALL_A3 * cosf(THREE * x);
     }
     w
 }
@@ -130,18 +147,34 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_len() {
-        assert!(tukey(0, 0.5).is_empty());
-        assert!(bartlett(0).is_empty());
-        assert!(bohman(0).is_empty());
-        assert!(nuttall(0).is_empty());
+    #[should_panic]
+    fn test_tukey_len_zero_panics() {
+        tukey(0, 0.5);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bartlett_len_zero_panics() {
+        bartlett(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bohman_len_zero_panics() {
+        bohman(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_nuttall_len_zero_panics() {
+        nuttall(0);
     }
 
     #[test]
     fn test_single_len() {
-        assert_eq!(tukey(1, 0.5), vec![1.0]);
-        assert_eq!(bartlett(1), vec![1.0]);
-        assert_eq!(bohman(1), vec![1.0]);
-        assert_eq!(nuttall(1), vec![1.0]);
+        assert_eq!(tukey(1, 0.5), vec![UNITY]);
+        assert_eq!(bartlett(1), vec![UNITY]);
+        assert_eq!(bohman(1), vec![UNITY]);
+        assert_eq!(nuttall(1), vec![UNITY]);
     }
 }

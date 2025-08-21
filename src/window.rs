@@ -56,12 +56,12 @@ fn bessel0(x: f32) -> f32 {
 }
 
 /// Debug-time validation that the maximum value of a window equals one and all
-/// samples are finite. The check is skipped for empty windows to avoid spurious
-/// failures.
+/// samples are finite.
 fn debug_assert_normalized(window: &[f32]) {
-    if window.is_empty() {
-        return;
-    }
+    debug_assert!(
+        !window.is_empty(),
+        "window length must be at least one for normalization checks"
+    );
     debug_assert!(
         window.iter().all(|v| v.is_finite()),
         "window contains non-finite values"
@@ -76,11 +76,12 @@ fn debug_assert_normalized(window: &[f32]) {
 
 /// Generate a Hann window of length `len`.
 ///
-/// The resulting window has a peak amplitude of one.
+/// The window is amplitude-normalized such that its maximum sample equals one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn hann(len: usize) -> alloc::vec::Vec<f32> {
-    if len == 0 {
-        return alloc::vec![];
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
         return alloc::vec![1.0];
     }
@@ -93,11 +94,12 @@ pub fn hann(len: usize) -> alloc::vec::Vec<f32> {
 
 /// Generate a Hamming window of length `len`.
 ///
-/// The resulting window has a peak amplitude of one.
+/// The window is amplitude-normalized such that its maximum sample equals one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn hamming(len: usize) -> alloc::vec::Vec<f32> {
-    if len == 0 {
-        return alloc::vec![];
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
         return alloc::vec![1.0];
     }
@@ -110,11 +112,12 @@ pub fn hamming(len: usize) -> alloc::vec::Vec<f32> {
 
 /// Generate a Blackman window of length `len`.
 ///
-/// The resulting window has a peak amplitude of one.
+/// The window is amplitude-normalized such that its maximum sample equals one.
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn blackman(len: usize) -> alloc::vec::Vec<f32> {
-    if len == 0 {
-        return alloc::vec![];
-    }
+    assert!(len > 0, "len must be at least 1");
     if len == 1 {
         return alloc::vec![1.0];
     }
@@ -130,12 +133,12 @@ pub fn blackman(len: usize) -> alloc::vec::Vec<f32> {
 
 /// Generate a Kaiser window of length `len` and shape parameter `beta`.
 ///
-/// The resulting window has a peak amplitude of one.
+/// The window is amplitude-normalized such that its maximum sample equals one.
 ///
 /// # Panics
 /// Panics if `len` is zero or `beta` is negative.
 pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
-    assert!(len > 0, "len must be greater than zero");
+    assert!(len > 0, "len must be at least 1");
     assert!(beta >= 0.0, "beta must be non-negative");
     if len == 1 {
         return alloc::vec![1.0];
@@ -165,11 +168,12 @@ pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
 
 /// MCU/stack-only, const-generic, in-place Hann window (no heap).
 ///
-/// The buffer is filled with a unity-normalized Hann window.
+/// The buffer is filled with a unity-amplitude Hann window.
+///
+/// # Panics
+/// Panics if `N` is zero.
 pub fn hann_inplace_stack<const N: usize>(out: &mut [f32; N]) {
-    if N == 0 {
-        return;
-    }
+    assert!(N > 0, "N must be at least 1");
     if N == 1 {
         out[0] = 1.0;
         return;
@@ -182,11 +186,12 @@ pub fn hann_inplace_stack<const N: usize>(out: &mut [f32; N]) {
 
 /// MCU/stack-only, const-generic, in-place Hamming window (no heap).
 ///
-/// The buffer is filled with a unity-normalized Hamming window.
+/// The buffer is filled with a unity-amplitude Hamming window.
+///
+/// # Panics
+/// Panics if `N` is zero.
 pub fn hamming_inplace_stack<const N: usize>(out: &mut [f32; N]) {
-    if N == 0 {
-        return;
-    }
+    assert!(N > 0, "N must be at least 1");
     if N == 1 {
         out[0] = 1.0;
         return;
@@ -199,11 +204,12 @@ pub fn hamming_inplace_stack<const N: usize>(out: &mut [f32; N]) {
 
 /// MCU/stack-only, const-generic, in-place Blackman window (no heap).
 ///
-/// The buffer is filled with a unity-normalized Blackman window.
+/// The buffer is filled with a unity-amplitude Blackman window.
+///
+/// # Panics
+/// Panics if `N` is zero.
 pub fn blackman_inplace_stack<const N: usize>(out: &mut [f32; N]) {
-    if N == 0 {
-        return;
-    }
+    assert!(N > 0, "N must be at least 1");
     if N == 1 {
         out[0] = 1.0;
         return;
