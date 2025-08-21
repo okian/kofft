@@ -1,18 +1,19 @@
-import React, { useEffect } from 'react'
-import { Header } from '../layout/Header'
-import { Footer } from '../layout/Footer'
-import { SpectrogramView } from '../features/spectrogram/SpectrogramView'
-import { MetadataPanel } from '../features/metadata/MetadataPanel'
-import { PlaylistPanel } from '../features/playlist/PlaylistPanel'
-import { SettingsPanel } from '../features/settings/SettingsPanel'
-import { ShortcutsModal } from '../features/shortcuts/ShortcutsModal'
-import { useUIStore } from '../shared/stores/uiStore'
-import { useSettingsStore } from '../shared/stores/settingsStore'
-import { useAudioStore } from '../shared/stores/audioStore'
-import { Toaster } from 'react-hot-toast'
+import React, { useEffect } from "react";
+import { Header } from "../layout/Header";
+import { Footer } from "../layout/Footer";
+import { SpectrogramView } from "../features/spectrogram/SpectrogramView";
+import { MetadataPanel } from "../features/metadata/MetadataPanel";
+import { PlaylistPanel } from "../features/playlist/PlaylistPanel";
+import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { ShortcutsModal } from "../features/shortcuts/ShortcutsModal";
+import { useUIStore } from "../shared/stores/uiStore";
+import { useSettingsStore } from "../shared/stores/settingsStore";
+import { useAudioStore } from "../shared/stores/audioStore";
+import { THEME_COLORS } from "@/shared/theme";
+import { Toaster } from "react-hot-toast";
 
 export function App() {
-  const { theme, updateSettings, loadFromStorage } = useSettingsStore()
+  const { theme, updateSettings, loadFromStorage } = useSettingsStore();
   const {
     isMobile,
     isTablet,
@@ -24,7 +25,7 @@ export function App() {
     setSettingsPanelOpen,
     shortcutsHelpOpen,
     setShortcutsHelpOpen,
-  } = useUIStore()
+  } = useUIStore();
 
   const {
     currentTrack,
@@ -33,32 +34,38 @@ export function App() {
     playTrack,
     removeFromPlaylist,
     reorderPlaylist,
-  } = useAudioStore()
+  } = useAudioStore();
 
   useEffect(() => {
-    loadFromStorage()
-  }, [loadFromStorage])
+    loadFromStorage();
+  }, [loadFromStorage]);
 
   useEffect(() => {
-    const className = `theme-${theme}`
-    const bodyClassList = document.body.classList
-    bodyClassList.remove('theme-dark', 'theme-light')
-    bodyClassList.add(className)
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+    const className = `theme-${theme}`;
+    const bodyClassList = document.body.classList;
+    // Remove any previously applied theme- classes to avoid clashes when
+    // switching themes at runtime.
+    bodyClassList.remove(...Object.keys(THEME_COLORS).map((t) => `theme-${t}`));
+    bodyClassList.add(className);
+    // Keep the browser's address bar and surrounding UI in sync with the
+    // active theme background colour for a polished look on mobile.
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#ffffff')
+      metaThemeColor.setAttribute("content", THEME_COLORS[theme].background);
     }
     return () => {
-      bodyClassList.remove(className)
-    }
-  }, [theme])
+      bodyClassList.remove(className);
+    };
+  }, [theme]);
 
   return (
     <div className="app-layout bg-neutral-950 text-neutral-100 min-h-screen">
       <Header />
       <div className="main-content flex-1 flex relative overflow-hidden">
         {!isMobile && (
-          <div className={`sidebar-left ${metadataPanelOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 overflow-hidden'} ${isTablet ? 'absolute left-0 top-0 h-full z-20 shadow-2xl' : 'relative'}`}>
+          <div
+            className={`sidebar-left ${metadataPanelOpen ? "w-80 opacity-100" : "w-0 opacity-0 overflow-hidden"} ${isTablet ? "absolute left-0 top-0 h-full z-20 shadow-2xl" : "relative"}`}
+          >
             <MetadataPanel
               track={currentTrack}
               isOpen={metadataPanelOpen}
@@ -73,7 +80,9 @@ export function App() {
         </div>
 
         {!isMobile && (
-          <div className={`sidebar-right ${playlistPanelOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 overflow-hidden'} ${isTablet ? 'absolute right-0 top-0 h-full z-20 shadow-2xl' : 'relative'}`}>
+          <div
+            className={`sidebar-right ${playlistPanelOpen ? "w-80 opacity-100" : "w-0 opacity-0 overflow-hidden"} ${isTablet ? "absolute right-0 top-0 h-full z-20 shadow-2xl" : "relative"}`}
+          >
             <PlaylistPanel
               tracks={playlist}
               currentTrackIndex={currentTrackIndex}
@@ -125,11 +134,12 @@ export function App() {
         onSettingsChange={updateSettings}
       />
 
-      <ShortcutsModal isOpen={shortcutsHelpOpen} onClose={() => setShortcutsHelpOpen(false)} />
+      <ShortcutsModal
+        isOpen={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
+      />
 
-      <Toaster position={isMobile ? 'top-center' : 'top-right'} />
+      <Toaster position={isMobile ? "top-center" : "top-right"} />
     </div>
-  )
+  );
 }
-
-
