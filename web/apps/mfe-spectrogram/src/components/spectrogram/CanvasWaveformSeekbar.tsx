@@ -9,6 +9,9 @@ import { useSeekbarColors } from "@/hooks/useSeekbarColors";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
 import { THEME_COLORS } from "@/shared/theme";
 
+/** Debug flag used to silence verbose logging in production builds. */
+const DEBUG = process.env.NODE_ENV !== "production";
+
 /**
  * Width of each visualisation bar in CSS pixels. Kept small to minimise GPU
  * workload while preserving sufficient detail for short clips.
@@ -30,6 +33,27 @@ const SMALL_STEP = 1;
 const LARGE_STEP = 5;
 /** Width of the playhead indicator in CSS pixels. */
 const PLAYHEAD_WIDTH = 3;
+/**
+ * Weight used for the linear component of frequency bin mapping.
+ * The three weights sum to 1 to form a convex combination.
+ */
+const LINEAR_WEIGHT = 0.4;
+/** Weight applied to the logarithmic component of the mapping blend. */
+const LOG_WEIGHT = 0.3;
+/** Weight applied to the power component of the mapping blend. */
+const POWER_WEIGHT = 0.3;
+/** Multiplier used before taking the logarithm when mapping bins. */
+const LOG_MULTIPLIER = 9;
+/** Base of the logarithm used during mapping. */
+const LOG_BASE = 10;
+/** Exponent used for the power curve in the mapping blend. */
+const POWER_EXPONENT = 0.7;
+/** Overlap factor between adjacent frequency ranges. */
+const OVERLAP_FACTOR = 0.9;
+/** Reciprocal used to normalise 0-255 byte values to 0-1 floats. */
+const INV_255 = 1 / 255;
+/** Exponent for the adjustPeak power curve (0.5 = square root). */
+const ADJUST_EXPONENT = 0.5;
 
 interface CanvasWaveformSeekbarProps {
   /** Raw PCM audio used for fixed waveform mode. */
@@ -62,70 +86,91 @@ interface CanvasWaveformSeekbarProps {
  * Generate a proper frequency-domain animation from real FFT data.
  * This creates a frequency band visualizer using actual frequency analysis.
  */
-function createFrequencyAnimator(
+export function createFrequencyAnimator(
   getFrequencyData: () => Uint8Array | null,
   numBars: number,
   cb: (peaks: Float32Array) => void,
 ): () => void {
   if (!Number.isFinite(numBars) || numBars <= 0)
     throw new Error("numBars must be a positive finite number");
+
+  // Fail fast for a degenerate single-bar visualisation to prevent
+  // division-by-zero errors in the mapping logic. The single bar simply
+  // represents the average magnitude across all frequency bins.
+  if (numBars < 2) {
+    const single = new Float32Array(1);
+    let raf = 0;
+    const animateSingle = () => {
+      const data = getFrequencyData();
+      if (data && data.length > 0) {
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        single[0] = (sum / data.length) * INV_255;
+      } else {
+        single[0] = 0;
+      }
+      cb(single);
+      raf = requestAnimationFrame(animateSingle);
+    };
+    raf = requestAnimationFrame(animateSingle);
+    return () => cancelAnimationFrame(raf);
+  }
+
   const peaks = new Float32Array(numBars);
   let raf = 0;
+
+  // Precompute mapping from bars to frequency bin ranges. These mappings are
+  // recalculated only when the FFT size changes to minimise per-frame work.
+  let binRanges: Array<{ start: number; end: number }> = [];
+  let lastLength = 0;
+  const computeRanges = (length: number) => {
+    binRanges = new Array(numBars);
+    const logBase = Math.log(LOG_BASE);
+    for (let i = 0; i < numBars; i++) {
+      const normalized = i / (numBars - 1);
+      const linearMap = normalized;
+      const logMap = Math.log(normalized * LOG_MULTIPLIER + 1) / logBase;
+      const powerMap = Math.pow(normalized, POWER_EXPONENT);
+      const blended =
+        LINEAR_WEIGHT * linearMap +
+        LOG_WEIGHT * logMap +
+        POWER_WEIGHT * powerMap;
+      const start = Math.floor(blended * length * OVERLAP_FACTOR);
+      const end = Math.floor(((i + 1) / numBars) * length);
+      binRanges[i] = { start, end };
+    }
+    lastLength = length;
+  };
 
   const animate = () => {
     const frequencyData = getFrequencyData();
     if (frequencyData && frequencyData.length > 0) {
-      // Debug: Log frequency data distribution
-      console.log("Frequency data:", {
-        length: frequencyData.length,
-        firstFew: Array.from(frequencyData.slice(0, 10)),
-        lastFew: Array.from(frequencyData.slice(-10)),
-      });
-      // Map frequency bins to seekbar bars with more balanced distribution
-      // Use a hybrid approach that spreads activity across the full width
+      if (frequencyData.length !== lastLength)
+        computeRanges(frequencyData.length);
+      if (DEBUG) {
+        console.debug("Frequency data:", {
+          length: frequencyData.length,
+          firstFew: Array.from(frequencyData.slice(0, 10)),
+          lastFew: Array.from(frequencyData.slice(-10)),
+        });
+      }
       for (let i = 0; i < numBars; i++) {
-        // Create a more balanced distribution that still respects frequency perception
-        // Use a combination of linear and logarithmic mapping
-        const normalizedPosition = i / (numBars - 1);
-
-        // Blend between different mapping strategies for better distribution
-        const linearMap = normalizedPosition;
-        const logMap = Math.log(normalizedPosition * 9 + 1) / Math.log(10); // Log base 10
-        const powerMap = Math.pow(normalizedPosition, 0.7);
-
-        // Use a weighted blend: 40% linear, 30% logarithmic, 30% power
-        const blendedPosition = 0.4 * linearMap + 0.3 * logMap + 0.3 * powerMap;
-
-        // Map to frequency bins with some overlap for smoother transitions
-        const startBin = Math.floor(
-          blendedPosition * frequencyData.length * 0.9,
-        );
-        const endBin = Math.floor(((i + 1) / numBars) * frequencyData.length);
-
-        // Calculate average frequency magnitude for this bar
+        const range = binRanges[i];
         let sum = 0;
         let count = 0;
         for (
-          let bin = startBin;
-          bin < endBin && bin < frequencyData.length;
+          let bin = range.start;
+          bin < range.end && bin < frequencyData.length;
           bin++
         ) {
-          // Convert from 0-255 range to 0-1 range
-          const magnitude = frequencyData[bin] / 255;
-          sum += magnitude;
+          sum += frequencyData[bin] * INV_255;
           count++;
         }
-
-        // Store the average magnitude for this frequency band
         peaks[i] = count > 0 ? sum / count : 0;
       }
     } else {
-      // No frequency data available, use idle animation
-      for (let i = 0; i < numBars; i++) {
-        peaks[i] = 0;
-      }
+      peaks.fill(0);
     }
-
     cb(peaks);
     raf = requestAnimationFrame(animate);
   };
@@ -147,7 +192,7 @@ function adjustPeak(
 
   // Apply power curve to make differences more dramatic
   // This will make small values smaller and large values larger
-  return Math.min(1, Math.pow(adjusted, 0.5));
+  return Math.min(1, Math.pow(adjusted, ADJUST_EXPONENT));
 }
 
 export function CanvasWaveformSeekbar({
@@ -364,10 +409,15 @@ export function CanvasWaveformSeekbar({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || containerWidth === 0) {
-      console.log("Canvas not ready:", { canvas: !!canvas, containerWidth });
+      if (DEBUG)
+        console.debug("Canvas not ready:", {
+          canvas: !!canvas,
+          containerWidth,
+        });
       return;
     }
-    console.log("Rendering seekbar - containerWidth:", containerWidth);
+    if (DEBUG)
+      console.debug("Rendering seekbar - containerWidth:", containerWidth);
 
     // Set up high DPI canvas
     const devicePixelRatio = window.devicePixelRatio || 1;
@@ -385,7 +435,7 @@ export function CanvasWaveformSeekbar({
     const xOffset = (width - totalWidth) / 2; // Center the seekbar
 
     // Temporarily disable GPU paths to use 2D canvas
-    console.log("Using 2D canvas path");
+    if (DEBUG) console.debug("Using 2D canvas path");
     /*
     // Attempt GPU paths first for better performance when available.
     const gpu = (navigator as any).gpu;
@@ -394,7 +444,7 @@ export function CanvasWaveformSeekbar({
       if (gpuCtx) {
         // Minimal WebGPU setup; the heavy lifting happens in WASM which feeds
         // us the peaks. Tests only verify the context is requested.
-        console.log("WebGPU path taken - returning early");
+        if (DEBUG) console.debug("WebGPU path taken - returning early");
         return;
       }
     }
@@ -402,7 +452,7 @@ export function CanvasWaveformSeekbar({
     const gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
     if (gl) {
       // No-op: presence of context indicates WebGL path would be used.
-      console.log("WebGL path taken - returning early");
+      if (DEBUG) console.debug("WebGL path taken - returning early");
       return;
     }
     */
@@ -436,8 +486,8 @@ export function CanvasWaveformSeekbar({
       const h = Math.max(MIN_BAR_HEIGHT, adjusted * maxBarHeight);
 
       // Debug: Log some bar heights to see the range
-      if (i < 5) {
-        console.log(
+      if (DEBUG && i < 5) {
+        console.debug(
           `Bar ${i}: raw=${raw.toFixed(3)}, adjusted=${adjusted.toFixed(3)}, height=${h.toFixed(1)}`,
         );
       }

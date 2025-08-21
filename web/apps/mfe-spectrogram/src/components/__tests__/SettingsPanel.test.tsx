@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockValidateAPIKey = vi.fn();
 const toastError = vi.fn();
 
-vi.mock("@/stores/settingsStore", () => ({
+vi.mock("@/shared/stores/settingsStore", () => ({
   useSettingsStore: {
     getState: () => ({ validateAPIKey: mockValidateAPIKey }),
   },
@@ -22,8 +22,12 @@ vi.mock("@/utils/toast", () => ({
 
 import { SettingsPanel } from "../layout/SettingsPanel";
 
+/**
+ * Baseline settings object used by tests. Individual cases override fields to
+ * exercise specific behaviours without mutating the shared reference.
+ */
 const mockSettings = {
-  theme: "dark" as const,
+  theme: "japanese-a-light" as const,
   amplitudeScale: "db" as const,
   frequencyScale: "logarithmic" as const,
   resolution: "medium" as const,
@@ -78,6 +82,7 @@ describe("SettingsPanel", () => {
     expect(screen.queryByText("Settings")).not.toBeInTheDocument();
   });
 
+  // Ensures all supported design themes are rendered for user selection.
   it("renders all theme options", () => {
     render(
       <SettingsPanel
@@ -88,12 +93,15 @@ describe("SettingsPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Dark")).toBeInTheDocument();
-    expect(screen.getByText("Light")).toBeInTheDocument();
-    expect(screen.getByText("Neon")).toBeInTheDocument();
-    expect(screen.getByText("High Contrast")).toBeInTheDocument();
+    expect(screen.getByText("Japanese A Light")).toBeInTheDocument();
+    expect(screen.getByText("Japanese A Dark")).toBeInTheDocument();
+    expect(screen.getByText("Japanese B Light")).toBeInTheDocument();
+    expect(screen.getByText("Japanese B Dark")).toBeInTheDocument();
+    expect(screen.getByText("Bauhaus Light")).toBeInTheDocument();
+    expect(screen.getByText("Bauhaus Dark")).toBeInTheDocument();
   });
 
+  // Verifies that selecting a design theme propagates the expected value.
   it("handles theme selection", () => {
     render(
       <SettingsPanel
@@ -104,10 +112,12 @@ describe("SettingsPanel", () => {
       />,
     );
 
-    const lightThemeButton = screen.getByText("Light");
-    fireEvent.click(lightThemeButton);
+    const bauhausDarkButton = screen.getByText("Bauhaus Dark");
+    fireEvent.click(bauhausDarkButton);
 
-    expect(mockOnSettingsChange).toHaveBeenCalledWith({ theme: "light" });
+    expect(mockOnSettingsChange).toHaveBeenCalledWith({
+      theme: "bauhaus-dark",
+    });
   });
 
   it("handles amplitude scale change", () => {

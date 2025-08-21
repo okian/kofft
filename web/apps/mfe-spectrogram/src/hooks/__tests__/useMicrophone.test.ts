@@ -2,7 +2,7 @@ import { describe, it, expect, vi, act } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useMicrophone } from "../useMicrophone";
 
-vi.mock("@/stores/audioStore", () => ({
+vi.mock("@/shared/stores/audioStore", () => ({
   useAudioStore: () => ({
     setMicrophoneActive: vi.fn(),
     setLive: vi.fn(),

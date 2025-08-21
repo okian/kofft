@@ -114,6 +114,159 @@ pub fn stft<Fft: FftImpl<f32>>(
     Ok(())
 }
 
+#[cfg(all(feature = "parallel", test))]
+/// Tests covering the parallel STFT implementation and its thread-safety
+/// guarantees.
+mod parallel_tests {
+    use super::*;
+    use crate::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
+    use alloc::vec::Vec;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
+
+    /// Length of the synthetic test signal.
+    const SIG_LEN: usize = 8;
+    /// Length of the analysis window applied in tests.
+    const WIN_LEN: usize = 4;
+    /// Hop size between adjacent frames used in tests.
+    const HOP: usize = 2;
+
+    /// FFT wrapper counting the number of calls to detect data races.
+    #[derive(Default)]
+    struct CountingFft {
+        /// Underlying scalar FFT implementation reused across frames.
+        inner: Mutex<ScalarFftImpl<f32>>,
+        /// Atomic counter incremented on each FFT invocation.
+        calls: AtomicUsize,
+    }
+
+    impl FftImpl<f32> for CountingFft {
+        /// Perform an FFT while atomically incrementing the call counter.
+        fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+            // Increment atomically to ensure thread-safe mutation.
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.inner.lock().unwrap().fft(input)
+        }
+        /// Delegate to the inner implementation for inverse FFT.
+        fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+            self.inner.lock().unwrap().ifft(input)
+        }
+        /// Delegate strided FFT to the inner implementation.
+        fn fft_strided(
+            &self,
+            input: &mut [Complex32],
+            stride: usize,
+            scratch: &mut [Complex32],
+        ) -> Result<(), FftError> {
+            self.inner
+                .lock()
+                .unwrap()
+                .fft_strided(input, stride, scratch)
+        }
+        /// Delegate strided inverse FFT to the inner implementation.
+        fn ifft_strided(
+            &self,
+            input: &mut [Complex32],
+            stride: usize,
+            scratch: &mut [Complex32],
+        ) -> Result<(), FftError> {
+            self.inner
+                .lock()
+                .unwrap()
+                .ifft_strided(input, stride, scratch)
+        }
+        /// Delegate out-of-place strided FFT to the inner implementation.
+        fn fft_out_of_place_strided(
+            &self,
+            input: &[Complex32],
+            in_stride: usize,
+            output: &mut [Complex32],
+            out_stride: usize,
+        ) -> Result<(), FftError> {
+            self.inner
+                .lock()
+                .unwrap()
+                .fft_out_of_place_strided(input, in_stride, output, out_stride)
+        }
+        /// Delegate out-of-place strided IFFT to the inner implementation.
+        fn ifft_out_of_place_strided(
+            &self,
+            input: &[Complex32],
+            in_stride: usize,
+            output: &mut [Complex32],
+            out_stride: usize,
+        ) -> Result<(), FftError> {
+            self.inner
+                .lock()
+                .unwrap()
+                .ifft_out_of_place_strided(input, in_stride, output, out_stride)
+        }
+        /// Delegate strategy-based FFT to the inner implementation.
+        fn fft_with_strategy(
+            &self,
+            input: &mut [Complex32],
+            strategy: FftStrategy,
+        ) -> Result<(), FftError> {
+            self.inner
+                .lock()
+                .unwrap()
+                .fft_with_strategy(input, strategy)
+        }
+    }
+
+    /// Ensure parallel STFT matches sequential STFT output.
+    #[test]
+    fn parallel_matches_sequential() {
+        let signal: [f32; SIG_LEN] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let window: [f32; WIN_LEN] = [1.0; WIN_LEN];
+        let frames_needed = SIG_LEN.div_ceil(HOP);
+        let mut seq_frames = vec![vec![Complex32::zero(); WIN_LEN]; frames_needed];
+        let mut par_frames = vec![vec![Complex32::zero(); WIN_LEN]; frames_needed];
+        let fft = CountingFft::default();
+        // Sequential reference implementation.
+        stft(&signal, &window, HOP, &mut seq_frames, &fft).unwrap();
+        // Parallel computation under test.
+        parallel(&signal, &window, HOP, &mut par_frames, &fft).unwrap();
+        assert_eq!(seq_frames, par_frames);
+    }
+
+    /// Verify that insufficient output frames return an error.
+    #[test]
+    fn parallel_mismatched_output_len() {
+        let signal: [f32; SIG_LEN] = [0.0; SIG_LEN];
+        let window: [f32; WIN_LEN] = [0.0; WIN_LEN];
+        let mut frames: Vec<Vec<Complex32>> = vec![]; // Too short on purpose.
+        let fft = CountingFft::default();
+        let res = parallel(&signal, &window, HOP, &mut frames, &fft);
+        assert!(matches!(res, Err(FftError::MismatchedLengths)));
+    }
+
+    /// Verify that zero hop size fails fast.
+    #[test]
+    fn parallel_invalid_hop() {
+        let signal: [f32; SIG_LEN] = [0.0; SIG_LEN];
+        let window: [f32; WIN_LEN] = [0.0; WIN_LEN];
+        let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; 1];
+        let fft = CountingFft::default();
+        let res = parallel(&signal, &window, 0, &mut frames, &fft);
+        assert!(matches!(res, Err(FftError::InvalidHopSize)));
+    }
+
+    /// Ensure each frame triggers exactly one FFT call with no data races.
+    #[test]
+    fn parallel_counts_calls() {
+        let signal: [f32; SIG_LEN] = [0.0; SIG_LEN];
+        let window: [f32; WIN_LEN] = [1.0; WIN_LEN];
+        let frames_needed = SIG_LEN.div_ceil(HOP);
+        let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; frames_needed];
+        let fft = CountingFft::default();
+        parallel(&signal, &window, HOP, &mut frames, &fft).unwrap();
+        assert_eq!(fft.calls.load(Ordering::SeqCst), frames_needed);
+    }
+}
+
 /// Compute the inverse STFT of frequency-domain frames in-place.
 ///
 /// - `frames`: mutable frequency-domain frames (each of length `window.len()`)
@@ -215,17 +368,29 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
 }
 
 #[cfg(feature = "parallel")]
-/// Compute the Short-Time Fourier Transform (STFT) of `signal` using Rayon for parallelism.
+/// Parallel Short-Time Fourier Transform (STFT).
 ///
-/// Requires the `parallel` feature, which enables the [`rayon`](https://crates.io/crates/rayon) dependency.
+/// # Why parallel?
+/// Computing large numbers of FFT frames can be expensive.  This variant uses
+/// [`rayon`](https://crates.io/crates/rayon) to distribute the work across
+/// threads for improved throughput.
 ///
-/// * `signal` - input real-valued signal
-/// * `window` - analysis window
-/// * `hop_size` - hop size between adjacent frames
-/// * `output` - pre-allocated buffer for FFT frames
-/// * `fft` - FFT implementation to reuse cached plans
+/// # Safety and thread guarantees
+/// The FFT instance is borrowed immutably by each worker thread.  The type
+/// parameter therefore requires [`Sync`] so that sharing a reference across
+/// threads is sound.  No mutable access occurs and the closure captures only
+/// shared references, preventing data races.
 ///
-/// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero.
+/// # Parameters
+/// - `signal`: input real-valued samples
+/// - `window`: analysis window applied per frame
+/// - `hop_size`: hop size between adjacent frames
+/// - `output`: pre-allocated buffer for FFT frames
+/// - `fft`: FFT implementation reused across frames
+///
+/// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero or
+/// [`FftError::MismatchedLengths`] when `output` does not contain enough
+/// frames.
 ///
 /// # Examples
 /// ```ignore
@@ -238,7 +403,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
 /// let fft = ScalarFftImpl::<f32>::default();
 /// parallel(&signal, &window, 2, &mut frames, &fft).unwrap();
 /// ```ignore
-pub fn parallel<Fft: FftImpl<f32>>(
+pub fn parallel<Fft: FftImpl<f32> + Sync>(
     signal: &[f32],
     window: &[f32],
     hop_size: usize,
@@ -249,12 +414,15 @@ pub fn parallel<Fft: FftImpl<f32>>(
     if hop_size == 0 {
         return Err(FftError::InvalidHopSize);
     }
+    let required = signal.len().div_ceil(hop_size);
+    if output.len() < required {
+        return Err(FftError::MismatchedLengths);
+    }
     let win_len = window.len();
     // Pre-size frames to avoid repeated allocations in the parallel loop
     for frame in output.iter_mut() {
         frame.resize(win_len, Complex32::zero());
     }
-    let fft_ptr = fft as *const Fft as usize;
     output
         .par_iter_mut()
         .enumerate()
@@ -268,18 +436,9 @@ pub fn parallel<Fft: FftImpl<f32>>(
                 };
                 frame[i] = Complex32::new(x, 0.0);
             }
-            // SAFETY: `fft_ptr` is shared across threads. Callers must ensure
-            // SAFETY: We cast the shared reference `fft` to a raw pointer (`fft_ptr`) outside the parallel loop,
-            // and reconstruct a shared reference inside each thread. This is safe because:
-            // - The original `fft` reference is valid for the entire duration of the parallel operation,
-            //   and is not mutably aliased elsewhere.
-            // - The pointer is only ever used to create shared (`&`) references, never mutable ones.
-            // - The FFT implementation (`Fft`) must be both `Send` and `Sync`, so it is safe to share
-            //   references to it across threads and to call its methods concurrently.
-            // - It is the caller's responsibility to ensure that the provided `fft` instance upholds these
-            //   thread safety guarantees for the duration of this function.
-            let fft_ref = unsafe { &*(fft_ptr as *const Fft) };
-            fft_ref.fft(frame)
+            // `fft` is an immutable reference shared between threads.  The
+            // `Sync` bound on `Fft` guarantees that concurrent calls are safe.
+            fft.fft(frame)
         })
 }
 

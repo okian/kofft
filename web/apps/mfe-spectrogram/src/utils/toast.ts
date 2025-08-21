@@ -1,5 +1,5 @@
 import toast from "react-hot-toast";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useSettingsStore } from "@/shared/stores/settingsStore";
 import { THEME_COLORS } from "@/shared/theme";
 
 // Conditional toast function that respects the user's settings.

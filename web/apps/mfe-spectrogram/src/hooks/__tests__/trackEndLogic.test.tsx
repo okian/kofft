@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import React from 'react'
 import { useAudioFile } from '../useAudioFile'
-import { useAudioStore } from '@/stores/audioStore'
+import { useAudioStore } from '@/shared/stores/audioStore'
 import { audioPlayer } from '@/utils/audioPlayer'
 
 function Register() {

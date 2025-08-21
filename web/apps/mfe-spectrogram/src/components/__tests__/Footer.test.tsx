@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { Footer } from "../layout/Footer";
 
 // Mock the stores and hooks
-vi.mock("../../../stores/audioStore", () => ({
+vi.mock("../../../shared/stores/audioStore", () => ({
   useAudioStore: () => ({
     isPlaying: false,
     isStopped: true,

@@ -5,7 +5,6 @@
 extern crate alloc;
 use crate::fft::FftImpl;
 use crate::fft::{Complex32, FftError, ScalarFftImpl};
-use alloc::vec;
 use alloc::vec::Vec;
 
 /// Scaling factor applied to positive frequency components when constructing
@@ -26,6 +25,7 @@ const POS_FREQ_START: usize = 1;
 /// # Returns
 /// A vector of complex values representing the analytic signal. The real part
 /// matches the original input while the imaginary part is the Hilbert transform.
+
 pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
     if input.is_empty() {
         return Err(FftError::EmptyInput);
@@ -34,9 +34,11 @@ pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let n = input.len();
-    let mut freq = vec![Complex32::zero(); n];
-    for (i, &x) in input.iter().enumerate() {
-        freq[i] = Complex32::new(x, 0.0);
+    // Preallocate without zero-initialization to avoid needless memory
+    // overhead, then push each real sample as a complex value.
+    let mut freq: Vec<Complex32> = Vec::with_capacity(n);
+    for &x in input {
+        freq.push(Complex32::new(x, 0.0));
     }
     let fft = ScalarFftImpl::<f32>::default();
     fft.fft(&mut freq)?;
@@ -69,16 +71,35 @@ mod tests {
     const EPSILON: f32 = 1e-6;
 
     // Ensures the Hilbert transform returns an analytic signal with matching length.
+
     #[test]
-    fn test_hilbert_analytic() {
-        let x = [1.0, 0.0, -1.0, 0.0];
+    fn hilbert_single_sample() {
+        let x = [42.0];
         let analytic = hilbert_analytic(&x).unwrap();
-        assert_eq!(analytic.len(), x.len());
+        assert_eq!(analytic, vec![Complex32::new(42.0, 0.0)]);
+    }
+
+    /// Even-length inputs should preserve the real part and produce the expected
+    /// imaginary response for an impulse.
+    #[test]
+    fn hilbert_even_impulse() {
+        let x = [1.0, 0.0, 0.0, 0.0];
+        let analytic = hilbert_analytic(&x).unwrap();
+        let expected = [
+            Complex32::new(1.0, 0.0),
+            Complex32::new(0.0, 0.5),
+            Complex32::new(0.0, 0.0),
+            Complex32::new(0.0, -0.5),
+        ];
+        for (a, e) in analytic.iter().zip(expected.iter()) {
+            assert!((a.re - e.re).abs() < 1e-6);
+            assert!((a.im - e.im).abs() < 1e-6);
+        }
     }
 
     // Verifies that invalid inputs produce the expected error types.
     #[test]
-    fn test_hilbert_errors() {
+    fn hilbert_errors() {
         assert_eq!(hilbert_analytic(&[]).unwrap_err(), FftError::EmptyInput);
         let x = [1.0, 2.0, 3.0];
         assert_eq!(

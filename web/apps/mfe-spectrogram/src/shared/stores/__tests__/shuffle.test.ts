@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAudioStore } from "../audioStore";
-import type { AudioTrack } from "@/types";
+import type { AudioTrack } from "@/shared/types";
 
 vi.mock("@/utils/audioPlayer", () => ({
   audioPlayer: {

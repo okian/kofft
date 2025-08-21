@@ -132,7 +132,7 @@ fn main() {
     // 5. Haar Wavelet Transform
     println!("5. Haar Wavelet Transform");
     let wavelet_input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let (avg, diff) = haar_forward(&wavelet_input);
+    let (avg, diff) = haar_forward(&wavelet_input).unwrap();
 
     println!("   Input: {:?}", wavelet_input);
     println!(
@@ -204,7 +204,7 @@ fn main() {
     // 10. Chirp Z-Transform
     println!("10. Chirp Z-Transform");
     let czt_input = vec![1.0, 0.0, 0.0, 0.0];
-    let czt_result = czt_f32(&czt_input, 4, (0.5, 0.0), (1.0, 0.0));
+    let czt_result = czt_f32(&czt_input, 4, (0.5, 0.0), (1.0, 0.0)).unwrap();
     println!(
         "   CZT: {:?}",
         czt_result

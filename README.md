@@ -25,6 +25,16 @@ High-performance, `no_std`, MCU-friendly DSP library featuring FFT, DCT, DST, Ha
 
 See [benchmarks](benchmarks/README.md) for detailed benchmark results and data.
 
+## Development
+
+To rebuild everything from a clean state and serve the web demo locally:
+
+```bash
+npm run dev
+```
+
+This command clears caches, rebuilds the Rust WebAssembly crate, compiles the React workspace, and serves the bundled application.
+
 ## Waveform Caching
 
 The optional `waveform-cache` feature stores per-track waveform snapshots in a
@@ -43,6 +53,7 @@ CREATE TABLE waveform_samples (
 Because caching increases storage requirements, the feature is **not enabled by
 default**. Opt in by enabling the `waveform-cache` Cargo feature when compiling
 `kofft` if faster startups are worth the space trade-off.
+
 ## Song Identification
 
 `kofft` includes an optional `media::index` module for lightweight song lookup.
@@ -470,7 +481,7 @@ let db4_recon = db4_inverse_multi(&db4_a, &db4_d);
 let magnitude = goertzel::goertzel_f32(&input, 44100.0, 1000.0);
 
 // Chirp Z-Transform
-let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0));
+let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0)).unwrap();
 
 // Hilbert Transform
 let hilbert_result = hilbert::hilbert_analytic(&input);
@@ -523,16 +534,15 @@ fn main() -> ! {
 
 ## Platform Support
 
-| Platform | SIMD Support | Enable via |
-|----------|-------------|-----------|
-| x86_64   | AVX2/FMA    | `x86_64` feature or `-C target-feature=+avx2` |
-| x86_64 (SSE) | SSE2 | `sse` feature or default `sse2` target |
-| AArch64  | NEON        | `aarch64` feature or `-C target-feature=+neon` |
-| WebAssembly | SIMD128   | `wasm` feature or `-C target-feature=+simd128` |
-| Generic  | Scalar      | Default fallback |
+| Platform     | SIMD Support | Enable via                                     |
+| ------------ | ------------ | ---------------------------------------------- |
+| x86_64       | AVX2/FMA     | `x86_64` feature or `-C target-feature=+avx2`  |
+| x86_64 (SSE) | SSE2         | `sse` feature or default `sse2` target         |
+| AArch64      | NEON         | `aarch64` feature or `-C target-feature=+neon` |
+| WebAssembly  | SIMD128      | `wasm` feature or `-C target-feature=+simd128` |
+| Generic      | Scalar       | Default fallback                               |
 
 Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.
-
 
 ## License
 
@@ -569,5 +579,3 @@ cargo xtask sanity -- <path-to-flac>  # Run the sanity check example
 - [Repository](https://github.com/kianostad/kofft)
 - [Crates.io](https://crates.io/crates/kofft)
 - [React Spectrogram Demo](react-spectrogram/README.md)
-
-

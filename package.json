@@ -8,7 +8,8 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "cargo test"
+    "test": "cargo test",
+    "dev": "node scripts/dev.js"
   },
   "keywords": [],
   "author": "",
