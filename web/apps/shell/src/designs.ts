@@ -4,10 +4,10 @@
  * separation of concerns and ensure reuse across components.
  */
 import {
-  JAPANESE_A_LIGHT_PALETTE,
-  JAPANESE_A_DARK_PALETTE,
-  JAPANESE_B_LIGHT_PALETTE,
-  JAPANESE_B_DARK_PALETTE,
+  OPTION_A_LIGHT_PALETTE,
+  OPTION_A_DARK_PALETTE,
+  OPTION_B_LIGHT_PALETTE,
+  OPTION_B_DARK_PALETTE,
 } from "./themes/japanese/palette";
 import {
   BAUHAUS_LIGHT_PALETTE,
@@ -44,12 +44,12 @@ export interface Palette {
 /** Lookup table of palettes by design and mode. */
 export const PALETTES: Record<Design, Record<Mode, Palette>> = {
   "japanese-a": {
-    light: JAPANESE_A_LIGHT_PALETTE,
-    dark: JAPANESE_A_DARK_PALETTE,
+    light: OPTION_A_LIGHT_PALETTE,
+    dark: OPTION_A_DARK_PALETTE,
   },
   "japanese-b": {
-    light: JAPANESE_B_LIGHT_PALETTE,
-    dark: JAPANESE_B_DARK_PALETTE,
+    light: OPTION_B_LIGHT_PALETTE,
+    dark: OPTION_B_DARK_PALETTE,
   },
   bauhaus: {
     light: BAUHAUS_LIGHT_PALETTE,
