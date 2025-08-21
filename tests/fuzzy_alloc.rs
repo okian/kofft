@@ -39,6 +39,7 @@ fn fuzzy_match_allocations() {
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     fuzzy_score(pattern, pattern, len);
     let score_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
+    ALLOC_COUNT.store(0, Ordering::SeqCst);
     fuzzy_match(pattern, len, pattern);
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
