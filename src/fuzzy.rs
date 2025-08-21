@@ -17,8 +17,8 @@ pub const MATCH_THRESHOLD_DIVISOR: usize = 2;
 /// Compute the Levenshtein distance between two strings.
 ///
 /// `pattern_len` must be the number of UTF-8 code points in `pattern`.  The
-/// function iterates directly over the input strings without collecting them
-/// into intermediate `Vec<char>` buffers, reducing memory overhead.
+/// text is collected once into a `Vec<char>` to allow indexed access while the
+/// pattern is streamed directly, avoiding repeated scans and extra allocations.
 ///
 /// # Panics
 ///
@@ -33,7 +33,6 @@ pub fn fuzzy_score(pattern: &str, text: &str, pattern_len: usize) -> usize {
         );
     }
 
-    let pattern_chars: Vec<char> = pattern.chars().collect();
     let text_chars: Vec<char> = text.chars().collect();
     let text_len = text_chars.len();
 

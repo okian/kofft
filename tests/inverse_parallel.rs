@@ -103,8 +103,9 @@ fn inverse_parallel_matches_istft() {
     let fft = SyncFft::default();
     let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
     stft(&signal, &window, hop, &mut frames, &fft).unwrap();
-    let mut out_seq = vec![0.0; signal.len()];
-    let mut scratch = vec![0.0; signal.len()];
+    let expected = (frames.len() - 1) * hop + win_len;
+    let mut out_seq = vec![0.0; expected];
+    let mut scratch = vec![0.0; expected];
     istft(
         &mut frames.clone(),
         &window,
@@ -114,7 +115,7 @@ fn inverse_parallel_matches_istft() {
         &fft,
     )
     .unwrap();
-    let mut out_par = vec![0.0; signal.len()];
+    let mut out_par = vec![0.0; expected];
     inverse_parallel(&frames, &window, hop, &mut out_par, &fft).unwrap();
     for (a, b) in out_seq.iter().zip(out_par.iter()) {
         assert!((a - b).abs() < 1e-5);

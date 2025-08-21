@@ -16,10 +16,25 @@ use crate::fft::{Complex, FftError, FftImpl, Float, ScalarFftImpl};
 /// Result type returned by [`flatten_3d`].
 type Flatten3dResult<T> = (Vec<Complex<T>>, usize, usize, usize);
 
+/// Sentinel constant representing an empty dimension.
+///
+/// The FFT routines treat any dimension equal to `EMPTY_DIMENSION` as a no-op
+/// and immediately return an empty result. Using a named constant instead of a
+/// literal clarifies intent and avoids magic numbers throughout this module.
+const EMPTY_DIMENSION: usize = 0;
+
+/// Safely compute the capacity required for a 2D buffer.
+///
+/// Returns [`FftError::LengthOverflow`] if `rows * cols` would exceed
+/// `usize::MAX`, ensuring any subsequent allocation cannot overflow.
 fn checked_capacity_2d(rows: usize, cols: usize) -> Result<usize, FftError> {
     rows.checked_mul(cols).ok_or(FftError::LengthOverflow)
 }
 
+/// Safely compute the capacity required for a 3D buffer.
+///
+/// Returns [`FftError::LengthOverflow`] if `depth * rows * cols` would exceed
+/// `usize::MAX`.
 fn checked_capacity_3d(depth: usize, rows: usize, cols: usize) -> Result<usize, FftError> {
     depth
         .checked_mul(rows)
@@ -33,8 +48,8 @@ pub fn flatten_2d<T: Float>(
     data: Vec<Vec<Complex<T>>>,
 ) -> Result<(Vec<Complex<T>>, usize, usize), FftError> {
     let rows = data.len();
-    if rows == 0 {
-        return Ok((Vec::new(), 0, 0));
+    if rows == EMPTY_DIMENSION {
+        return Ok((Vec::new(), EMPTY_DIMENSION, EMPTY_DIMENSION));
     }
     let cols = data[0].len();
     if data.iter().any(|row| row.len() != cols) {
@@ -42,8 +57,10 @@ pub fn flatten_2d<T: Float>(
     }
     let total = checked_capacity_2d(rows, cols)?;
     let mut flat = Vec::with_capacity(total);
-    for row in data {
-        flat.extend(row);
+    // `append` moves each row into the flattened buffer in one shot, avoiding
+    // per-element pushes.
+    for mut row in data {
+        flat.append(&mut row);
     }
     Ok((flat, rows, cols))
 }
@@ -54,11 +71,20 @@ pub fn flatten_3d<T: Float>(
     data: Vec<Vec<Vec<Complex<T>>>>,
 ) -> Result<Flatten3dResult<T>, FftError> {
     let depth = data.len();
-    if depth == 0 {
-        return Ok((Vec::new(), 0, 0, 0));
+    if depth == EMPTY_DIMENSION {
+        return Ok((
+            Vec::new(),
+            EMPTY_DIMENSION,
+            EMPTY_DIMENSION,
+            EMPTY_DIMENSION,
+        ));
     }
     let rows = data[0].len();
-    let cols = if rows > 0 { data[0][0].len() } else { 0 };
+    let cols = if rows > EMPTY_DIMENSION {
+        data[0][0].len()
+    } else {
+        EMPTY_DIMENSION
+    };
     for plane in &data {
         if plane.len() != rows {
             return Err(FftError::MismatchedLengths);
@@ -72,8 +98,8 @@ pub fn flatten_3d<T: Float>(
     let total = checked_capacity_3d(depth, rows, cols)?;
     let mut flat = Vec::with_capacity(total);
     for plane in data {
-        for row in plane {
-            flat.extend(row);
+        for mut row in plane {
+            flat.append(&mut row);
         }
     }
     Ok((flat, depth, rows, cols))
@@ -91,19 +117,25 @@ pub fn fft2d_inplace<T: Float>(
     fft: &ScalarFftImpl<T>,
     scratch_col: &mut [Complex<T>],
 ) -> Result<(), FftError> {
-    let len = rows.checked_mul(cols).ok_or(FftError::Overflow)?;
+    if scratch_col.len() != rows {
+        // Validate scratch buffer length before any expensive computations to
+        // fail fast on incorrect caller-provided storage.
+        return Err(FftError::MismatchedLengths);
+    }
+    let len = checked_capacity_2d(rows, cols)?;
     if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
-    if rows == 0 || cols == 0 {
+    if rows == EMPTY_DIMENSION || cols == EMPTY_DIMENSION {
         return Ok(());
-    }
-    if scratch_col.len() != rows {
-        return Err(FftError::MismatchedLengths);
     }
     // FFT on rows
     for r in 0..rows {
-        let start = r * cols;
+        let start = r
+            .checked_mul(cols)
+            .and_then(|v| v.checked_add(cols))
+            .ok_or(FftError::LengthOverflow)?
+            - cols;
         fft.fft(&mut data[start..start + cols])?;
     }
     // FFT on columns using strided transform
@@ -138,7 +170,7 @@ pub fn fft3d_inplace<T: Float>(
     if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
-    if depth == 0 || rows == 0 || cols == 0 {
+    if depth == EMPTY_DIMENSION || rows == EMPTY_DIMENSION || cols == EMPTY_DIMENSION {
         return Ok(());
     }
     if scratch.tube.len() != depth || scratch.row.len() != rows || scratch.col.len() != cols {
