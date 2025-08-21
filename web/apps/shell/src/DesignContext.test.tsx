@@ -91,9 +91,22 @@ describe("DesignProvider", () => {
   });
 
   it("throws on invalid palette", () => {
-    expect(() => applyPalette(undefined as unknown as any)).toThrow(
-      /valid palette/,
-    );
-    expect(() => applyPalette({} as any)).toThrow(/valid palette/);
+    /** Regular expression matching palette validation errors. */
+    const ERR_RE = /valid palette/;
+    /**
+     * Palettes intentionally missing required fields or providing
+     * incorrect types. Each entry exercises a separate validation path.
+     */
+    const badPalettes = [
+      undefined,
+      {},
+      { background: "#fff", text: "#000" },
+      { background: "#fff", accent: "#000" },
+      { text: "#000", accent: "#fff" },
+      { background: "#fff", text: "#000", accent: 123 },
+    ] as const;
+    for (const p of badPalettes) {
+      expect(() => applyPalette(p as any)).toThrow(ERR_RE);
+    }
   });
 });

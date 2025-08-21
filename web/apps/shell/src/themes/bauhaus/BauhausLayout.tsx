@@ -2,6 +2,7 @@ import React, { CSSProperties, ReactNode, useMemo } from "react";
 import { useGridTransitions } from "./useGridTransitions";
 import { WHITE, BLACK, RED, BAUHAUS_BLUE, BAUHAUS_YELLOW } from "./palette";
 import { GRID_GAP_REM, LINE_THICKNESS_REM } from "../../ui/Spacing";
+import { THEME_TRANSITION_CLASS } from "../../ui/ThemeTransitionClass";
 
 /** Number of columns used in the Bauhaus grid. */
 export const GRID_COLUMNS = 12 as const;
@@ -67,7 +68,12 @@ export function Block({
     [color, column, columnSpan, row, rowSpan],
   );
 
-  return <div style={{ ...transitionStyle, ...style }} />;
+  return (
+    <div
+      className={THEME_TRANSITION_CLASS}
+      style={{ ...transitionStyle, ...style }}
+    />
+  );
 }
 
 /** Properties accepted by {@link Line}. */
@@ -92,6 +98,7 @@ export function Line({ color, orientation, index }: LineProps) {
   if (orientation === "horizontal") {
     return (
       <div
+        className={THEME_TRANSITION_CLASS}
         style={{
           ...transitionStyle,
           ...base,
@@ -105,6 +112,7 @@ export function Line({ color, orientation, index }: LineProps) {
 
   return (
     <div
+      className={THEME_TRANSITION_CLASS}
       style={{
         ...transitionStyle,
         ...base,
@@ -160,9 +168,24 @@ export function BauhausLayout({
 
   return (
     <div style={containerStyle}>
-      <header style={{ ...transitionStyle, ...spanning }}>{header}</header>
-      <main style={{ ...transitionStyle, ...spanning }}>{children}</main>
-      <footer style={{ ...transitionStyle, ...spanning }}>{footer}</footer>
+      <header
+        className={THEME_TRANSITION_CLASS}
+        style={{ ...transitionStyle, ...spanning }}
+      >
+        {header}
+      </header>
+      <main
+        className={THEME_TRANSITION_CLASS}
+        style={{ ...transitionStyle, ...spanning }}
+      >
+        {children}
+      </main>
+      <footer
+        className={THEME_TRANSITION_CLASS}
+        style={{ ...transitionStyle, ...spanning }}
+      >
+        {footer}
+      </footer>
     </div>
   );
 }

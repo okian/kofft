@@ -36,23 +36,25 @@ const VAR_SECONDARY = "--color-secondary" as const;
 /** Name of the CSS variable for tertiary accent colour. */
 const VAR_TERTIARY = "--color-tertiary" as const;
 
+/** Error thrown when palette validation fails. */
+const ERR_INVALID_PALETTE =
+  "applyPalette requires a valid palette with background, text, and accent properties" as const;
+
 /**
  * Apply a palette to the document root.
- * Fails fast when invoked without a palette and removes optional colours when
- * absent. Explicit removal prevents stale values from previous designs from
- * leaking into the current theme.
+ * Validates required fields and types, failing fast to avoid writing
+ * undefined CSS values. Optional colours are explicitly removed when absent
+ * to prevent stale values from leaking between designs.
  */
 export function applyPalette(palette: Palette): void {
   if (
     !palette ||
     typeof palette !== "object" ||
-    !("background" in palette) ||
-    !("text" in palette) ||
-    !("accent" in palette)
+    typeof (palette as any).background !== "string" ||
+    typeof (palette as any).text !== "string" ||
+    typeof (palette as any).accent !== "string"
   ) {
-    throw new Error(
-      "applyPalette requires a valid palette with background, text, and accent properties",
-    );
+    throw new Error(ERR_INVALID_PALETTE);
   }
   const root = document.documentElement;
   root.style.setProperty(VAR_BG, palette.background);

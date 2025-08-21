@@ -33,3 +33,15 @@
   transition-duration: var(--anim-duration);
   transition-timing-function: ease-in-out;
 }
+/*
+  Transition behaviour for minimalist Japanese designs. The rule targets the
+  shared `theme-transition` class rather than all elements to avoid expensive
+  universal selectors while still animating foreground and background colours
+  for marked components.
+*/
+:root[data-design="japanese-a"] .theme-transition,
+:root[data-design="japanese-b"] .theme-transition {
+  transition:
+    background-color var(--anim-duration) ease-in-out,
+    color var(--anim-duration) ease-in-out;
+}
