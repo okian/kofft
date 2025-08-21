@@ -40,7 +40,7 @@ impl DctPlanner {
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
-            rfft: RfftPlanner::new(),
+            rfft: RfftPlanner::new().expect("planner creation"),
             buf: Vec::new(),
             spectrum: Vec::new(),
         }
