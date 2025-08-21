@@ -1,7 +1,8 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { JapaneseLayout, LAYOUT_GAP_REM } from "./JapaneseLayout";
+import { JapaneseLayout } from "./JapaneseLayout";
+import { LAYOUT_GAP_REM } from "../../ui/Spacing";
 
 /** Validate JapaneseLayout behaviour and structure. */
 describe("JapaneseLayout", () => {
@@ -22,17 +23,23 @@ describe("JapaneseLayout", () => {
   it("throws on missing required props", () => {
     expect(() =>
       render(
-        <JapaneseLayout header={null as any} footer={<div />}>text</JapaneseLayout>,
+        <JapaneseLayout header={null as any} footer={<div />}>
+          text
+        </JapaneseLayout>,
       ),
     ).toThrow();
     expect(() =>
       render(
-        <JapaneseLayout header={<div />} footer={null as any}>text</JapaneseLayout>,
+        <JapaneseLayout header={<div />} footer={null as any}>
+          text
+        </JapaneseLayout>,
       ),
     ).toThrow();
     expect(() =>
       render(
-        <JapaneseLayout header={<div />} footer={<div />}>{null}</JapaneseLayout>,
+        <JapaneseLayout header={<div />} footer={<div />}>
+          {null}
+        </JapaneseLayout>,
       ),
     ).toThrow();
   });

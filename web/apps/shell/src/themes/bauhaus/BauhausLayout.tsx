@@ -1,12 +1,10 @@
 import React, { CSSProperties, ReactNode, useMemo } from "react";
 import { useGridTransitions } from "./useGridTransitions";
 import { WHITE, BLACK, RED, BAUHAUS_BLUE, BAUHAUS_YELLOW } from "./palette";
+import { GRID_GAP_REM, LINE_THICKNESS_REM } from "../../ui/Spacing";
 
 /** Number of columns used in the Bauhaus grid. */
 export const GRID_COLUMNS = 12 as const;
-
-/** Gap between grid cells expressed in rem units. */
-export const GRID_GAP_REM = 0.5 as const;
 
 /** Full viewport height ensuring the layout fills the screen. */
 const FULL_HEIGHT = "100vh" as const;
@@ -78,9 +76,6 @@ export interface LineProps {
   readonly orientation: "horizontal" | "vertical";
   readonly index: number;
 }
-
-/** Thickness of rendered lines in rem units. */
-export const LINE_THICKNESS_REM = 0.25 as const;
 
 /**
  * Render a thin line spanning the grid in a single direction.

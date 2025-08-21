@@ -1,8 +1,6 @@
 import React, { CSSProperties, ReactNode, useMemo } from "react";
 import { useMinimalFades } from "./useMinimalFades";
-
-/** Vertical spacing between layout sections expressed in rem units. */
-export const LAYOUT_GAP_REM = 1 as const;
+import { LAYOUT_GAP_REM } from "../../ui/Spacing";
 
 /** Height of the layout viewport ensuring full-screen coverage. */
 const FULL_HEIGHT = "100vh" as const;
@@ -44,7 +42,10 @@ export function JapaneseLayout({
     [],
   );
 
-  const mainStyle = useMemo<CSSProperties>(() => ({ flex: 1, display: "grid", placeItems: "center" }), []);
+  const mainStyle = useMemo<CSSProperties>(
+    () => ({ flex: 1, display: "grid", placeItems: "center" }),
+    [],
+  );
 
   return (
     <div style={containerStyle}>

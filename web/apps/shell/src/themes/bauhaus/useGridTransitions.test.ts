@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useGridTransitions, SLIDE_DURATION_MS } from "./useGridTransitions";
+import { useGridTransitions } from "./useGridTransitions";
+import { SLIDE_DURATION_MS } from "../../ui/AnimationDurations";
 
 /** Validate behaviour of the sliding transition hook. */
 describe("useGridTransitions", () => {

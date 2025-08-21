@@ -1,12 +1,11 @@
 import { useMemo } from "react";
 import { CSSProperties } from "react";
-
-/** Duration in milliseconds for fade transitions ensuring subtlety. */
-export const FADE_DURATION_MS = 200 as const;
+import { FADE_DURATION_MS } from "../../ui/AnimationDurations";
 
 /**
  * Hook producing memoised style props for minimal fade transitions.
- * The memoisation avoids repeatedly allocating style objects, reducing
+ * Leveraging the shared {@link FADE_DURATION_MS} constant keeps timings
+ * consistent while memoisation avoids repeated allocations, reducing
  * garbage collection pressure during re-renders.
  */
 export function useMinimalFades(): { readonly style: CSSProperties } {

@@ -1,12 +1,11 @@
 import { CSSProperties, useMemo } from "react";
-
-/** Duration in milliseconds for slide transitions. */
-export const SLIDE_DURATION_MS = 250 as const;
+import { SLIDE_DURATION_MS } from "../../ui/AnimationDurations";
 
 /**
  * Memoised style object enabling sliding grid reveals.
- * Using `transform` avoids expensive reflow operations and `willChange`
- * hints the browser to optimise for upcoming animations.
+ * Pulling the duration from {@link SLIDE_DURATION_MS} ensures consistent
+ * motion, while using `transform` avoids reflow and `willChange` hints the
+ * browser to optimise for upcoming animations.
  */
 export function useGridTransitions(): { readonly style: CSSProperties } {
   const style = useMemo<CSSProperties>(
