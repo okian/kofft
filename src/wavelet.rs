@@ -114,6 +114,10 @@ pub enum WaveletError {
     InputLengthOdd { len: usize },
     /// The buffers provided to the inverse transform did not match in size.
     BufferSizeMismatch { avg: usize, diff: usize },
+    /// The provided data slice was empty, but a non-empty slice was required.
+    EmptyInput,
+    /// Requested decomposition levels exceed what the input length permits.
+    InvalidLevels { requested: usize, max: usize },
 }
 
 impl fmt::Display for WaveletError {
@@ -129,12 +133,31 @@ impl fmt::Display for WaveletError {
                     avg, diff
                 )
             }
+            WaveletError::EmptyInput => write!(f, "input buffer must not be empty"),
+            WaveletError::InvalidLevels { requested, max } => write!(
+                f,
+                "requested {} levels exceeds maximum supported {} for input length",
+                requested, max
+            ),
         }
     }
 }
 
 #[cfg(feature = "std")]
 impl std::error::Error for WaveletError {}
+
+/// Computes the maximum number of dyadic decomposition levels supported by
+/// the given input length. Each level halves the sample count, so the limit is
+/// essentially `floor(log2(len))`. Returns zero when the length is less than two.
+fn max_levels(len: usize) -> usize {
+    let mut levels = 0;
+    let mut n = len;
+    while n >= HAAR_PAIR_LEN {
+        n /= HAAR_PAIR_LEN;
+        levels += 1;
+    }
+    levels
+}
 
 /// Forward Haar wavelet transform (single level)
 ///
@@ -145,11 +168,11 @@ pub fn haar_forward(input: &[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>
         return Err(WaveletError::InputLengthOdd { len: input.len() });
     }
     let n = input.len() / HAAR_PAIR_LEN;
-    let mut avg = vec![0.0; n];
-    let mut diff = vec![0.0; n];
+    let mut avg = Vec::with_capacity(n);
+    let mut diff = Vec::with_capacity(n);
     for i in 0..n {
-        avg[i] = (input[HAAR_PAIR_LEN * i] + input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE;
-        diff[i] = (input[HAAR_PAIR_LEN * i] - input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE;
+        avg.push((input[HAAR_PAIR_LEN * i] + input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE);
+        diff.push((input[HAAR_PAIR_LEN * i] - input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE);
     }
     Ok((avg, diff))
 }
@@ -166,10 +189,10 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
         });
     }
     let n = avg.len();
-    let mut output = vec![0.0; n * HAAR_PAIR_LEN];
+    let mut output = Vec::with_capacity(n * HAAR_PAIR_LEN);
     for i in 0..n {
-        output[HAAR_PAIR_LEN * i] = avg[i] + diff[i];
-        output[HAAR_PAIR_LEN * i + 1] = avg[i] - diff[i];
+        output.push(avg[i] + diff[i]);
+        output.push(avg[i] - diff[i]);
     }
     Ok(output)
 }
@@ -180,6 +203,9 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 /// Propagates any error returned by [`haar_forward`].
 pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
     #[allow(clippy::type_complexity)]
+    if inputs.is_empty() {
+        return Err(WaveletError::EmptyInput);
+    }
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -194,10 +220,17 @@ pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
 /// # Errors
 /// Propagates any error returned by [`haar_inverse`].
 pub fn batch_inverse(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, WaveletError> {
-    avgs.iter()
-        .zip(diffs.iter())
-        .map(|(a, d)| haar_inverse(a, d))
-        .collect()
+    if avgs.len() != diffs.len() {
+        return Err(WaveletError::BufferSizeMismatch {
+            avg: avgs.len(),
+            diff: diffs.len(),
+        });
+    }
+    let mut outputs = Vec::with_capacity(avgs.len());
+    for (a, d) in avgs.iter().zip(diffs.iter()) {
+        outputs.push(haar_inverse(a, d)?);
+    }
+    Ok(outputs)
 }
 
 /// Multi-level decomposition using a single-level forward function.
@@ -212,7 +245,18 @@ pub fn multi_level_forward<F>(
 where
     F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
-    let mut current = input.to_vec();
+    if input.is_empty() {
+        return Err(WaveletError::EmptyInput);
+    }
+    let max = max_levels(input.len());
+    if levels == 0 || levels > max {
+        return Err(WaveletError::InvalidLevels {
+            requested: levels,
+            max,
+        });
+    }
+    let mut current = Vec::with_capacity(input.len());
+    current.extend_from_slice(input);
     let mut details = Vec::with_capacity(levels);
     for _ in 0..levels {
         if current.len() % HAAR_PAIR_LEN != 0 {
@@ -239,7 +283,18 @@ pub fn multi_level_inverse<F>(
 where
     F: Fn(&[f32], &[f32]) -> Result<Vec<f32>, WaveletError>,
 {
-    let mut current = approx.to_vec();
+    if approx.is_empty() {
+        return Err(WaveletError::EmptyInput);
+    }
+    if details.is_empty() {
+        return Err(WaveletError::InvalidLevels {
+            requested: 0,
+            max: max_levels(approx.len()),
+        // Zero-level inverse: just return the approximation as is.
+        return Ok(approx.to_vec());
+    }
+    let mut current = Vec::with_capacity(approx.len());
+    current.extend_from_slice(approx);
     for d in details.iter().rev() {
         if current.len() < d.len() {
             return Err(WaveletError::BufferSizeMismatch {
@@ -267,6 +322,9 @@ pub fn multi_level_forward_batch<F>(
 where
     F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
+    if inputs.is_empty() {
+        return Err(WaveletError::EmptyInput);
+    }
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -289,10 +347,20 @@ pub fn multi_level_inverse_batch<F>(
 where
     F: Fn(&[f32], &[f32]) -> Result<Vec<f32>, WaveletError>,
 {
-    avgs.iter()
-        .zip(diffs.iter())
-        .map(|(a, d)| multi_level_inverse(a, d, &inverse))
-        .collect()
+    if avgs.is_empty() {
+        return Err(WaveletError::EmptyInput);
+    }
+    if avgs.len() != diffs.len() {
+        return Err(WaveletError::BufferSizeMismatch {
+            avg: avgs.len(),
+            diff: diffs.len(),
+        });
+    }
+    let mut outputs = Vec::with_capacity(avgs.len());
+    for (a, d) in avgs.iter().zip(diffs.iter()) {
+        outputs.push(multi_level_inverse(a, d, &inverse)?);
+    }
+    Ok(outputs)
 }
 
 /// MCU/stack-only, const-generic, in-place Haar wavelet forward (N must be even, no heap)
