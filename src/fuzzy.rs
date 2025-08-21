@@ -1,5 +1,11 @@
 use alloc::{string::String, vec, vec::Vec};
 
+/// Divider for the fuzzy match threshold.
+/// A candidate is considered a match when its edit distance
+/// is no greater than half the pattern length. This constant
+/// avoids magic numbers and makes the threshold explicit.
+const MATCH_THRESHOLD_DIVISOR: usize = 2;
+
 /// Compute the Levenshtein distance between two strings.
 /// Lower scores indicate closer matches.
 pub fn fuzzy_score(pattern: &str, text: &str) -> usize {
@@ -26,8 +32,13 @@ pub fn fuzzy_score(pattern: &str, text: &str) -> usize {
 }
 
 /// Determine if two strings match within half the pattern length.
+///
+/// The pattern length is computed once to avoid the cost of
+/// iterating over the pattern multiple times. This improves
+/// performance when matching repeatedly against the same pattern.
 pub fn fuzzy_match(pattern: &str, text: &str) -> bool {
-    fuzzy_score(pattern, text) <= pattern.chars().count() / 2
+    let pattern_len = pattern.chars().count();
+    fuzzy_score(pattern, text) <= pattern_len / MATCH_THRESHOLD_DIVISOR
 }
 
 /// Compute fuzzy scores for a batch of candidate strings.
