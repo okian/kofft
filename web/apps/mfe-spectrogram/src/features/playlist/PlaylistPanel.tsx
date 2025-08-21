@@ -6,6 +6,7 @@ import React, {
   useEffect,
 } from "react";
 import { X, Play, Trash2, FileAudio, Pause, Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { AudioTrack } from "@/shared/types";
 import { cn } from "@/shared/utils/cn";
 import { formatDuration } from "@/shared/utils/audio";
@@ -15,6 +16,8 @@ import { fuzzyMatch, fuzzyScore } from "@/shared/utils/fuzzy";
 import { usePlaylistSearchStore } from "@/shared/stores/playlistSearchStore";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
 import { THEME_COLORS } from "@/shared/theme";
+import { getPanelClasses } from "@/shared/layout";
+import { useAnimationPreset } from "@/shared/animations";
 
 interface PlaylistPanelProps {
   tracks: AudioTrack[];
@@ -389,6 +392,9 @@ export function PlaylistPanel({
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const trackRefs = useRef<(HTMLDivElement | null)[]>([]);
   const { loadAudioFiles } = useAudioFile();
+  const theme = useSettingsStore((s) => s.theme);
+  // Ensure panel entrance matches active theme's motion language.
+  const animation = useAnimationPreset("slide");
 
   const handlePanelDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes("Files")) {
@@ -658,12 +664,15 @@ export function PlaylistPanel({
   );
 
   return (
-    <div
-      className="h-full flex flex-col"
-      data-testid="playlist-panel"
-      onDragOver={handlePanelDragOver}
-      onDrop={handlePanelDrop}
-    >
+    <AnimatePresence>
+      {_isOpen && (
+        <motion.div
+          {...animation}
+          className={getPanelClasses(theme)}
+          data-testid="playlist-panel"
+          onDragOver={handlePanelDragOver}
+          onDrop={handlePanelDrop}
+        >
       {/* Header - More compact */}
       <div className="flex items-center justify-between py-0.5 px-1 border-b border-neutral-800">
         <h3 className="text-sm font-medium text-neutral-100">Playlist</h3>
@@ -829,6 +838,8 @@ export function PlaylistPanel({
           </div>
         </div>
       )}
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

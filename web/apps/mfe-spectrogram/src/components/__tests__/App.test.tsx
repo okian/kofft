@@ -50,7 +50,8 @@ vi.mock("../../stores/settingsStore", () => ({
   }),
 }));
 
-vi.mock("../../hooks/useKeyboardShortcuts", () => ({
+// Mock unified keyboard shortcut hook to prevent real listeners during tests
+vi.mock("../../shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 

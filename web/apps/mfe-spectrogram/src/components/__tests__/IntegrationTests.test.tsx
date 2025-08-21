@@ -105,7 +105,8 @@ vi.mock("../../hooks/useMicrophone", () => ({
   useMicrophone: mockUseMicrophone,
 }));
 
-vi.mock("../../hooks/useKeyboardShortcuts", () => ({
+// Mock unified keyboard shortcut hook to prevent real listeners during tests
+vi.mock("../../shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: mockUseKeyboardShortcuts,
 }));
 
