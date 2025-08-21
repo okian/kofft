@@ -40,7 +40,8 @@ fn hash_only_identification() {
 fn empty_buffer_rejected() {
     let mut file = NamedTempFile::new().expect("create file");
     file.write_all(SONG_DATA).expect("write data");
-    let mut buf: [u8; 0] = [];
+    // Use an explicit empty Vec<u8> as buffer for clarity.
+    let mut buf: Vec<u8> = Vec::with_capacity(0);
     assert!(SongIndex::hash_file_with_buffer(file.path(), &mut buf).is_err());
 }
 
