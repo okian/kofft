@@ -1,5 +1,10 @@
-// Test intent: verifies stft parallel behavior including edge cases.
 #![cfg(feature = "parallel")]
+//! Integration tests for the parallel STFT implementation.
+//!
+//! The tests employ a [`CountingFft`] helper that wraps a `ScalarFftImpl` in a
+//! `Mutex` and tracks invocations with an `AtomicUsize`. This design lets us
+//! verify that the parallel routine reuses a single FFT instance without data
+//! races by asserting the final call count.
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -10,8 +15,12 @@ use kofft::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
 use kofft::stft::parallel;
 use kofft::window::hann;
 
-/// Thread-safe FFT counting calls to ensure parallel execution uses the provided
-/// instance exactly once per frame.
+/// Thread-safe FFT wrapper that counts each invocation.
+///
+/// A `Mutex` serializes access to the inner [`ScalarFftImpl`], while an
+/// [`AtomicUsize`] records how many FFT operations occur. Tests can then assert
+/// that exactly one call is made per frame, revealing potential race conditions
+/// if the count deviates.
 struct CountingFft {
     /// Inner FFT implementation protected by a mutex to provide `Sync`.
     inner: Mutex<ScalarFftImpl<f32>>,
@@ -112,20 +121,25 @@ impl FftImpl<f32> for CountingFft {
     }
 }
 
-/// Ensure the parallel STFT uses the supplied FFT implementation exactly once per frame.
+/// Verifies that parallel STFT reuses a single FFT instance exactly once per frame.
+///
+/// Inputs: an all-zero signal of eight samples, a Hann window of length four, and
+/// a hop size of two samples.
+/// Behavior: after processing, the `CountingFft` should report one call per
+/// expected frame and each output frame must match the window length.
 #[test]
 fn parallel_uses_supplied_fft() {
-    const SIGNAL_LEN: usize = 8;
-    const WIN_LEN: usize = 4;
-    const HOP: usize = 2;
+    const SIGNAL_LEN: usize = 8; // Number of samples in the synthetic signal.
+    const WIN_LEN: usize = 4; // Length of the Hann analysis window.
+    const HOP: usize = 2; // Hop size between successive frames.
     let signal = vec![0.0f32; SIGNAL_LEN];
     let window = hann(WIN_LEN);
-    let frame_count = SIGNAL_LEN.div_ceil(HOP);
+    let frame_count = SIGNAL_LEN.div_ceil(HOP); // Expected number of frames.
     let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; frame_count];
     let fft = CountingFft::new();
     parallel(&signal, &window, HOP, &mut frames, &fft).unwrap();
-    assert_eq!(fft.count(), frame_count);
+    assert_eq!(fft.count(), frame_count); // Each frame should invoke FFT once.
     for frame in frames {
-        assert_eq!(frame.len(), WIN_LEN);
+        assert_eq!(frame.len(), WIN_LEN); // Ensure frames remain window-sized.
     }
 }
