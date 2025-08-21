@@ -13,6 +13,24 @@ use alloc::vec::Vec;
 use core::f32::consts::PI;
 use hashbrown::HashMap;
 
+/// Maximum transform length permitted for any DCT operation.
+///
+/// Keeping this bound low ensures the planner cannot allocate
+/// unbounded internal buffers when presented with malicious or
+/// accidental large lengths. `2^15` elements correspond to roughly
+/// 128 KiB of `f32` data, which is ample for most audio and signal
+/// processing tasks while still being conservative about memory use.
+pub const MAX_DCT_LEN: usize = 1 << 15;
+
+/// Maximum number of cosine tables cached by [`DctPlanner`].
+///
+/// Each planned length stores a table of precomputed cosine values.
+/// Without a cap the cache could grow without limit if many distinct
+/// lengths are planned. Limiting to a small fixed count keeps memory
+/// usage predictable; if the limit is exceeded the cache is cleared
+/// to make room for new tables.
+pub const MAX_DCT_CACHE: usize = 32;
+
 /// Planner that caches cosine tables for FFT-based DCT routines.
 ///
 /// This mirrors the [`RfftPlanner`] used for real FFTs but stores
@@ -20,12 +38,16 @@ use hashbrown::HashMap;
 /// both the trigonometric tables and the internal [`RfftPlanner`]
 /// to avoid redundant allocations on repeated transforms.
 pub struct DctPlanner {
-    /// Cosine tables indexed by transform length.
+    /// Cosine tables indexed by transform length. Sized via
+    /// [`MAX_DCT_CACHE`] to avoid unbounded growth.
     cache: HashMap<usize, Arc<[f32]>>,
     /// Underlying real-FFT planner used by the kernels.
     rfft: RfftPlanner<f32>,
-    /// Reusable work buffers.
+    /// Scratch buffer used for building the mirrored input for the
+    /// real FFT. Length is capped at `2 * MAX_DCT_LEN`.
     buf: Vec<f32>,
+    /// Spectrum buffer holding the real FFT output. Length is capped
+    /// at `MAX_DCT_LEN + 1`.
     spectrum: Vec<Complex32>,
 }
 
@@ -47,15 +69,28 @@ impl DctPlanner {
     }
 
     /// Retrieve or build the cosine table for length `n`.
-    fn get_cos_table(&mut self, n: usize) -> Arc<[f32]> {
+    ///
+    /// Fails if `n` is zero or exceeds [`MAX_DCT_LEN`]. When the cache
+    /// already holds [`MAX_DCT_CACHE`] entries, it is cleared to prevent
+    /// uncontrolled growth.
+    fn get_cos_table(&mut self, n: usize) -> Result<Arc<[f32]>, FftError> {
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n > MAX_DCT_LEN {
+            return Err(FftError::LengthOverflow);
+        }
         if !self.cache.contains_key(&n) {
+            if self.cache.len() >= MAX_DCT_CACHE {
+                self.cache.clear();
+            }
             let mut table = Vec::with_capacity(n);
             for k in 0..n {
                 table.push((PI * k as f32 / (2.0 * n as f32)).cos());
             }
             self.cache.insert(n, Arc::from(table));
         }
-        Arc::clone(self.cache.get(&n).unwrap())
+        Ok(Arc::clone(self.cache.get(&n).unwrap()))
     }
 
     /// DCT-II kernel using a precomputed cosine table and the internal
@@ -70,7 +105,16 @@ impl DctPlanner {
         if output.len() != n {
             return Err(FftError::MismatchedLengths);
         }
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n > MAX_DCT_LEN {
+            return Err(FftError::LengthOverflow);
+        }
         let m = 2 * n;
+        if m > 2 * MAX_DCT_LEN {
+            return Err(FftError::LengthOverflow);
+        }
         if self.buf.len() < m {
             self.buf.resize(m, 0.0);
         }
@@ -99,7 +143,7 @@ impl DctPlanner {
         &mut self,
         len: usize,
     ) -> impl FnMut(&mut [f32], &mut [f32]) -> Result<(), FftError> + '_ {
-        let cos = self.get_cos_table(len);
+        let cos = self.get_cos_table(len).expect("invalid DCT length");
         move |input, output| self.dct2_with_table(input, output, &cos)
     }
 }
@@ -107,10 +151,15 @@ impl DctPlanner {
 /// DCT-I (even symmetry, endpoints not repeated)
 pub fn dct1(input: &[f32]) -> Vec<f32> {
     let n = input.len();
-    if n == 0 {
-        return vec![];
-    }
+    assert!(n > 0, "DCT-I input length must be > 0");
+    assert!(
+        n <= MAX_DCT_LEN,
+        "DCT-I length {} exceeds MAX_DCT_LEN {}",
+        n,
+        MAX_DCT_LEN
+    );
     if n == 1 {
+        // The transform of a single sample is just twice that sample.
         return vec![input[0] * 2.0];
     }
     let mut output = vec![0.0; n];
@@ -133,6 +182,13 @@ pub fn dct1(input: &[f32]) -> Vec<f32> {
 /// DCT-II (the "standard" DCT, used in JPEG, etc.)
 pub fn dct2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    assert!(n > 0, "DCT-II input length must be > 0");
+    assert!(
+        n <= MAX_DCT_LEN,
+        "DCT-II length {} exceeds MAX_DCT_LEN {}",
+        n,
+        MAX_DCT_LEN
+    );
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
@@ -148,6 +204,13 @@ pub fn dct2(input: &[f32]) -> Vec<f32> {
 /// DCT-III (the inverse of DCT-II, up to scaling)
 pub fn dct3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    assert!(n > 0, "DCT-III input length must be > 0");
+    assert!(
+        n <= MAX_DCT_LEN,
+        "DCT-III length {} exceeds MAX_DCT_LEN {}",
+        n,
+        MAX_DCT_LEN
+    );
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
@@ -163,6 +226,13 @@ pub fn dct3(input: &[f32]) -> Vec<f32> {
 /// DCT-IV (self-inverse, used in audio and spectral analysis)
 pub fn dct4(input: &[f32]) -> Vec<f32> {
     let n = input.len();
+    assert!(n > 0, "DCT-IV input length must be > 0");
+    assert!(
+        n <= MAX_DCT_LEN,
+        "DCT-IV length {} exceeds MAX_DCT_LEN {}",
+        n,
+        MAX_DCT_LEN
+    );
     let mut output = vec![0.0; n];
     let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
@@ -191,6 +261,15 @@ mod planner_tests {
         for (a, b) in output.iter().zip(expected.iter()) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
+    }
+
+    #[test]
+    fn test_cache_limit() {
+        let mut planner = DctPlanner::new();
+        for len in 1..=MAX_DCT_CACHE + 5 {
+            let _ = planner.plan_dct2(len);
+        }
+        assert!(planner.cache.len() <= MAX_DCT_CACHE);
     }
 }
 
@@ -410,10 +489,10 @@ mod coverage_tests {
     use proptest::proptest;
 
     #[test]
+    #[should_panic]
     fn test_dct_empty() {
         let x: [f32; 0] = [];
-        let y = dct2(&x);
-        assert_eq!(y.len(), 0);
+        let _ = dct2(&x);
     }
     #[test]
     fn test_dct_single_element() {
