@@ -5,6 +5,7 @@ import { DesignProvider } from "./DesignContext";
 import { DesignToggle, applyDesign, applyMode, parseDesign, parseMode } from "./DesignToggle";
 import type { Design, Mode } from "./designs";
 import { PALETTES } from "./designs";
+import { LAYOUT_GAP_REM, GRID_GAP_REM } from "./ui/Spacing";
 
 /**
  * Convenience helper rendering the toggle within its provider. The wrapper
@@ -40,6 +41,18 @@ describe("DesignToggle", () => {
       expect(document.documentElement.getAttribute("data-design")).toBe(design);
     },
   );
+
+  /**
+   * The wrapper element should reflect shared spacing constants so layouts stay
+   * in sync. The numeric values are converted to `rem` units in the component.
+   */
+  it("applies shared padding and gap", () => {
+    const { container } = renderWithProvider();
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.style.padding).toBe(`${LAYOUT_GAP_REM}rem`);
+    expect(wrapper.style.gap).toBe(`${GRID_GAP_REM}rem`);
+    expect(wrapper.style.display).toBe("flex");
+  });
 
   /** Ensure colour mode changes propagate to the root element. */
   it("switches mode", () => {
