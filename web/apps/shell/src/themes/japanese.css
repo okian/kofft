@@ -28,7 +28,8 @@
 /* Transition behaviour for minimalist Japanese designs. */
 :root[data-design="japanese-a"] *,
 :root[data-design="japanese-b"] * {
-  transition:
-    background-color var(--anim-duration) ease-in-out,
-    color var(--anim-duration) ease-in-out;
+  /* Leverage the global animation duration for all colour changes. */
+  transition-property: background-color, color;
+  transition-duration: var(--anim-duration);
+  transition-timing-function: ease-in-out;
 }

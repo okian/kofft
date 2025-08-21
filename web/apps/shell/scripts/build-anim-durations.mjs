@@ -20,20 +20,24 @@ const cssPath = resolve(
  */
 async function main() {
   const src = await readFile(tsPath, "utf8");
-  const match = src.match(/THEME_ANIMATION_MS\s*=\s*(\d+)/);
-  if (!match) {
+  const durationMatch = src.match(/THEME_ANIMATION_MS\s*=\s*(\d+)/);
+  const varMatch = src.match(
+    /THEME_ANIMATION_CSS_VAR\s*=\s*"([^"]+)"/,
+  );
+  if (!durationMatch || !varMatch) {
     throw new Error(
-      "Failed to extract THEME_ANIMATION_MS from AnimationDurations.ts",
+      "Failed to extract animation constants from AnimationDurations.ts",
     );
   }
-  const ms = Number(match[1]);
+  const ms = Number(durationMatch[1]);
   if (!Number.isFinite(ms)) {
     throw new Error("Parsed THEME_ANIMATION_MS is not a finite number");
   }
+  const cssVar = varMatch[1];
   const css = [
     "/* Auto-generated from AnimationDurations.ts. Do not edit manually. */",
     ":root {",
-    `  --anim-duration: ${ms}ms;`,
+    `  ${cssVar}: ${ms}ms;`,
     "}",
     "",
   ].join("\n");

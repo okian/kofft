@@ -25,5 +25,8 @@
 
 /* Transition behaviour emphasising motion. */
 :root[data-design="bauhaus"] * {
-  transition: transform var(--anim-duration) ease-in-out;
+  /* Ensure geometric motions use the shared animation pacing. */
+  transition-property: transform;
+  transition-duration: var(--anim-duration);
+  transition-timing-function: ease-in-out;
 }
