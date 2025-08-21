@@ -3,16 +3,21 @@
 use core::f32::consts::PI;
 
 #[cfg(not(feature = "std"))]
-use crate::num::Float;
 use libm::sqrtf;
 
+/// Number of terms used in the truncated series for `bessel0`.
+const BESSEL0_TERMS: usize = 20;
+
+/// Approximate the zeroth-order modified Bessel function of the first kind.
+///
+/// This uses a truncated power series expansion which is accurate for the
+/// range of inputs encountered in window calculations.
 fn bessel0(x: f32) -> f32 {
-    // Approximate I0(x) using a series expansion
     let mut sum = 1.0;
     let y = x * x / 4.0;
     let mut t = y;
     let mut k = 1.0;
-    for n in 1..20 {
+    for n in 1..BESSEL0_TERMS {
         k *= n as f32;
         sum += t / (k * k);
         t *= y;
@@ -48,26 +53,31 @@ pub fn blackman(len: usize) -> alloc::vec::Vec<f32> {
 }
 
 /// Generate a Kaiser window of length `len` and shape parameter `beta`.
-#[cfg(feature = "std")]
+///
+/// # Panics
+/// Panics if `len` is zero.
 pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
-    let denom = bessel0(beta);
-    let m = (len - 1) as f32 / 2.0;
-    (0..len)
-        .map(|i| {
-            let r = (i as f32 - m) / m;
-            bessel0(beta * sqrtf(1.0 - r * r)) / denom
-        })
-        .collect()
-}
+    assert!(len > 0, "len must be greater than zero");
+    if len == 1 {
+        return alloc::vec![1.0];
+    }
 
-#[cfg(not(feature = "std"))]
-pub fn kaiser(len: usize, beta: f32) -> alloc::vec::Vec<f32> {
     let denom = bessel0(beta);
     let m = (len - 1) as f32 / 2.0;
     (0..len)
         .map(|i| {
             let r = (i as f32 - m) / m;
-            bessel0(beta * sqrtf(1.0 - r * r)) / denom
+            // Clamp the square-root argument to zero to avoid NaNs from
+            // floating-point rounding when `r` is extremely close to ±1.
+            let arg = (1.0 - r * r).max(0.0);
+            #[cfg(feature = "std")]
+            {
+                bessel0(beta * arg.sqrt()) / denom
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                bessel0(beta * sqrtf(arg)) / denom
+            }
         })
         .collect()
 }
@@ -130,6 +140,20 @@ mod tests {
             assert!((*a - *b).abs() < 1e-6);
         }
         assert!(w.iter().all(|&x| x.is_finite()));
+    }
+
+    /// Verifies that a length-one Kaiser window is a single unity value.
+    #[test]
+    fn test_kaiser_len_one() {
+        let w = kaiser(1, 5.0);
+        assert_eq!(w, alloc::vec![1.0]);
+    }
+
+    /// Ensures the function panics when requested length is zero.
+    #[test]
+    #[should_panic]
+    fn test_kaiser_len_zero() {
+        kaiser(0, 5.0);
     }
 
     #[test]
