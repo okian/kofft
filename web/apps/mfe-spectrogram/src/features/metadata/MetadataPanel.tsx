@@ -18,11 +18,11 @@ interface MetadataPanelProps {
 }
 
 export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
-  if (!isOpen) return null
-
   const { setPlaylistPanelOpen } = useUIStore()
   const { setSearchQuery } = usePlaylistSearchStore()
   const theme = useSettingsStore((s) => s.theme)
+
+  if (!isOpen) return null
 
   const handleMetadataSearch = (value: string) => {
     setSearchQuery(value)

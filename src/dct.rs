@@ -4,9 +4,9 @@
 
 extern crate alloc;
 use crate::fft::{Complex32, FftError, ScalarFftImpl};
-#[cfg(not(feature = "std"))]
-use crate::num::Float;
 use crate::rfft::RfftPlanner;
+#[cfg(not(feature = "std"))]
+// use crate::num::Float; // Unused import
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -40,7 +40,7 @@ pub const MAX_DCT_CACHE: usize = 32;
 pub struct DctPlanner {
     /// Cosine tables indexed by transform length. Sized via
     /// [`MAX_DCT_CACHE`] to avoid unbounded growth.
-    cache: HashMap<usize, Arc<[f32]>>,
+    cache: HashMap<usize, alloc::sync::Arc<[f32]>>,
     /// Underlying real-FFT planner used by the kernels.
     rfft: RfftPlanner<f32>,
     /// Scratch buffer used for building the mirrored input for the
@@ -73,7 +73,7 @@ impl DctPlanner {
     /// Fails if `n` is zero or exceeds [`MAX_DCT_LEN`]. When the cache
     /// already holds [`MAX_DCT_CACHE`] entries, it is cleared to prevent
     /// uncontrolled growth.
-    fn get_cos_table(&mut self, n: usize) -> Result<Arc<[f32]>, FftError> {
+    fn get_cos_table(&mut self, n: usize) -> Result<alloc::sync::Arc<[f32]>, FftError> {
         if n == 0 {
             return Err(FftError::EmptyInput);
         }
@@ -88,9 +88,9 @@ impl DctPlanner {
             for k in 0..n {
                 table.push((PI * k as f32 / (2.0 * n as f32)).cos());
             }
-            self.cache.insert(n, Arc::from(table));
+            self.cache.insert(n, alloc::sync::Arc::from(table));
         }
-        Ok(Arc::clone(self.cache.get(&n).unwrap()))
+        Ok(alloc::sync::Arc::clone(self.cache.get(&n).unwrap()))
     }
 
     /// DCT-II kernel using a precomputed cosine table and the internal

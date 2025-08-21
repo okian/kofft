@@ -34,17 +34,18 @@ pub const MATCH_THRESHOLD_DIVISOR: usize = 2;
 /// * If either input exceeds [`MAX_INPUT_LENGTH`].
 pub fn fuzzy_score(pattern: &str, text: &str, pattern_len: usize) -> usize {
     let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
     let actual_pattern_len = pattern_chars.len();
-    // Count characters without allocating to keep memory usage minimal.
-    let text_len = text.chars().count();
-
+    
     if actual_pattern_len != pattern_len {
         panic!(
             "pattern_len {} does not match pattern's code point count {}",
             pattern_len, actual_pattern_len
         );
     }
+    
+    // Count characters without allocating to keep memory usage minimal.
+    let text_len = text.chars().count();
+    
     if actual_pattern_len > MAX_INPUT_LENGTH || text_len > MAX_INPUT_LENGTH {
         panic!(
             "input too long; maximum supported length is {}",

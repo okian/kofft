@@ -40,10 +40,6 @@ const GRID_BAUHAUS = "grid grid-cols-12";
  * without sprinkling literal values.
  */
 export const SPACING: Record<Theme, string> = {
-  dark: SPACE_STANDARD,
-  light: SPACE_STANDARD,
-  neon: SPACE_STANDARD,
-  "high-contrast": SPACE_STANDARD,
   "japanese-a-light": SPACE_JAPANESE,
   "japanese-a-dark": SPACE_JAPANESE,
   "japanese-b-light": SPACE_JAPANESE,
@@ -54,10 +50,6 @@ export const SPACING: Record<Theme, string> = {
 
 /** Border radius classes keyed by theme. */
 export const BORDER_RADIUS: Record<Theme, string> = {
-  dark: RADIUS_STANDARD,
-  light: RADIUS_STANDARD,
-  neon: RADIUS_STANDARD,
-  "high-contrast": RADIUS_STANDARD,
   "japanese-a-light": RADIUS_JAPANESE,
   "japanese-a-dark": RADIUS_JAPANESE,
   "japanese-b-light": RADIUS_JAPANESE,
@@ -68,10 +60,6 @@ export const BORDER_RADIUS: Record<Theme, string> = {
 
 /** Typography classes keyed by theme. */
 export const TYPOGRAPHY: Record<Theme, string> = {
-  dark: TYPO_STANDARD,
-  light: TYPO_STANDARD,
-  neon: TYPO_STANDARD,
-  "high-contrast": TYPO_STANDARD,
   "japanese-a-light": TYPO_JAPANESE,
   "japanese-a-dark": TYPO_JAPANESE,
   "japanese-b-light": TYPO_JAPANESE,
@@ -82,10 +70,6 @@ export const TYPOGRAPHY: Record<Theme, string> = {
 
 /** Grid classes keyed by theme. */
 export const GRID: Record<Theme, string> = {
-  dark: GRID_STANDARD,
-  light: GRID_STANDARD,
-  neon: GRID_STANDARD,
-  "high-contrast": GRID_STANDARD,
   "japanese-a-light": GRID_JAPANESE,
   "japanese-a-dark": GRID_JAPANESE,
   "japanese-b-light": GRID_JAPANESE,

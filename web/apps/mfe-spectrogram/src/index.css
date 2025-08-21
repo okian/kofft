@@ -26,25 +26,6 @@
 }
 
 /* Theme overrides matching the body class applied by the app */
-.theme-dark {
-  --accent-color: #3b82f6;
-  --primary-color: #6b7280;
-}
-
-.theme-light {
-  --accent-color: #2563eb;
-  --primary-color: #9ca3af;
-}
-
-.theme-neon {
-  --accent-color: #14b8a6;
-  --primary-color: #a3a3a3;
-}
-
-.theme-high-contrast {
-  --accent-color: #ffffff;
-  --primary-color: #000000;
-}
 
 /* Minimal black/white theme inspired by traditional Japanese design */
 .theme-japanese-a-light {

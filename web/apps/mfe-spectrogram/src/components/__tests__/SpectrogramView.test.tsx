@@ -45,7 +45,7 @@ vi.mock('../../shared/stores/audioStore', () => ({
 vi.mock('../../shared/stores/settingsStore', () => ({
   useSettingsStore: () => ({
     showLegend: true,
-    theme: 'dark',
+    theme: 'japanese-a-dark',
   })
 }))
 

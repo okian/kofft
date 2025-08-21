@@ -186,6 +186,8 @@ fn linear_resample_wasm_feature_path() {
     let input = vec![0.0, 1.0];
     let output = linear_resample(&input, 1.0, 2.0).unwrap();
     assert_eq!(output.len(), 4);
+}
+
 /// Ensures resampler fails fast when given non-finite rates.
 #[test]
 fn linear_resample_errors_on_non_finite_rates() {

@@ -528,9 +528,7 @@ export const useAudioFile = () => {
                     metadata,
                     arrayBuffer,
                   );
-                  console.log(
-                    "✅ [OPTIMISTIC] Metadata stored in optimistic cache",
-                  );
+
                 } catch (storeError) {
                   console.error(
                     "❌ [METADATA] Failed to store metadata:",

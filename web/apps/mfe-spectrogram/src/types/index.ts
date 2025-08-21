@@ -127,10 +127,6 @@ export interface SpectrogramSettings {
    * Using a string union ensures only supported themes persist in settings.
    */
   theme:
-    | "dark"
-    | "light"
-    | "neon"
-    | "high-contrast"
     | "japanese-a-light"
     | "japanese-a-dark"
     | "japanese-b-light"

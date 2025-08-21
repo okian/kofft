@@ -1,6 +1,8 @@
+use kofft::fft::{Complex32, FftError, FftImpl, ScalarFftImpl};
+
+#[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
 use kofft::fft::{
     __test_parallel_pool_thread_count, set_parallel_fft_threads, set_parallel_fft_threshold,
-    Complex32, FftError, FftImpl, ScalarFftImpl,
 };
 
 // Zero-length input should error immediately.
@@ -41,6 +43,7 @@ fn fft_large_roundtrip() {
 }
 
 // Ensure the internal thread pool respects overrides and produces deterministic results.
+#[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
 #[test]
 fn parallel_fft_thread_bound_and_race_free() {
     set_parallel_fft_threshold(1);

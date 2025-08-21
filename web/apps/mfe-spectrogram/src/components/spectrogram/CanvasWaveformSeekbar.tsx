@@ -409,15 +409,9 @@ export function CanvasWaveformSeekbar({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || containerWidth === 0) {
-      if (DEBUG)
-        console.debug("Canvas not ready:", {
-          canvas: !!canvas,
-          containerWidth,
-        });
       return;
     }
-    if (DEBUG)
-      console.debug("Rendering seekbar - containerWidth:", containerWidth);
+
 
     // Set up high DPI canvas
     const devicePixelRatio = window.devicePixelRatio || 1;
@@ -435,7 +429,6 @@ export function CanvasWaveformSeekbar({
     const xOffset = (width - totalWidth) / 2; // Center the seekbar
 
     // Temporarily disable GPU paths to use 2D canvas
-    if (DEBUG) console.debug("Using 2D canvas path");
     /*
     // Attempt GPU paths first for better performance when available.
     const gpu = (navigator as any).gpu;
@@ -485,12 +478,7 @@ export function CanvasWaveformSeekbar({
       );
       const h = Math.max(MIN_BAR_HEIGHT, adjusted * maxBarHeight);
 
-      // Debug: Log some bar heights to see the range
-      if (DEBUG && i < 5) {
-        console.debug(
-          `Bar ${i}: raw=${raw.toFixed(3)}, adjusted=${adjusted.toFixed(3)}, height=${h.toFixed(1)}`,
-        );
-      }
+
       const y = (maxBarHeight - h) / 2;
       const x = xOffset + i * (BAR_WIDTH + BAR_GAP);
       const color = disabled

@@ -1,5 +1,6 @@
 import React, { forwardRef, useEffect, useRef, useImperativeHandle, useCallback } from 'react'
 import { useSettingsStore } from '@/shared/stores/settingsStore'
+import type { Theme } from '@/shared/types'
 
 interface SpectrogramCanvasProps {
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void
@@ -35,34 +36,54 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
     const currentFrameRef = useRef(0)
 
     // Color maps for different themes
-    const colorMaps = {
-      dark: {
-        background: [0, 0, 0, 1],
-        low: [0, 0, 0.2, 1],      // Dark blue
-        mid: [1, 0.2, 0, 1],      // Red-orange
-        high: [1, 0.4, 0, 1],     // Orange
-        peak: [1, 0.67, 0, 1]     // Light orange
+    const colorMaps: Record<Theme, {
+      background: [number, number, number, number];
+      low: [number, number, number, number];
+      mid: [number, number, number, number];
+      high: [number, number, number, number];
+      peak: [number, number, number, number];
+    }> = {
+      'japanese-a-light': {
+        background: [1, 1, 1, 1],     // White background
+        low: [0, 0, 0, 0.1],          // Very light black
+        mid: [0, 0, 0, 0.5],          // Medium black
+        high: [0, 0, 0, 0.8],         // Dark black
+        peak: [0, 0, 0, 1]            // Pure black
       },
-      light: {
-        background: [0.98, 0.98, 0.98, 1],
-        low: [0, 0, 0.5, 1],      // Dark blue
-        mid: [0, 0.5, 1, 1],      // Blue
-        high: [1, 0.5, 0, 1],     // Orange
-        peak: [1, 0, 0, 1]        // Red
+      'japanese-a-dark': {
+        background: [0, 0, 0, 1],     // Black background
+        low: [1, 1, 1, 0.1],          // Very light white
+        mid: [1, 1, 1, 0.5],          // Medium white
+        high: [1, 1, 1, 0.8],         // Bright white
+        peak: [1, 1, 1, 1]            // Pure white
       },
-      neon: {
-        background: [0, 0, 0, 1],
-        low: [0, 0, 0, 0],        // Transparent
-        mid: [0, 1, 1, 1],        // Cyan
-        high: [1, 0, 1, 1],       // Magenta
-        peak: [1, 1, 0, 1]        // Yellow
+      'japanese-b-light': {
+        background: [1, 1, 1, 1],     // White background
+        low: [0.9, 0, 0.15, 0.2],     // Light red
+        mid: [0.9, 0, 0.15, 0.6],     // Medium red
+        high: [0.9, 0, 0.15, 0.9],    // Dark red
+        peak: [0.9, 0, 0.15, 1]       // Pure red (Japanese flag red)
       },
-      'high-contrast': {
-        background: [0, 0, 0, 1],
-        low: [0, 0, 0, 1],        // Black
-        mid: [1, 1, 1, 1],        // White
-        high: [1, 1, 1, 1],       // White
-        peak: [1, 1, 1, 1]        // White
+      'japanese-b-dark': {
+        background: [0, 0, 0, 1],     // Black background
+        low: [0.9, 0, 0.15, 0.2],     // Light red
+        mid: [0.9, 0, 0.15, 0.6],     // Medium red
+        high: [0.9, 0, 0.15, 0.9],    // Dark red
+        peak: [0.9, 0, 0.15, 1]       // Pure red (Japanese flag red)
+      },
+      'bauhaus-light': {
+        background: [1, 1, 1, 1],     // White background
+        low: [0, 0, 1, 0.3],          // Light blue
+        mid: [0, 0, 1, 0.7],          // Medium blue
+        high: [1, 0, 0, 0.8],         // Red
+        peak: [1, 0, 0, 1]            // Pure red
+      },
+      'bauhaus-dark': {
+        background: [0, 0, 0, 1],     // Black background
+        low: [1, 1, 0, 0.3],          // Light yellow
+        mid: [1, 1, 0, 0.7],          // Medium yellow
+        high: [1, 0, 0, 0.8],         // Red
+        peak: [1, 0, 0, 1]            // Pure red
       }
     }
 
@@ -304,7 +325,7 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       const program = programRef.current
       if (!gl || !program) return
 
-      const colors = colorMaps[theme as keyof typeof colorMaps] || colorMaps.dark
+      const colors = colorMaps[theme as keyof typeof colorMaps] || colorMaps["japanese-a-dark"]
 
       gl.useProgram(program)
 

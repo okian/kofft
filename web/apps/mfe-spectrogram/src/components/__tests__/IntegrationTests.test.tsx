@@ -81,7 +81,7 @@ const mockUseUIStore = vi.fn(() => ({
 }));
 
 const mockUseSettingsStore = vi.fn(() => ({
-  theme: "dark" as const,
+      theme: "japanese-a-dark" as const,
   amplitudeScale: "db" as const,
   frequencyScale: "logarithmic" as const,
   resolution: "medium" as const,

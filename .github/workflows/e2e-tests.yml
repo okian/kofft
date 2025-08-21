@@ -1,0 +1,449 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Generate cache key
+        id: cache-key
+        run: echo "value=${{ github.sha }}-${{ github.run_id }}" >> $GITHUB_OUTPUT
+
+  install-dependencies:
+    name: Install Dependencies
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: web/apps/mfe-spectrogram
+        run: npm ci
+      
+      - name: Install Playwright browsers
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright install --with-deps
+      
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+
+  e2e-tests-chromium:
+    name: E2E Tests - Chromium
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    strategy:
+      matrix:
+        test-file: [
+          'functionality.spec.ts',
+          'visual-regression.spec.ts',
+          'accessibility.spec.ts',
+          'cross-browser.spec.ts',
+          'performance.spec.ts'
+        ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run E2E tests - Chromium
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test ${{ matrix.test-file }} --project=chromium --reporter=html,junit
+        env:
+          CI: true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-chromium-${{ matrix.test-file }}
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  e2e-tests-firefox:
+    name: E2E Tests - Firefox
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    strategy:
+      matrix:
+        test-file: [
+          'functionality.spec.ts',
+          'visual-regression.spec.ts',
+          'accessibility.spec.ts',
+          'cross-browser.spec.ts'
+        ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run E2E tests - Firefox
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test ${{ matrix.test-file }} --project=firefox --reporter=html,junit
+        env:
+          CI: true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-firefox-${{ matrix.test-file }}
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  e2e-tests-webkit:
+    name: E2E Tests - WebKit
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    strategy:
+      matrix:
+        test-file: [
+          'functionality.spec.ts',
+          'visual-regression.spec.ts',
+          'accessibility.spec.ts',
+          'cross-browser.spec.ts'
+        ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run E2E tests - WebKit
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test ${{ matrix.test-file }} --project=webkit --reporter=html,junit
+        env:
+          CI: true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-webkit-${{ matrix.test-file }}
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  e2e-tests-mobile:
+    name: E2E Tests - Mobile
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    strategy:
+      matrix:
+        test-file: [
+          'functionality.spec.ts',
+          'visual-regression.spec.ts',
+          'accessibility.spec.ts'
+        ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run E2E tests - Mobile Chrome
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test ${{ matrix.test-file }} --project="Mobile Chrome" --reporter=html,junit
+        env:
+          CI: true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-mobile-${{ matrix.test-file }}
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  visual-regression:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run visual regression tests
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test visual-regression.spec.ts --project=chromium --reporter=html
+        env:
+          CI: true
+      
+      - name: Upload visual regression results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-regression-results
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  accessibility-audit:
+    name: Accessibility Audit
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run accessibility tests
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test accessibility.spec.ts --project=chromium --reporter=html
+        env:
+          CI: true
+      
+      - name: Upload accessibility results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: accessibility-results
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [setup, install-dependencies]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+          restore-keys: |
+            ${{ needs.setup.outputs.cache-key }}-playwright-browsers
+            playwright-browsers
+      
+      - name: Run performance tests
+        working-directory: web/apps/mfe-spectrogram
+        run: npx playwright test performance.spec.ts --project=chromium --reporter=html
+        env:
+          CI: true
+      
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-results
+          path: web/apps/mfe-spectrogram/test-results/
+          retention-days: 30
+
+  test-report:
+    name: Generate Test Report
+    runs-on: ubuntu-latest
+    needs: [e2e-tests-chromium, e2e-tests-firefox, e2e-tests-webkit, e2e-tests-mobile]
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web/apps/mfe-spectrogram/package-lock.json
+      
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results/
+      
+      - name: Generate combined report
+        working-directory: web/apps/mfe-spectrogram
+        run: |
+          mkdir -p combined-results
+          find ../test-results -name "*.json" -exec cp {} combined-results/ \;
+          npx playwright merge-reports combined-results --reporter html
+      
+      - name: Upload combined report
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-report
+          path: web/apps/mfe-spectrogram/playwright-report/
+          retention-days: 30
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [test-report]
+    if: always()
+    steps:
+      - name: Check test results
+        id: check-results
+        run: |
+          if [ "${{ needs.test-report.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=✅ All E2E tests passed successfully!" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ Some E2E tests failed. Check the test report for details." >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const message = `## E2E Test Results
+            
+            ${{ steps.check-results.outputs.message }}
+            
+            📊 **Test Coverage:**
+            - ✅ Functionality Tests
+            - ✅ Visual Regression Tests  
+            - ✅ Accessibility Tests
+            - ✅ Cross-Browser Compatibility Tests
+            - ✅ Performance Tests
+            
+            🌐 **Browsers Tested:**
+            - Chrome/Chromium
+            - Firefox
+            - Safari/WebKit
+            - Mobile Chrome
+            - Mobile Safari
+            
+            📋 **Reports:**
+            - [E2E Test Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [Visual Regression Results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [Accessibility Audit](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
+            ---
+            *Generated by E2E Test Suite*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: message
+            });

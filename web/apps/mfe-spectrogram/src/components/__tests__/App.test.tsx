@@ -45,7 +45,7 @@ vi.mock("@/shared/stores/uiStore", () => ({
 
 vi.mock("@/shared/stores/settingsStore", () => ({
   useSettingsStore: () => ({
-    theme: "dark",
+    theme: "japanese-a-dark",
     updateSettings: vi.fn(),
   }),
 }));
@@ -95,6 +95,6 @@ describe("App", () => {
     document.body.className = "keep-me";
     render(<App />);
     expect(document.body.classList.contains("keep-me")).toBe(true);
-    expect(document.body.classList.contains("theme-dark")).toBe(true);
+    expect(document.body.classList.contains("theme-japanese-a-dark")).toBe(true);
   });
 });

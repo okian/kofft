@@ -77,6 +77,42 @@ pub const DB4_INVERSE_HIGHPASS: [f32; 8] = [
     -0.2303778133088965,   // h7: eighth reconstruction detail coefficient
 ];
 
+/// Daubechies-2 (db2) low-pass analysis filter coefficients.
+/// These coefficients are used during the forward transform to compute approximation components.
+pub const DB2_ANALYSIS_LOW: [f32; 4] = [
+    0.16290171400361862,   // h0: first smoothing coefficient
+    0.5054728575456481,    // h1: second smoothing coefficient
+    0.4463951772316719,    // h2: third smoothing coefficient
+    -0.019787513117910776, // h3: fourth smoothing coefficient
+];
+
+/// Daubechies-2 (db2) high-pass analysis filter coefficients.
+/// These coefficients are used during the forward transform to compute detail components.
+pub const DB2_ANALYSIS_HIGH: [f32; 4] = [
+    0.019787513117910776,  // g0: first detail coefficient
+    0.4463951772316719,    // g1: second detail coefficient
+    -0.5054728575456481,   // g2: third detail coefficient
+    0.16290171400361862,   // g3: fourth detail coefficient
+];
+
+/// Daubechies-2 (db2) low-pass synthesis filter coefficients.
+/// These coefficients are used during the inverse transform to reconstruct approximation components.
+pub const DB2_SYNTHESIS_LOW: [f32; 4] = [
+    0.16290171400361862,   // h0: first reconstruction coefficient
+    0.5054728575456481,    // h1: second reconstruction coefficient
+    0.4463951772316719,    // h2: third reconstruction coefficient
+    -0.019787513117910776, // h3: fourth reconstruction coefficient
+];
+
+/// Daubechies-2 (db2) high-pass synthesis filter coefficients.
+/// These coefficients are used during the inverse transform to reconstruct detail components.
+pub const DB2_SYNTHESIS_HIGH: [f32; 4] = [
+    0.019787513117910776,  // g0: first reconstruction detail coefficient
+    0.4463951772316719,    // g1: second reconstruction detail coefficient
+    -0.5054728575456481,   // g2: third reconstruction detail coefficient
+    0.16290171400361862,   // g3: fourth reconstruction detail coefficient
+];
+
 /// Errors produced by wavelet operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveletError {

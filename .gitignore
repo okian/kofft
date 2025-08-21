@@ -37,3 +37,100 @@ react-spectrogram/wasm/target/
 react-spectrogram/src/wasm/*
 !react-spectrogram/src/wasm/.gitkeep
 !react-spectrogram/src/wasm/react_spectrogram_wasm.js
+
+# Web App Build Artifacts
+web/apps/mfe-spectrogram/dist/
+web/apps/mfe-spectrogram/build/
+web/apps/mfe-spectrogram/.vite/
+web/apps/mfe-spectrogram/node_modules/
+web/apps/mfe-spectrogram/package-lock.json
+
+# Test Results and Reports
+web/apps/mfe-spectrogram/test-results/
+web/apps/mfe-spectrogram/allure-results/
+web/apps/mfe-spectrogram/playwright-report/
+web/apps/mfe-spectrogram/coverage/
+web/apps/mfe-spectrogram/.nyc_output/
+
+# Cache Directories
+web/apps/mfe-spectrogram/.cache/
+web/apps/mfe-spectrogram/.parcel-cache/
+web/apps/mfe-spectrogram/.eslintcache/
+web/apps/mfe-spectrogram/.stylelintcache/
+web/apps/mfe-spectrogram/node_modules/.cache/
+
+# WASM Build Artifacts
+web/apps/mfe-spectrogram/wasm/target/
+web/apps/mfe-spectrogram/wasm/pkg/
+web/apps/mfe-spectrogram/src/wasm/target/
+web/apps/mfe-spectrogram/src/wasm/pkg/
+
+# Log Files
+web/apps/mfe-spectrogram/*.log
+web/apps/mfe-spectrogram/*.tmp
+web/apps/mfe-spectrogram/*.temp
+
+# OS Generated Files
+web/apps/mfe-spectrogram/.DS_Store
+web/apps/mfe-spectrogram/Thumbs.db
+
+# Backup Files
+web/apps/mfe-spectrogram/*.orig
+web/apps/mfe-spectrogram/*.rej
+web/apps/mfe-spectrogram/*.bak
+
+# Environment Files
+web/apps/mfe-spectrogram/.env
+web/apps/mfe-spectrogram/.env.local
+web/apps/mfe-spectrogram/.env.development.local
+web/apps/mfe-spectrogram/.env.test.local
+web/apps/mfe-spectrogram/.env.production.local
+
+# TypeScript
+web/apps/mfe-spectrogram/*.tsbuildinfo
+
+# Vite
+web/apps/mfe-spectrogram/.vite/
+
+# Playwright
+web/apps/mfe-spectrogram/test-results/
+web/apps/mfe-spectrogram/tests/test-results/
+web/apps/mfe-spectrogram/playwright-report/
+web/apps/mfe-spectrogram/playwright/.cache/
+**/test-results/
+**/playwright-report/
+**/allure-results/
+**/allure-report/
+
+# Allure
+web/apps/mfe-spectrogram/allure-results/
+web/apps/mfe-spectrogram/allure-report/
+
+# Coverage Reports
+web/apps/mfe-spectrogram/coverage/
+web/apps/mfe-spectrogram/.nyc_output/
+web/apps/mfe-spectrogram/lcov.info
+web/apps/mfe-spectrogram/coverage.json
+**/coverage/
+**/.nyc_output/
+**/lcov.info
+**/coverage.json
+
+# Temporary Files
+web/apps/mfe-spectrogram/tmp/
+web/apps/mfe-spectrogram/temp/
+**/tmp/
+**/temp/
+
+# Test Data and Artifacts
+web/apps/mfe-spectrogram/tests/e2e/test-data/
+**/test-data/
+**/*.webm
+**/*.png
+**/*.mp4
+**/*.avi
+**/*.mov
+**/error-context.md
+**/test-failed-*.png
+**/video.webm
+**/trace.zip

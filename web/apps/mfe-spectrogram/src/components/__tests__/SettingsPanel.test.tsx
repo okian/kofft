@@ -189,7 +189,7 @@ describe("SettingsPanel", () => {
     fireEvent.click(resetButton);
 
     expect(mockOnSettingsChange).toHaveBeenCalledWith({
-      theme: "dark",
+      theme: "japanese-a-dark",
       amplitudeScale: "db",
       frequencyScale: "logarithmic",
       resolution: "medium",

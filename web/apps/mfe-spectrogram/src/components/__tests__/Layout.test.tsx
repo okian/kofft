@@ -45,7 +45,7 @@ vi.mock("@/shared/stores/uiStore", () => ({
 
 vi.mock("@/shared/stores/settingsStore", () => ({
   useSettingsStore: () => ({
-    theme: "dark",
+    theme: "japanese-a-dark",
     updateSettings: vi.fn(),
   }),
 }));

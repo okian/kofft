@@ -1,5 +1,6 @@
 import React, { forwardRef, useEffect, useRef, useImperativeHandle, useCallback } from 'react'
 import { useSettingsStore } from '@/shared/stores/settingsStore'
+import type { Theme } from '@/shared/types'
 import { useSpectrogramStore } from '@/shared/stores/spectrogramStore'
 import { BUILTIN_LUTS, generateLUTTexture } from '@/shared/utils/lut'
 
@@ -47,12 +48,14 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       return BUILTIN_LUTS[colormap] || BUILTIN_LUTS['viridis']
     }, [lutMode, currentLUT, colormap])
 
-    const colorMaps = {
-      dark: { background: [0,0,0,1] },
-      light: { background: [0.98,0.98,0.98,1] },
-      neon: { background: [0,0,0,1] },
-      'high-contrast': { background: [0,0,0,1] }
-    } as const
+    const colorMaps: Record<Theme, { background: [number, number, number, number] }> = {
+      'japanese-a-light': { background: [1, 1, 1, 1] },
+      'japanese-a-dark': { background: [0, 0, 0, 1] },
+      'japanese-b-light': { background: [1, 1, 1, 1] },
+      'japanese-b-dark': { background: [0, 0, 0, 1] },
+      'bauhaus-light': { background: [1, 1, 1, 1] },
+      'bauhaus-dark': { background: [0, 0, 0, 1] }
+    }
 
     const checkWebGLSupport = useCallback(() => {
       const canvas = canvasRef.current
@@ -242,7 +245,7 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       }
       const gl = glRef.current!
       const program = programRef.current!
-      const colors = (colorMaps as any)[theme] || (colorMaps as any).dark
+      const colors = (colorMaps as any)[theme] || (colorMaps as any)["japanese-a-dark"]
       console.log('Rendering simple WebGL shader')
       
       gl.useProgram(program)

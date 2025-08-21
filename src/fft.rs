@@ -282,7 +282,7 @@ fn parallel_fft_block_size() -> usize {
 /// The pool is lazily initialized on first use and reused thereafter to avoid
 /// repeated allocations and to guarantee bounded concurrency.
 pub(crate) fn rayon_pool() -> &'static ThreadPool {
-    RAYON_POOL.get_or_init(|| {
+    PARALLEL_POOL.get_or_init(|| {
         ThreadPoolBuilder::new()
             .num_threads(parallel_fft_threads().max(1))
             .build()

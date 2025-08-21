@@ -14,18 +14,6 @@ export const THEME_COLORS: Record<
   Theme,
   { accent: string; primary: string; background: string }
 > = {
-  // Classic dark theme: blue accents with neutral grays on near-black base.
-  dark: { accent: "#3b82f6", primary: "#6b7280", background: "#0a0a0a" },
-  // Light theme mirrors dark but with brighter base and slightly darker accent.
-  light: { accent: "#2563eb", primary: "#9ca3af", background: "#ffffff" },
-  // Neon theme favours vivid teal accents on a dark base for maximum pop.
-  neon: { accent: "#14b8a6", primary: "#a3a3a3", background: "#0a0a0a" },
-  // High contrast maximises legibility: white elements on pure black base.
-  "high-contrast": {
-    accent: "#ffffff",
-    primary: "#000000",
-    background: "#000000",
-  },
   // Japanese A: strict black and white; light uses white canvas with black ink.
   "japanese-a-light": {
     accent: "#000000",

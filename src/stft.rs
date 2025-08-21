@@ -544,6 +544,8 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     if hop_size < MIN_HOP_SIZE {
+        return Err(FftError::InvalidHopSize);
+    }
     if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
     }
@@ -715,6 +717,8 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
         if win_len < MIN_WINDOW_LEN || window.len() != win_len {
+            return Err(FftError::MismatchedLengths);
+        }
         if hop == 0 || hop > win_len {
             return Err(FftError::InvalidHopSize);
         }

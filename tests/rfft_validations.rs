@@ -58,6 +58,7 @@ fn handles_large_input() {
     }
 }
 
+#[cfg(feature = "internal-tests")]
 #[test]
 fn planner_cache_eviction() {
     let fft = ScalarFftImpl::<f32>::default();

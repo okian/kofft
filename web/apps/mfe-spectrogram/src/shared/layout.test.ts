@@ -6,10 +6,6 @@ import type { Theme } from '@/shared/types'
 
 // Enumerate all supported themes to ensure token maps stay in sync.
 const ALL_THEMES: Theme[] = [
-  'dark',
-  'light',
-  'neon',
-  'high-contrast',
   'japanese-a-light',
   'japanese-a-dark',
   'japanese-b-light',
@@ -49,7 +45,7 @@ describe('component class helpers', () => {
   })
 
   it('panel helper applies tokens', () => {
-    const theme: Theme = 'dark'
+    const theme: Theme = 'japanese-a-light'
     const cls = getPanelClasses(theme)
     expect(cls).toContain(GRID[theme])
     expect(cls).toContain(TYPOGRAPHY[theme])

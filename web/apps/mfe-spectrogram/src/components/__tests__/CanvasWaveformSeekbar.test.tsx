@@ -388,7 +388,7 @@ describe("CanvasWaveformSeekbar", () => {
     expect(mockCtx.clearRect).toHaveBeenCalledTimes(1);
     // Changing the theme in the store should trigger a redraw.
     const { useSettingsStore } = await import("@/shared/stores/settingsStore");
-    useSettingsStore.getState().setTheme("light");
+    useSettingsStore.getState().setTheme("japanese-a-light");
     await Promise.resolve();
     expect(mockCtx.clearRect).toHaveBeenCalledTimes(2);
   });
@@ -484,7 +484,7 @@ describe("CanvasWaveformSeekbar", () => {
     expect(Array.from(played)).toEqual([59, 130, 246, 255]); // dark theme accent
 
     await act(async () => {
-      useSettingsStore.getState().setTheme("light");
+      useSettingsStore.getState().setTheme("japanese-a-light");
     });
     resizeCb([{ contentRect: { width: 40 } }]);
     await Promise.resolve();

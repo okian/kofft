@@ -110,12 +110,7 @@ async function searchMusicBrainz(artist: string, album: string): Promise<Artwork
     
     // Fetch artwork from Cover Art Archive
     const artworkResponse = await fetch(
-      `https://coverartarchive.org/release/${bestRelease.id}/front`,
-      {
-        headers: {
-          'User-Agent': 'SpectrogramPWA/1.0 (https://github.com/your-repo)'
-        }
-      }
+      `https://coverartarchive.org/release/${bestRelease.id}/front`
     )
 
     if (!artworkResponse.ok) {
@@ -204,12 +199,7 @@ async function searchAcoustID(fingerprint: string, duration: number, metadata: A
     
     // Fetch artwork from Cover Art Archive
     const artworkResponse = await fetch(
-      `https://coverartarchive.org/release/${release.id}/front`,
-      {
-        headers: {
-          'User-Agent': 'SpectrogramPWA/1.0 (https://github.com/your-repo)'
-        }
-      }
+      `https://coverartarchive.org/release/${release.id}/front`
     )
 
     if (!artworkResponse.ok) {
