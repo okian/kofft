@@ -11,12 +11,15 @@ vi.mock("@wasm/react_spectrogram_wasm", () => ({ default: async () => {} }), {
 let CanvasWaveformSeekbar: any;
 let BAR_WIDTH: number;
 let BAR_GAP: number;
+// Direct access to the frequency-domain animator for unit testing.
+let createFrequencyAnimator: any;
 let getComputedStyleSpy: any;
 beforeAll(async () => {
   const mod = await import("../spectrogram/CanvasWaveformSeekbar");
   CanvasWaveformSeekbar = mod.CanvasWaveformSeekbar;
   BAR_WIDTH = mod.BAR_WIDTH;
   BAR_GAP = mod.BAR_GAP;
+  createFrequencyAnimator = mod.createFrequencyAnimator;
 });
 
 describe("CanvasWaveformSeekbar", () => {
@@ -194,6 +197,21 @@ describe("CanvasWaveformSeekbar", () => {
     bar.focus();
     fireEvent.keyDown(bar, { key: "ArrowRight" });
     expect(onSeek).toHaveBeenCalledWith(11);
+  });
+
+  // Verify that the frequency animator gracefully handles the edge case of a
+  // single visualisation bar, avoiding division by zero and still invoking the
+  // callback with a valid result.
+  it("handles numBars less than two without dividing by zero", () => {
+    const freq = new Uint8Array([0, 128, 255]);
+    const cb = vi.fn();
+    vi.useFakeTimers();
+    const stop = createFrequencyAnimator(() => freq, 1, cb);
+    vi.runOnlyPendingTimers();
+    stop();
+    vi.useRealTimers();
+    expect(cb).toHaveBeenCalled();
+    expect((cb.mock.calls[0][0] as Float32Array).length).toBe(1);
   });
 
   it("debounces rapid seeking", () => {
