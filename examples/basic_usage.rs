@@ -204,7 +204,7 @@ fn main() {
     // 10. Chirp Z-Transform
     println!("10. Chirp Z-Transform");
     let czt_input = vec![1.0, 0.0, 0.0, 0.0];
-    let czt_result = czt_f32(&czt_input, 4, (0.5, 0.0), (1.0, 0.0));
+    let czt_result = czt_f32(&czt_input, 4, (0.5, 0.0), (1.0, 0.0)).unwrap();
     println!(
         "   CZT: {:?}",
         czt_result

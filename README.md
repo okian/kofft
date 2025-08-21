@@ -470,7 +470,7 @@ let db4_recon = db4_inverse_multi(&db4_a, &db4_d);
 let magnitude = goertzel::goertzel_f32(&input, 44100.0, 1000.0);
 
 // Chirp Z-Transform
-let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0));
+let czt_result = czt::czt_f32(&input, 64, (0.5, 0.0), (1.0, 0.0)).unwrap();
 
 // Hilbert Transform
 let hilbert_result = hilbert::hilbert_analytic(&input);
