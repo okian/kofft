@@ -725,8 +725,9 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
+    use alloc::vec;
     // Only the complex type and scalar FFT implementation are required for tests.
-    use crate::fft::{Complex32, ScalarFftImpl};
+    use crate::fft::{Complex32, FftStrategy, ScalarFftImpl};
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
