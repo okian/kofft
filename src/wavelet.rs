@@ -7,6 +7,12 @@
 extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
+
+/// Convenience alias for a two-dimensional `Vec`.
+type Vec2<T> = Vec<Vec<T>>;
+
+/// Convenience alias for a three-dimensional `Vec`.
+type Vec3<T> = Vec<Vec<Vec<T>>>;
 use core::fmt;
 
 /// Number of samples processed together in the Haar transform pair.
@@ -85,7 +91,7 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 ///
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
-pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<(Vec<Vec<f32>>, Vec<Vec<f32>>), WaveletError> {
+pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<(Vec2<f32>, Vec2<f32>), WaveletError> {
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -160,7 +166,7 @@ pub fn multi_level_forward_batch<F>(
     inputs: &[Vec<f32>],
     levels: usize,
     forward: F,
-) -> Result<(Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>), WaveletError>
+) -> Result<(Vec2<f32>, Vec3<f32>), WaveletError>
 where
     F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
