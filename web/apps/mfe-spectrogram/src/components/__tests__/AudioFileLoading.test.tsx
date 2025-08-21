@@ -20,11 +20,11 @@ const mockUseAudioFile = vi.fn(() => ({
   initAudioContext: vi.fn(),
 }));
 
-vi.mock("../../hooks/useAudioFile", () => ({
+vi.mock("@/shared/hooks/useAudioFile", () => ({
   useAudioFile: mockUseAudioFile,
 }));
 
-vi.mock("../../hooks/useMicrophone", () => ({
+vi.mock("@/shared/hooks/useMicrophone", () => ({
   useMicrophone: () => ({
     isInitialized: false,
     isRequestingPermission: false,
@@ -44,16 +44,16 @@ vi.mock("../../hooks/useMicrophone", () => ({
 }));
 
 // Mock unified keyboard shortcut hook to prevent real listeners during tests
-vi.mock("../../shared/hooks/useKeyboardShortcuts", () => ({
+vi.mock("@shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
-vi.mock("../../hooks/useScreenSize", () => ({
+vi.mock("@/shared/hooks/useScreenSize", () => ({
   useScreenSize: () => ({ isMobile: false, isTablet: false }),
 }));
 
 // Mock the stores
-vi.mock("../../stores/audioStore", () => ({
+vi.mock("@/shared/stores/audioStore", () => ({
   useAudioStore: () => ({
     isPlaying: false,
     isPaused: false,
@@ -95,7 +95,7 @@ vi.mock("../../stores/audioStore", () => ({
   }),
 }));
 
-vi.mock("../../stores/uiStore", () => ({
+vi.mock("@/shared/stores/uiStore", () => ({
   useUIStore: () => ({
     metadataPanelOpen: false,
     playlistPanelOpen: false,

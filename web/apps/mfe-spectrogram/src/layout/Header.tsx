@@ -1,3 +1,4 @@
+
 import React, { useRef, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useUIStore } from '../shared/stores/uiStore'
@@ -56,10 +57,11 @@ export const Header: React.FC = () => {
   );
 
 /**
- * Builds the header's class string from layout tokens. Centralising this logic
- * guarantees every theme shares the same structural rules and keeps tests
- * straightforward.
+ * Convenience re-exports for the main Header component and its class helper.
+ * Allows existing imports from `layout` to resolve while the implementation
+ * lives under `components`.
  */
+export { Header, getHeaderClasses } from "../components/layout/Header";
 export function getHeaderClasses(theme: Theme, isMobile: boolean): string {
   return cn(
     'bg-neutral-900 border-b border-neutral-800',

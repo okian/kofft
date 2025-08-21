@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("../../stores/audioStore", () => ({
+vi.mock("@/shared/stores/audioStore", () => ({
   useAudioStore: () => ({
     currentTrack: null,
     playlist: [],
@@ -26,7 +26,7 @@ vi.mock("../../stores/audioStore", () => ({
   }),
 }));
 
-vi.mock("../../stores/uiStore", () => ({
+vi.mock("@/shared/stores/uiStore", () => ({
   useUIStore: () => ({
     isMobile: false,
     metadataPanelOpen: false,
@@ -41,7 +41,7 @@ vi.mock("../../stores/uiStore", () => ({
   }),
 }));
 
-vi.mock("../../stores/settingsStore", () => ({
+vi.mock("@/shared/stores/settingsStore", () => ({
   useSettingsStore: () => ({
     theme: "dark",
     updateSettings: vi.fn(),
@@ -50,7 +50,7 @@ vi.mock("../../stores/settingsStore", () => ({
 }));
 
 // Mock unified keyboard shortcut hook to prevent real listeners during tests
-vi.mock("../../shared/hooks/useKeyboardShortcuts", () => ({
+vi.mock("@shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
