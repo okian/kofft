@@ -64,16 +64,25 @@
 compile_error!("stft requires `wasm` and `simd` features to be enabled");
 
 extern crate alloc;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use crate::fft::rayon_pool;
+#[cfg(test)]
+use crate::fft::FftStrategy;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
 #[cfg(feature = "parallel")]
 use core::mem::take; // for efficiently resetting buffers without reallocations
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Minimum normalization denominator to avoid division by zero and unstable
 /// amplification when overlap-adding STFT frames. Any accumulated window power
 /// below this threshold is treated as silence.
 const NORM_EPSILON: f32 = 1e-8;
-
+/// Minimum allowed window length to ensure meaningful analysis.
+const MIN_WINDOW_LEN: usize = 1;
+/// Minimum hop size required to advance the analysis window.
+const MIN_HOP_SIZE: usize = 1;
 /// Extra padding multiplier used when allocating internal buffers for streaming
 /// ISTFT. The padding ensures enough headroom for overlap-add operations without
 /// frequent reallocations while keeping memory usage bounded.
@@ -358,6 +367,11 @@ pub struct StftStream<'a, Fft: crate::fft::FftImpl<f32>> {
 }
 
 impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
+    /// Create a new streaming STFT processor over `signal`.
+    ///
+    /// Validates that `window` is non-empty and that `hop_size` advances by at
+    /// least one sample. Returns [`FftError::InvalidHopSize`] or
+    /// [`FftError::EmptyInput`] on invalid parameters.
     /// Create a streaming STFT iterator over `signal`.
     ///
     /// Validates hop size and window length to prevent misaligned frames.
@@ -367,11 +381,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
         hop_size: usize,
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
-        if hop_size == 0 || hop_size > window.len() {
+        if hop_size < MIN_HOP_SIZE {
             return Err(FftError::InvalidHopSize);
         }
-        if window.is_empty() {
-            return Err(FftError::MismatchedLengths);
+        if window.len() < MIN_WINDOW_LEN {
+            return Err(FftError::EmptyInput);
         }
         Ok(Self {
             signal,
@@ -381,7 +395,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
             fft,
         })
     }
-
+    /// Populate `out` with the next FFT frame.
+    ///
+    /// Returns `Ok(true)` when a frame is produced or `Ok(false)` after the
+    /// signal is exhausted. Errors if `out` does not match the configured
+    /// window length.
     /// Compute the next FFT frame into `out`.
     ///
     /// Returns `Ok(true)` while frames remain or `Ok(false)` when the end of
@@ -469,23 +487,25 @@ pub fn parallel<Fft: FftImpl<f32> + Sync>(
     for frame in output.iter_mut() {
         frame.resize(win_len, Complex32::zero());
     }
-    output
-        .par_iter_mut()
-        .enumerate()
-        .try_for_each(|(frame_idx, frame)| {
-            let start = frame_idx * hop_size;
-            for i in 0..win_len {
-                let x = if start + i < signal.len() {
-                    signal[start + i] * window[i]
-                } else {
-                    0.0
-                };
-                frame[i] = Complex32::new(x, 0.0);
-            }
-            // `fft` is an immutable reference shared between threads.  The
-            // `Sync` bound on `Fft` guarantees that concurrent calls are safe.
-            fft.fft(frame)
-        })
+    rayon_pool().install(|| {
+        output
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(frame_idx, frame)| {
+                let start = frame_idx * hop_size;
+                for i in 0..win_len {
+                    let x = if start + i < signal.len() {
+                        signal[start + i] * window[i]
+                    } else {
+                        0.0
+                    };
+                    frame[i] = Complex32::new(x, 0.0);
+                }
+                // `fft` is an immutable reference shared between threads.  The
+                // `Sync` bound on `Fft` guarantees that concurrent calls are safe.
+                fft.fft(frame)
+            })
+    })
 }
 
 #[cfg(feature = "parallel")]
@@ -523,9 +543,12 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     output: &mut [f32],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    use rayon::prelude::*;
+    if hop_size < MIN_HOP_SIZE {
     if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
+    }
+    if window.len() < MIN_WINDOW_LEN {
+        return Err(FftError::EmptyInput);
     }
     let win_len = window.len();
     if win_len == 0 {
@@ -616,6 +639,9 @@ pub fn frame<Fft: FftImpl<f32>>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     let win_len = window.len();
+    if win_len < MIN_WINDOW_LEN || frame_out.len() != win_len {
+        return Err(FftError::MismatchedLengths);
+    }
     for i in 0..win_len {
         let x = if start + i < signal.len() {
             signal[start + i] * window[i]
@@ -645,6 +671,9 @@ pub fn inverse_frame<Fft: FftImpl<f32>>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     let win_len = window.len();
+    if win_len < MIN_WINDOW_LEN || frame.len() != win_len {
+        return Err(FftError::MismatchedLengths);
+    }
     fft.ifft(frame)?;
     for i in 0..win_len {
         if start + i < output.len() {
@@ -674,16 +703,18 @@ pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
 }
 
 impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
-    /// Create a streaming inverse STFT processor.
+    /// Create a streaming ISTFT processor.
     ///
-    /// Validates hop size and window length to avoid misaligned overlap-add
-    /// during reconstruction.
+    /// Returns [`FftError::InvalidHopSize`] if `hop` is zero or
+    /// [`FftError::MismatchedLengths`] when `window` does not match `win_len` or
+    /// is empty.
     pub fn new(
         win_len: usize,
         hop: usize,
         window: &'a [f32],
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
+        if win_len < MIN_WINDOW_LEN || window.len() != win_len {
         if hop == 0 || hop > win_len {
             return Err(FftError::InvalidHopSize);
         }

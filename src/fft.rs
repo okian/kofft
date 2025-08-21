@@ -37,7 +37,9 @@ use crate::fft_kernels::{fft2, fft4};
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
-use rayon::{prelude::*, ThreadPool, ThreadPoolBuilder};
+use rayon::prelude::*;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
@@ -271,6 +273,21 @@ fn parallel_fft_block_size() -> usize {
     {
         DEFAULT_BLOCK_SIZE
     }
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Obtain a global Rayon thread pool configured with the current FFT thread
+/// count.
+///
+/// The pool is lazily initialized on first use and reused thereafter to avoid
+/// repeated allocations and to guarantee bounded concurrency.
+pub(crate) fn rayon_pool() -> &'static ThreadPool {
+    RAYON_POOL.get_or_init(|| {
+        ThreadPoolBuilder::new()
+            .num_threads(parallel_fft_threads().max(1))
+            .build()
+            .expect("failed to build thread pool")
+    })
 }
 
 #[cfg(feature = "parallel")]
@@ -1204,12 +1221,9 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if n == 1 {
             return Ok(());
         }
-        #[cfg(feature = "parallel")]
+        #[cfg(all(feature = "parallel", feature = "std"))]
         {
-            #[cfg(all(feature = "parallel", feature = "std"))]
             let threshold = parallel_fft_threshold();
-            #[cfg(not(all(feature = "parallel", feature = "std")))]
-            let threshold = 0;
             if should_parallelize_fft(n, threshold)
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {

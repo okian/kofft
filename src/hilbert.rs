@@ -78,7 +78,7 @@ mod tests {
     fn hilbert_single_sample() {
         let x = [42.0];
         let analytic = hilbert_analytic(&x).unwrap();
-        assert_eq!(analytic, vec![Complex32::new(42.0, 0.0)]);
+        assert_eq!(analytic, alloc::vec![Complex32::new(42.0, 0.0)]);
     }
 
     /// Even-length inputs should preserve the real part and produce the expected

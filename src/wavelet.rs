@@ -20,6 +20,11 @@ pub const HAAR_PAIR_LEN: usize = 2;
 /// Scaling factor applied when computing averages and differences.
 pub const HAAR_SCALE: f32 = 0.5;
 
+/// Output of [`batch_forward`]: per-input average and detail coefficients.
+pub type BatchOutput = (Vec<Vec<f32>>, Vec<Vec<f32>>);
+/// Output of [`multi_level_forward_batch`]: per-input averages and per-level
+/// detail coefficients.
+pub type MultiLevelBatchOutput = (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>);
 /// Daubechies-4 low-pass decomposition filter coefficients.
 /// Each value represents a tap of the scaling filter used during the forward transform.
 pub const DB4_FORWARD_LOWPASS: [f32; 8] = [
@@ -151,8 +156,8 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 ///
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
+pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
 #[allow(clippy::type_complexity)]
-pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<(Vec<Vec<f32>>, Vec<Vec<f32>>), WaveletError> {
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -236,7 +241,7 @@ pub fn multi_level_forward_batch<F>(
     inputs: &[Vec<f32>],
     levels: usize,
     forward: F,
-) -> Result<MultiLevelForwardOutput, WaveletError>
+) -> Result<MultiLevelBatchOutput, WaveletError>
 where
     F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
