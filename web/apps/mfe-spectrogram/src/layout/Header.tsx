@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { useUIStore } from '../shared/stores/uiStore'
 import { useAudioStore } from '../shared/stores/audioStore'
 import { useAudioFile } from '../shared/hooks/useAudioFile'
@@ -10,6 +11,7 @@ import { FileAudio, Mic, MicOff, Settings, Camera, Info, List } from 'lucide-rea
 import { cn } from '../shared/utils/cn'
 import { SPACING, TYPOGRAPHY, GRID } from '../shared/layout'
 import type { Theme } from '../shared/types'
+import { useAnimationPreset } from '../shared/animations'
 
 /**
  * Builds the header's class string from layout tokens. Centralising this logic
@@ -68,9 +70,10 @@ export const Header: React.FC = () => {
     }
     return { showFileButton: true, showMicButton: true, showSettingsButton: true, showMetadataButton: true, showPlaylistButton: true, showSnapshotButton: true, showMenuButton: false }
   }, [isMobile, isTablet])
+  const animation = useAnimationPreset('fade')
 
   return (
-    <header className={getHeaderClasses(theme, isMobile)}>
+    <motion.header {...animation} className={getHeaderClasses(theme, isMobile)} data-testid="app-header">
       <div className="flex items-center min-w-0 flex-1">
         <h1 className={cn('font-semibold text-neutral-100 truncate', isMobile ? 'text-base' : 'text-lg')}>Spectrogram</h1>
       </div>
@@ -111,6 +114,6 @@ export const Header: React.FC = () => {
       </div>
 
       <input ref={fileInputRef} type="file" accept="audio/*" multiple onChange={handleFileSelect} className="hidden" />
-    </header>
+    </motion.header>
   )
 }

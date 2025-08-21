@@ -57,6 +57,13 @@ describe("settingsStore seekbar configuration", () => {
     expect(useSettingsStore.getState().theme).toBe("bauhaus-dark");
   });
 
+  it("sets animationStyle based on theme", () => {
+    useSettingsStore.getState().setTheme("japanese-a-light");
+    expect(useSettingsStore.getState().animationStyle).toBe("calm");
+    useSettingsStore.getState().setTheme("bauhaus-dark");
+    expect(useSettingsStore.getState().animationStyle).toBe("geometric");
+  });
+
   it("sanitises loaded settings", () => {
     localStorage.setItem(
       STORAGE_KEY,
