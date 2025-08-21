@@ -25,7 +25,6 @@ const POS_FREQ_START: usize = 1;
 /// # Returns
 /// A vector of complex values representing the analytic signal. The real part
 /// matches the original input while the imaginary part is the Hilbert transform.
-
 pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
     if input.is_empty() {
         return Err(FftError::EmptyInput);
