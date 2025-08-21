@@ -291,7 +291,8 @@ where
         return Err(WaveletError::InvalidLevels {
             requested: 0,
             max: max_levels(approx.len()),
-        });
+        // Zero-level inverse: just return the approximation as is.
+        return Ok(approx.to_vec());
     }
     let mut current = Vec::with_capacity(approx.len());
     current.extend_from_slice(approx);
