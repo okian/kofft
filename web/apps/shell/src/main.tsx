@@ -2,6 +2,12 @@ import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { DesignProvider } from "./DesignContext";
 import { DesignToggle } from "./DesignToggle";
+import { DesignLayout } from "./DesignLayout";
+
+/** Text displayed in the header for all themes. */
+const HEADER_TEXT = "Kofft" as const;
+/** Footer copyright notice shared across layouts. */
+const FOOTER_TEXT = "© Kofft" as const;
 
 /**
  * Hosts the micro-frontend by mounting the remote module
@@ -23,7 +29,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <DesignProvider>
       <DesignToggle />
-      <RemoteContainer />
+      <DesignLayout
+        header={<div>{HEADER_TEXT}</div>}
+        footer={<div>{FOOTER_TEXT}</div>}
+      >
+        <RemoteContainer />
+      </DesignLayout>
     </DesignProvider>
   </React.StrictMode>,
 );
