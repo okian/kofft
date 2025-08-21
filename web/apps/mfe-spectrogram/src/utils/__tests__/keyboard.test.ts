@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { 
-  parseKeyCombo, 
-  isKeyComboPressed, 
+import {
+  parseKeyCombo,
+  isKeyComboPressed,
   getShortcutDisplay,
-  DEFAULT_SHORTCUTS 
+  DEFAULT_SHORTCUTS,
+  saveShortcuts,
+  loadShortcuts,
+  SHORTCUTS_STORAGE_KEY,
 } from '../keyboard'
 
 describe('Keyboard Utils', () => {
@@ -20,6 +23,11 @@ describe('Keyboard Utils', () => {
 
     it('handles whitespace', () => {
       expect(parseKeyCombo(' Control + Shift + S ')).toEqual(['control', 'shift', 's'])
+    })
+
+    it('normalizes meta key aliases', () => {
+      expect(parseKeyCombo('Cmd+S')).toEqual(['meta', 's'])
+      expect(parseKeyCombo('Command+S')).toEqual(['meta', 's'])
     })
   })
 
@@ -46,6 +54,12 @@ describe('Keyboard Utils', () => {
       const event = new KeyboardEvent('keydown', { key: 'S' })
       expect(isKeyComboPressed(event, 's')).toBe(true)
       expect(isKeyComboPressed(event, 'S')).toBe(true)
+    })
+
+    it('distinguishes control and meta keys', () => {
+      const metaEvent = new KeyboardEvent('keydown', { key: 's', metaKey: true })
+      expect(isKeyComboPressed(metaEvent, 'meta+s')).toBe(true)
+      expect(isKeyComboPressed(metaEvent, 'control+s')).toBe(false)
     })
   })
 
@@ -78,6 +92,17 @@ describe('Keyboard Utils', () => {
       expect(DEFAULT_SHORTCUTS.volumeDown).toBe('ArrowDown')
       expect(DEFAULT_SHORTCUTS.mute).toBe('m')
       expect(DEFAULT_SHORTCUTS.help).toBe('?')
+    })
+  })
+
+  describe('storage helpers', () => {
+    it('saves and loads shortcuts using a constant key', () => {
+      const custom = { ...DEFAULT_SHORTCUTS, playPause: 'k' }
+      saveShortcuts(custom)
+      const stored = localStorage.getItem(SHORTCUTS_STORAGE_KEY)
+      expect(stored).not.toBeNull()
+      const loaded = loadShortcuts()
+      expect(loaded.playPause).toBe('k')
     })
   })
 })
