@@ -38,20 +38,31 @@ const VAR_TERTIARY = "--color-tertiary" as const;
 
 /**
  * Apply a palette to the document root.
- * Secondary and tertiary colours are explicitly removed when absent to
- * prevent stale values from previous designs leaking into the current theme.
+ * Fails fast when invoked without a palette and removes optional colours when
+ * absent. Explicit removal prevents stale values from previous designs from
+ * leaking into the current theme.
  */
 function applyPalette(palette: Palette): void {
+  if (!palette)
+  if (
+    !palette ||
+    typeof palette !== "object" ||
+    !("background" in palette) ||
+    !("text" in palette) ||
+    !("accent" in palette)
+  ) {
+    throw new Error("applyPalette requires a valid palette with background, text, and accent properties");
+  }
   const root = document.documentElement;
   root.style.setProperty(VAR_BG, palette.background);
   root.style.setProperty(VAR_TEXT, palette.text);
   root.style.setProperty(VAR_ACCENT, palette.accent);
-  if (palette.secondary) {
+  if (palette.secondary !== undefined) {
     root.style.setProperty(VAR_SECONDARY, palette.secondary);
   } else {
     root.style.removeProperty(VAR_SECONDARY);
   }
-  if (palette.tertiary) {
+  if (palette.tertiary !== undefined) {
     root.style.setProperty(VAR_TERTIARY, palette.tertiary);
   } else {
     root.style.removeProperty(VAR_TERTIARY);
