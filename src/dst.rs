@@ -9,6 +9,19 @@ use alloc::{sync::Arc, vec, vec::Vec};
 use core::f32::consts::PI;
 use hashbrown::HashMap;
 
+/// Offset of half a sample used by DST-II and DST-IV tables.
+///
+/// Using a named constant eliminates the 0.5 magic number and clarifies that
+/// these transform types require a half-sample shift when generating their
+/// sine tables.
+const OFFSET_HALF: f32 = 0.5;
+
+/// Offset of zero used by DST-III tables.
+///
+/// While zero is obvious, defining it as a constant makes the intent explicit
+/// and avoids magic numbers, aligning with the project's goal of clarity.
+const OFFSET_ZERO: f32 = 0.0;
+
 /// Planner that caches sine tables for various DST types.
 ///
 /// Each table is indexed by the transform length and reused across calls
@@ -50,30 +63,42 @@ impl<T: Float> DstPlanner<T> {
     }
 
     /// Retrieve or build the sine factors used by DST-II of length `n`.
+    ///
+    /// # Panics
+    /// Panics if `n` is zero because a zero-length transform is undefined.
     pub fn plan_dst2(&mut self, n: usize) -> &[T] {
-        if !self.cache2.contains_key(&n) {
-            let vec = Self::build_table_offset(n, 0.5);
-            self.cache2.insert(n, Arc::from(vec));
-        }
-        self.cache2.get(&n).unwrap().as_ref()
+        assert!(n > 0, "DST length must be non-zero");
+        let arc = self
+            .cache2
+            .entry(n)
+            .or_insert_with(|| Arc::from(Self::build_table_offset(n, OFFSET_HALF)));
+        &arc[..]
     }
 
     /// Retrieve or build the sine factors used by DST-III of length `n`.
+    ///
+    /// # Panics
+    /// Panics if `n` is zero because a zero-length transform is undefined.
     pub fn plan_dst3(&mut self, n: usize) -> &[T] {
-        if !self.cache3.contains_key(&n) {
-            let vec = Self::build_table_offset(n, 0.0);
-            self.cache3.insert(n, Arc::from(vec));
-        }
-        self.cache3.get(&n).unwrap().as_ref()
+        assert!(n > 0, "DST length must be non-zero");
+        let arc = self
+            .cache3
+            .entry(n)
+            .or_insert_with(|| Arc::from(Self::build_table_offset(n, OFFSET_ZERO)));
+        &arc[..]
     }
 
     /// Retrieve or build the sine factors used by DST-IV of length `n`.
+    ///
+    /// # Panics
+    /// Panics if `n` is zero because a zero-length transform is undefined.
     pub fn plan_dst4(&mut self, n: usize) -> &[T] {
-        if !self.cache4.contains_key(&n) {
-            let vec = Self::build_table_offset(n, 0.5);
-            self.cache4.insert(n, Arc::from(vec));
-        }
-        self.cache4.get(&n).unwrap().as_ref()
+        assert!(n > 0, "DST length must be non-zero");
+        let arc = self
+            .cache4
+            .entry(n)
+            .or_insert_with(|| Arc::from(Self::build_table_offset(n, OFFSET_HALF)));
+        &arc[..]
     }
 
     /// Provide a scratch buffer of at least `len` elements.
