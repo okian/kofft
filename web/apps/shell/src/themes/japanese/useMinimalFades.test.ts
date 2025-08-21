@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useMinimalFades, FADE_DURATION_MS } from "./useMinimalFades";
+import { useMinimalFades } from "./useMinimalFades";
+import { FADE_DURATION_MS } from "../../ui/AnimationDurations";
 
 /** Validate behaviour of the fade hook. */
 describe("useMinimalFades", () => {

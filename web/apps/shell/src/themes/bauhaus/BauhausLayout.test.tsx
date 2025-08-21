@@ -1,12 +1,8 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import {
-  BauhausLayout,
-  Block,
-  GRID_COLUMNS,
-  GRID_GAP_REM,
-} from "./BauhausLayout";
+import { BauhausLayout, Block, GRID_COLUMNS } from "./BauhausLayout";
+import { GRID_GAP_REM } from "../../ui/Spacing";
 import { RED } from "./palette";
 
 /** Convert hex colour strings to rgb() format for style comparisons. */
