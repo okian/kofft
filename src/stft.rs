@@ -1010,7 +1010,9 @@ mod tests {
         ));
         let neg_hop = (-1i32) as usize;
         assert!(matches!(
-            stft(&signal, &window, neg_hop, &mut frames, &fft),
+        let overflow_hop = (-1i32) as usize;
+        assert!(matches!(
+            stft(&signal, &window, overflow_hop, &mut frames, &fft),
             Err(FftError::InvalidHopSize)
         ));
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; 1];
