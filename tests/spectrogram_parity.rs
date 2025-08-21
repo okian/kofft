@@ -1,3 +1,4 @@
+// Test intent: verifies spectrogram parity behavior including edge cases.
 use assert_cmd::prelude::*;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use std::error::Error;

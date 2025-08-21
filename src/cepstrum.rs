@@ -8,7 +8,22 @@ use alloc::vec;
 use alloc::vec::Vec;
 use libm::{floorf, log10f, logf, powf, sqrtf};
 
-/// Compute the real cepstrum of a real input signal
+/// Smallest allowed magnitude before applying a logarithm.
+///
+/// Any magnitude at or below zero is clamped to this value prior to taking a
+/// logarithm to avoid producing `-inf` or `NaN`. The value is deliberately tiny
+/// yet comfortably above denormals on most platforms.
+const MIN_LOG_MAGNITUDE: f32 = 1e-12;
+
+/// Compute the real cepstrum of a real input signal.
+///
+/// # Rationale
+/// 1. **FFT** – converts the time-domain signal (amplitude in arbitrary units)
+///    into the frequency domain where harmonic content is easier to analyse.
+/// 2. **Log magnitude** – takes the natural log of the magnitude spectrum to
+///    separate source and filter characteristics; values are dimensionless.
+/// 3. **IFFT** – transforms the log spectrum back to the "quefrency" domain,
+///    yielding the real cepstrum with indices representing sample offsets.
 pub fn real_cepstrum(input: &[f32]) -> Result<Vec<f32>, FftError> {
     if input.is_empty() {
         return Err(FftError::EmptyInput);
@@ -17,18 +32,31 @@ pub fn real_cepstrum(input: &[f32]) -> Result<Vec<f32>, FftError> {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     let n = input.len();
+    // Prepare the complex buffer for the FFT.
     let mut freq = vec![Complex32::zero(); n];
     for (i, &x) in input.iter().enumerate() {
         freq[i] = Complex32::new(x, 0.0);
     }
+
+    // 1. Forward FFT: time → frequency domain.
     let fft = ScalarFftImpl::<f32>::default();
     fft.fft(&mut freq)?;
+
+    // 2. Log-magnitude of each frequency bin with validation.
     for c in freq.iter_mut() {
         let mag = sqrtf(c.re * c.re + c.im * c.im);
-        c.re = logf(mag + 1e-12); // avoid log(0)
+        if mag.is_nan() || mag < 0.0 {
+            return Err(FftError::InvalidValue);
+        }
+        let safe_mag = mag.max(MIN_LOG_MAGNITUDE);
+        c.re = logf(safe_mag);
         c.im = 0.0;
     }
+
+    // 3. Inverse FFT: frequency → quefrency domain.
     fft.ifft(&mut freq)?;
+
+    // Extract real part as the final cepstrum (quefrency in samples).
     Ok(freq.iter().map(|c| c.re).collect())
 }
 
@@ -79,7 +107,15 @@ pub fn mfcc(
     if num_coeffs > mel_energies.len() {
         return Err(FftError::InvalidValue);
     }
-    let log_mel: Vec<f32> = mel_energies.iter().map(|&x| logf(x + 1e-12)).collect();
+    let log_mel: Vec<f32> = mel_energies
+        .iter()
+        .map(|&x| {
+            if x.is_nan() || x < 0.0 {
+                return Err(FftError::InvalidValue);
+            }
+            Ok(logf(x.max(MIN_LOG_MAGNITUDE)))
+        })
+        .collect::<Result<_, _>>()?;
     let dct = crate::dct::dct2(&log_mel);
     Ok(dct[..num_coeffs].to_vec())
 }
@@ -100,11 +136,38 @@ pub fn mfcc_batch(
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
     #[test]
     fn test_real_cepstrum() {
         let x = [1.0, 2.0, 3.0, 4.0];
         let cep = real_cepstrum(&x).unwrap();
         assert_eq!(cep.len(), x.len());
+    }
+
+    /// Impulse signal should yield finite cepstrum values.
+    #[test]
+    fn impulse_signal() {
+        let mut x = vec![0.0f32; 8];
+        x[0] = 1.0;
+        let cep = real_cepstrum(&x).unwrap();
+        assert!(cep.iter().all(|v| v.is_finite()));
+    }
+
+    /// Constant signal exercises the zero-magnitude path and must stay finite.
+    #[test]
+    fn constant_signal() {
+        let x = vec![1.0f32; 8];
+        let cep = real_cepstrum(&x).unwrap();
+        assert!(cep.iter().all(|v| v.is_finite()));
+    }
+
+    /// Random noise should not generate infinities or NaNs.
+    #[test]
+    fn random_signal() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let x: Vec<f32> = (0..8).map(|_| rng.gen_range(-1.0..1.0)).collect();
+        let cep = real_cepstrum(&x).unwrap();
+        assert!(cep.iter().all(|v| v.is_finite()));
     }
 
     #[test]
@@ -131,6 +194,16 @@ mod mfcc_tests {
         let frame = vec![1.0; 32];
         assert_eq!(
             mfcc(&frame, 16000.0, 8, 20).unwrap_err(),
+            FftError::InvalidValue
+        );
+    }
+
+    /// Negative magnitudes should trigger a validation error.
+    #[test]
+    fn mfcc_negative_magnitudes() {
+        let frame = vec![-1.0; 32];
+        assert_eq!(
+            mfcc(&frame, 16000.0, 8, 4).unwrap_err(),
             FftError::InvalidValue
         );
     }

@@ -1,3 +1,4 @@
+// Test intent: verifies bluestein behavior including edge cases.
 use kofft::fft::{Complex32, FftImpl, FftPlanner, ScalarFftImpl};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};

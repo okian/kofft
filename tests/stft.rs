@@ -1,3 +1,4 @@
+// Test intent: verifies stft behavior including edge cases.
 #![cfg(all(feature = "simd", feature = "wasm"))]
 
 use kofft::fft::{FftError, ScalarFftImpl};

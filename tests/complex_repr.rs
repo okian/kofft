@@ -1,3 +1,4 @@
+// Test intent: verifies complex repr behavior including edge cases.
 use kofft::num::{Complex32, Complex64};
 
 #[test]

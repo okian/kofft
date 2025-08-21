@@ -1,3 +1,4 @@
+// Test intent: verifies dst planner behavior including edge cases.
 /// Tests for the [`DstPlanner`] ensuring table caching and input validation.
 use kofft::dst::DstPlanner;
 

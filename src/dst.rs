@@ -9,18 +9,38 @@ use alloc::{sync::Arc, vec, vec::Vec};
 use core::f32::consts::PI;
 use hashbrown::HashMap;
 
-/// Offset of half a sample used by DST-II and DST-IV tables.
+/// Offset of half a sample used by DST-II and DST-IV tables and formulas.
 ///
-/// Using a named constant eliminates the 0.5 magic number and clarifies that
-/// these transform types require a half-sample shift when generating their
-/// sine tables.
+/// Many DST variants require indexing halfway between samples.  Exposing the
+/// value as a constant eliminates the `0.5` magic number and documents that
+/// these algorithms intentionally apply a half-sample shift when generating
+/// their sine tables or computing angles.
 const OFFSET_HALF: f32 = 0.5;
 
 /// Offset of zero used by DST-III tables.
 ///
-/// While zero is obvious, defining it as a constant makes the intent explicit
-/// and avoids magic numbers, aligning with the project's goal of clarity.
+/// While zero is obvious, naming it keeps the intent explicit and avoids
+/// seemingly magic numbers in angle calculations.
 const OFFSET_ZERO: f32 = 0.0;
+
+/// Offset of one sample used by DST-I and DST-II formulas.
+///
+/// DST-I and DST-II index angles starting at `1`, so a constant makes the
+/// `+1.0` offset self-documenting and consistent with other offsets.
+const OFFSET_ONE: f32 = 1.0;
+
+/// Scaling factor used in DST-III for the first term.
+///
+/// DST-III halves the contribution of the first element.  Naming the factor
+/// avoids another `0.5` magic number and clarifies the algorithm's intent.
+const SCALE_HALF: f32 = 0.5;
+
+/// Maximum supported transform length.
+///
+/// Very large tables risk exhausting memory or losing precision when `usize`
+/// values are converted to floating point.  Limiting the supported length keeps
+/// allocations predictable and guards against overflow.
+const MAX_DST_LEN: usize = 1 << 20; // 1,048,576 samples
 
 /// Planner that caches sine tables for various DST types.
 ///
@@ -51,7 +71,35 @@ impl<T: Float> DstPlanner<T> {
         }
     }
 
+    /// Ensure the requested length is within supported bounds.
+    ///
+    /// Fails fast if `n` is zero or exceeds [`MAX_DST_LEN`], preventing silent
+    /// overflows or impractically large allocations.
+    fn validate_len(n: usize) {
+        assert!(n > 0, "DST length must be non-zero");
+        assert!(
+            n <= MAX_DST_LEN,
+            "DST length {} exceeds supported maximum {}",
+            n,
+            MAX_DST_LEN
+        );
+    }
+
+    /// Verify that a cached table matches the requested length.
+    fn validate_table(table: &[T], n: usize) {
+        assert!(
+            table.len() == n,
+            "Cached table length {} mismatches requested length {}",
+            table.len(),
+            n
+        );
+    }
+
+    /// Build a sine table for a given transform length and index offset.
+    ///
+    /// Each entry contains `sin(π * (i + offset) / n)` for `i` in `0..n`.
     fn build_table_offset(n: usize, offset: f32) -> Vec<T> {
+        Self::validate_len(n);
         let factor = T::pi() / T::from_f32(n as f32);
         let off = T::from_f32(offset);
         let mut table = Vec::with_capacity(n);
@@ -59,49 +107,56 @@ impl<T: Float> DstPlanner<T> {
             let angle = factor * (T::from_f32(i as f32) + off);
             table.push(angle.sin());
         }
+        debug_assert_eq!(table.len(), n, "sine table length mismatch");
         table
     }
 
     /// Retrieve or build the sine factors used by DST-II of length `n`.
     ///
     /// # Panics
-    /// Panics if `n` is zero because a zero-length transform is undefined.
+    /// Panics if `n` is zero or exceeds [`MAX_DST_LEN`].
     pub fn plan_dst2(&mut self, n: usize) -> &[T] {
-        assert!(n > 0, "DST length must be non-zero");
+        Self::validate_len(n);
         let arc = self
             .cache2
             .entry(n)
             .or_insert_with(|| Arc::from(Self::build_table_offset(n, OFFSET_HALF)));
+        Self::validate_table(&arc[..], n);
         &arc[..]
     }
 
     /// Retrieve or build the sine factors used by DST-III of length `n`.
     ///
     /// # Panics
-    /// Panics if `n` is zero because a zero-length transform is undefined.
+    /// Panics if `n` is zero or exceeds [`MAX_DST_LEN`].
     pub fn plan_dst3(&mut self, n: usize) -> &[T] {
-        assert!(n > 0, "DST length must be non-zero");
+        Self::validate_len(n);
         let arc = self
             .cache3
             .entry(n)
             .or_insert_with(|| Arc::from(Self::build_table_offset(n, OFFSET_ZERO)));
+        Self::validate_table(&arc[..], n);
         &arc[..]
     }
 
     /// Retrieve or build the sine factors used by DST-IV of length `n`.
     ///
     /// # Panics
-    /// Panics if `n` is zero because a zero-length transform is undefined.
+    /// Panics if `n` is zero or exceeds [`MAX_DST_LEN`].
     pub fn plan_dst4(&mut self, n: usize) -> &[T] {
-        assert!(n > 0, "DST length must be non-zero");
+        Self::validate_len(n);
         let arc = self
             .cache4
             .entry(n)
             .or_insert_with(|| Arc::from(Self::build_table_offset(n, OFFSET_HALF)));
+        Self::validate_table(&arc[..], n);
         &arc[..]
     }
 
     /// Provide a scratch buffer of at least `len` elements.
+    ///
+    /// The buffer grows as needed but never shrinks, reusing previous
+    /// allocations to avoid repeated memory traffic.
     pub fn scratch(&mut self, len: usize) -> &mut [T] {
         if self.scratch.len() < len {
             self.scratch.resize(len, T::zero());
@@ -114,11 +169,13 @@ impl<T: Float> DstPlanner<T> {
 pub fn dst1(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
-    let factor = PI / (n as f32 + 1.0);
+    // Angle step for DST-I: π/(n+1)
+    let factor = PI / (n as f32 + OFFSET_ONE);
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
-            sum += x * ((i as f32 + 1.0) * (k as f32 + 1.0) * factor).sin();
+            let angle = (i as f32 + OFFSET_ONE) * (k as f32 + OFFSET_ONE) * factor;
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -129,11 +186,13 @@ pub fn dst1(input: &[f32]) -> Vec<f32> {
 pub fn dst2(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
+    // Angle step for DST-II: π/n
     let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+            let angle = factor * (i as f32 + OFFSET_HALF) * (k as f32 + OFFSET_ONE);
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -144,11 +203,14 @@ pub fn dst2(input: &[f32]) -> Vec<f32> {
 pub fn dst3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
+    // Angle step for DST-III: π/n
     let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = input[0] / 2.0;
+        // First term is halved per DST-III definition.
+        let mut sum = input[0] * SCALE_HALF;
         for (i, &x) in input.iter().enumerate().skip(1) {
-            sum += x * (factor * (k as f32 + 0.5) * i as f32).sin();
+            let angle = factor * (k as f32 + OFFSET_HALF) * i as f32;
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -159,11 +221,13 @@ pub fn dst3(input: &[f32]) -> Vec<f32> {
 pub fn dst4(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     let mut output = vec![0.0; n];
+    // Angle step for DST-IV: π/n
     let factor = PI / n as f32;
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
+            let angle = factor * (i as f32 + OFFSET_HALF) * (k as f32 + OFFSET_HALF);
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -225,11 +289,13 @@ pub fn dst2_inplace_stack<const N: usize>(
     if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
+    // Angle step for DST-II: π/N
     let factor = core::f32::consts::PI / N as f32;
     for (k, out) in output.iter_mut().enumerate().take(N) {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate().take(N) {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+            let angle = factor * (i as f32 + OFFSET_HALF) * (k as f32 + OFFSET_ONE);
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -246,11 +312,13 @@ pub fn dst2_inplace_stack_fft<const N: usize>(
     if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
+    // Angle step for DST-II: π/N
     let factor = PI / N as f32;
     for (k, out) in output.iter_mut().enumerate() {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate() {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 1.0)).sin();
+            let angle = factor * (i as f32 + OFFSET_HALF) * (k as f32 + OFFSET_ONE);
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -268,11 +336,14 @@ pub fn dst3_inplace_stack_fft<const N: usize>(
         return Err(FftError::NonPowerOfTwoNoStd);
     }
     // Direct computation using stack memory to ensure parity with heap-based version.
+    // Angle step for DST-III: π/N
     let factor = PI / N as f32;
     for (k, out) in output.iter_mut().enumerate() {
-        let mut sum = input[0] / 2.0;
+        // First term is halved per DST-III definition.
+        let mut sum = input[0] * SCALE_HALF;
         for (n, &x) in input.iter().enumerate().skip(1) {
-            sum += x * (factor * (k as f32 + 0.5) * n as f32).sin();
+            let angle = factor * (k as f32 + OFFSET_HALF) * n as f32;
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -289,11 +360,13 @@ pub fn dst4_inplace_stack<const N: usize>(
     if N == 0 || !N.is_multiple_of(2) || !N.is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
+    // Angle step for DST-IV: π/N
     let factor = core::f32::consts::PI / N as f32;
     for (k, out) in output.iter_mut().enumerate().take(N) {
         let mut sum = 0.0;
         for (i, &x) in input.iter().enumerate().take(N) {
-            sum += x * (factor * (i as f32 + 0.5) * (k as f32 + 0.5)).sin();
+            let angle = factor * (i as f32 + OFFSET_HALF) * (k as f32 + OFFSET_HALF);
+            sum += x * angle.sin();
         }
         *out = sum;
     }
@@ -493,5 +566,87 @@ mod coverage_tests {
                 prop_assert!((a - b / 2.0).abs() < 1e3);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod dst_edge_tests {
+    use super::*;
+    use core::f32::consts::PI;
+
+    /// Largest transform size exercised by edge-case tests.
+    ///
+    /// Keeping this value moderate ensures tests run quickly while still
+    /// probing behaviour near practical limits.
+    const MAX_LEN: usize = 32;
+
+    #[test]
+    fn dst1_min_and_max_len() {
+        // Minimal length: single sample should pass through unchanged because
+        // sin(π/2) = 1.
+        let input_min = [1.0f32];
+        let out_min = dst1(&input_min);
+        assert_eq!(out_min, vec![1.0]);
+
+        // Maximal length sanity check: ensure output length matches input.
+        let input_max: Vec<f32> = (0..MAX_LEN).map(|i| i as f32).collect();
+        let out_max = dst1(&input_max);
+        assert_eq!(out_max.len(), MAX_LEN);
+    }
+
+    #[test]
+    fn dst2_dst3_min_and_max_roundtrip() {
+        // Minimal length round-trip: DST-II followed by DST-III scales by n/2,
+        // so we rescale by 2/n to recover the original value.
+        let input_min = [1.0f32];
+        let out_min = dst3(&dst2(&input_min));
+        let scale_min = 2.0 / input_min.len() as f32;
+        assert!((out_min[0] * scale_min - input_min[0]).abs() < 1e-6);
+
+        // Maximal length round-trip to validate algorithms and planner tables.
+        let input_max: Vec<f32> = (0..MAX_LEN).map(|i| (i + 1) as f32).collect();
+        let y = dst2(&input_max);
+        let z = dst3(&y);
+        assert_eq!(y.len(), MAX_LEN);
+        assert_eq!(z.len(), MAX_LEN);
+        assert!(z.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn dst4_min_and_max_roundtrip() {
+        // Minimal length check: DST-IV of a single value equals x*sin(π/4).
+        let input_min = [1.0f32];
+        let out_min = dst4(&input_min);
+        assert!((out_min[0] - (PI * OFFSET_HALF * OFFSET_HALF).sin()).abs() < 1e-6);
+
+        // Maximal length: applying DST-IV twice scales by n/2; rescale to
+        // recover the original input.
+        let input_max: Vec<f32> = (0..MAX_LEN).map(|i| i as f32).collect();
+        let y = dst4(&input_max);
+        let z = dst4(&y);
+        let scale = 2.0 / MAX_LEN as f32;
+        for (orig, recon) in input_max.iter().zip(z.iter()) {
+            assert!((orig - recon * scale).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn planner_rejects_zero_length() {
+        let mut planner = DstPlanner::<f32>::new();
+        let _ = planner.plan_dst2(0);
+    }
+
+    #[test]
+    fn planner_reuses_cache() {
+        let mut planner = DstPlanner::<f32>::new();
+        let table1_ptr = planner.plan_dst2(8).as_ptr();
+        let table2_ptr = planner.plan_dst2(8).as_ptr();
+        assert_eq!(table1_ptr, table2_ptr);
+
+        // Ensure scratch buffer grows to requested size and returns a slice of
+        // that exact length.
+        let scratch = planner.scratch(16);
+        assert_eq!(scratch.len(), 16);
     }
 }

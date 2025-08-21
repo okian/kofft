@@ -1,5 +1,5 @@
 import { Theme } from '@/types'
-import { cn } from '@/utils/cn'
+import { cn } from '@/shared/utils/cn'
 import { useSettingsStore } from '@/shared/stores/settingsStore'
 import { BUILTIN_LUTS, mapValueToColor } from '@/shared/utils/lut'
 
