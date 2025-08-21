@@ -4,7 +4,7 @@ import { PlaylistPanel } from "../layout/PlaylistPanel";
 import { AudioTrack } from "@/types";
 
 // Mock the stores and hooks
-vi.mock("../../../stores/audioStore", () => ({
+vi.mock("../../../shared/stores/audioStore", () => ({
   useAudioStore: () => ({
     isPlaying: false,
     isStopped: true,

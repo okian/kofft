@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockValidateAPIKey = vi.fn();
 const toastError = vi.fn();
 
-vi.mock("@/stores/settingsStore", () => ({
+vi.mock("@/shared/stores/settingsStore", () => ({
   useSettingsStore: {
     getState: () => ({ validateAPIKey: mockValidateAPIKey }),
   },

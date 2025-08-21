@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useAudioStore } from '@/stores/audioStore'
+import { useAudioStore } from '@/shared/stores/audioStore'
 import { audioPlayer } from '@/utils/audioPlayer'
 import { conditionalToast } from '@/utils/toast'
 

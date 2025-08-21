@@ -120,7 +120,7 @@ vi.mock("@/shared/stores/uiStore", () => ({
   }),
 }));
 
-vi.mock("../../stores/settingsStore", () => ({
+vi.mock("../../shared/stores/settingsStore", () => ({
   useSettingsStore: () => ({
     theme: "dark",
     amplitudeScale: "db",

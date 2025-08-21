@@ -1,5 +1,5 @@
 import { AudioMetadata, ArtworkSource, ArtworkResult, MusicBrainzResponse, AcoustIDResponse } from '@/types'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/shared/stores/settingsStore'
 
 // Generate a deterministic placeholder artwork based on file hash or metadata
 function generatePlaceholderArtwork(metadata: AudioMetadata, filename: string): ArtworkSource {

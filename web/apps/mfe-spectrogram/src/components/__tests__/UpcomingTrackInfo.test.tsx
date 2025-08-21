@@ -21,7 +21,7 @@ const mockState: any = {
   previousTrack: vi.fn(),
 };
 
-vi.mock("../../stores/audioStore", () => ({
+vi.mock("../../shared/stores/audioStore", () => ({
   useAudioStore: () => mockState,
 }));
 

@@ -17,7 +17,7 @@ const {
   return { state, addToPlaylist, setCurrentTrack, updateTrack, useAudioStore }
 })
 
-vi.mock('@/stores/audioStore', () => ({ useAudioStore }))
+vi.mock('@/shared/stores/audioStore', () => ({ useAudioStore }))
 
 const { extractMetadata, generateAmplitudeEnvelope } = vi.hoisted(() => {
   return {

@@ -1,5 +1,5 @@
 import type { AudioTrack } from "@/types";
-import { useAudioStore } from "@/stores/audioStore";
+import { useAudioStore } from "@/shared/stores/audioStore";
 import { createTimeUpdater, TIME_UPDATE_INTERVAL_MS } from "./timeUpdater";
 
 interface PlaybackState {

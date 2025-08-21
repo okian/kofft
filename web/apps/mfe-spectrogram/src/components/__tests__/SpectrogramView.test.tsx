@@ -32,7 +32,7 @@ vi.mock('../../hooks/useMicrophone', () => ({
   })
 }))
 
-vi.mock('../../stores/audioStore', () => ({
+vi.mock('../../shared/stores/audioStore', () => ({
   useAudioStore: () => ({
     currentTrack: null,
     isPlaying: false,
@@ -42,7 +42,7 @@ vi.mock('../../stores/audioStore', () => ({
   })
 }))
 
-vi.mock('../../stores/settingsStore', () => ({
+vi.mock('../../shared/stores/settingsStore', () => ({
   useSettingsStore: () => ({
     showLegend: true,
     theme: 'dark',

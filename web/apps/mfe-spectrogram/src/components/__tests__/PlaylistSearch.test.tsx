@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { AudioTrack } from '@/types'
 import { vi } from 'vitest'
-import { usePlaylistSearchStore } from '@/stores/playlistSearchStore'
+import { usePlaylistSearchStore } from '@/shared/stores/playlistSearchStore'
 
 vi.mock('@/utils/wasm', () => ({}), { virtual: true })
 

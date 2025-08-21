@@ -3,7 +3,7 @@ import { vi } from 'vitest'
 import { MetadataPanel } from '../layout/MetadataPanel'
 import { PlaylistPanel } from '../layout/PlaylistPanel'
 import { AudioTrack } from '@/types'
-import { usePlaylistSearchStore } from '@/stores/playlistSearchStore'
+import { usePlaylistSearchStore } from '@/shared/stores/playlistSearchStore'
 
 vi.mock('@/utils/wasm', () => ({}), { virtual: true })
 vi.mock('@/hooks/useAudioFile', () => ({
