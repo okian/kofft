@@ -28,6 +28,40 @@ const DEVICE_CONFIGS = {
   },
 };
 
+const TEST_AUDIO_FILE =
+  "/Users/kianostad/Music/lib/AIR French Band/Moon Safari (2024)/05 - Talisman.flac";
+const BASE_URL = "http://localhost:8000";
+
+/**
+ * Query selector for the header microphone toggle button. Using a constant
+ * avoids typo-prone string literals scattered throughout the test suite.
+ */
+const MICROPHONE_BUTTON_SELECTOR = '[data-testid="microphone-button"]';
+
+/**
+ * Query selector for the header snapshot button. Centralising the selector
+ * makes maintenance easier if the underlying DOM structure changes.
+ */
+const SNAPSHOT_BUTTON_SELECTOR = '[data-testid="snapshot-button"]';
+
+/**
+ * Text content displayed when a snapshot operation succeeds. The tests wait
+ * for this message to verify that capture completed without errors.
+ */
+const SNAPSHOT_SUCCESS_TEXT = "Snapshot saved";
+
+/**
+ * Maximum time in milliseconds to wait for media-related UI state changes such
+ * as microphone activation or snapshot notifications. This helps surface slow
+ * failures quickly.
+ */
+const MEDIA_UI_TIMEOUT_MS = 5000;
+
+/**
+ * Permission name used with the Permissions API when checking microphone
+ * access. Stored as a constant to prevent hard-coded strings and typos.
+ */
+const MICROPHONE_PERMISSION_NAME = "microphone";
 /**
  * Absolute path to the local audio file used during file-loading tests.
  * The test suite aborts file-related assertions if this fixture is missing.
@@ -77,6 +111,192 @@ class PWATestSuite {
       console.log(""); // Empty line for readability
     }
 
+    this.generateReport();
+  }
+
+  async testDevice(deviceType, config) {
+    const puppeteer = require("puppeteer");
+
+    try {
+      const browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-web-security",
+          "--allow-file-access-from-files",
+          "--autoplay-policy=no-user-gesture-required",
+          // Use synthetic media devices and automatically grant permissions
+          "--use-fake-device-for-media-stream",
+          "--use-fake-ui-for-media-stream",
+        ],
+      });
+
+      // Ensure microphone permission is granted to avoid hanging prompts
+      await browser
+        .defaultBrowserContext()
+        .overridePermissions(BASE_URL, [MICROPHONE_PERMISSION_NAME]);
+
+      const page = await browser.newPage();
+
+      // Set viewport for device
+      await page.setViewport(config);
+
+      // Navigate to PWA
+      await page.goto(BASE_URL, { waitUntil: "networkidle0" });
+
+      // Wait for app to initialize
+      await page.waitForSelector("#app", { timeout: 10000 });
+      await this.wait(2000); // Give WebAssembly time to load
+
+      // Run tests for this device
+      await this.testInitialLoad(page, deviceType);
+      await this.testUIElements(page, deviceType);
+      await this.testMediaControls(page, deviceType);
+      await this.testFileLoading(page, deviceType);
+      await this.testPlaybackControls(page, deviceType);
+      await this.testSidebars(page, deviceType);
+      await this.testSettings(page, deviceType);
+      await this.testKeyboardShortcuts(page, deviceType);
+      await this.testResponsiveLayout(page, deviceType);
+
+      // Take final screenshot
+      await this.takeScreenshot(page, deviceType, "final-state");
+
+      await browser.close();
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Device Test",
+        false,
+        `Failed to test device: ${error.message}`,
+      );
+
+    for (const [deviceType, config] of Object.entries(DEVICE_CONFIGS)) {
+      console.log(`📱 Testing on ${config.name}...`);
+      await this.testDevice(deviceType, config);
+      console.log(""); // Empty line for readability
+    }
+  }
+
+  async testInitialLoad(page, deviceType) {
+    console.log("  🔄 Testing initial load...");
+
+    try {
+      // Check if loading overlay disappears
+      await page.waitForFunction(
+        () => {
+          const overlay = document.getElementById("loading-overlay");
+          return !overlay || overlay.style.display === "none";
+        },
+        { timeout: 15000 },
+      );
+
+      // Check if main elements are present
+      const appContainer = await page.$("#app");
+      const header = await page.$(".header");
+      const mainContent = await page.$(".main-content");
+      const footer = await page.$(".footer");
+      const spectrogramCanvas = await page.$("#spectrogram-canvas");
+
+      const allPresent =
+        appContainer && header && mainContent && footer && spectrogramCanvas;
+
+      this.logResult(
+        deviceType,
+        "Initial Load",
+        allPresent,
+        allPresent
+          ? "All main elements loaded successfully"
+          : "Some main elements missing",
+      );
+
+      // Check theme application
+      const bodyClass = await page.evaluate(() => document.body.className);
+      const hasTheme = bodyClass.includes("theme-");
+
+      this.logResult(
+        deviceType,
+        "Theme Application",
+        hasTheme,
+        hasTheme ? `Theme applied: ${bodyClass}` : "No theme class found",
+      );
+
+      await this.takeScreenshot(page, deviceType, "initial-load");
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Initial Load",
+        false,
+        `Error: ${error.message}`,
+      );
+    }
+  }
+
+  async testUIElements(page, deviceType) {
+    console.log("  🎨 Testing UI elements...");
+
+    try {
+      // Test header buttons
+      const headerButtons = await page.$$(".header .icon-button");
+      const hasHeaderButtons = headerButtons.length >= 4; // file, mic, settings, snapshot
+
+      this.logResult(
+        deviceType,
+        "Header Buttons",
+        hasHeaderButtons,
+        `Found ${headerButtons.length} header buttons`,
+      );
+
+      // Locate microphone and snapshot buttons for later interactions
+      const micButton = await page.$(MICROPHONE_BUTTON_SELECTOR);
+      const snapshotButton = await page.$(SNAPSHOT_BUTTON_SELECTOR);
+      const hasMediaButtons = micButton && snapshotButton;
+
+      this.logResult(
+        deviceType,
+        "Media Buttons",
+        hasMediaButtons,
+        hasMediaButtons
+          ? "Microphone and snapshot buttons located"
+          : "Missing microphone or snapshot button",
+      );
+
+      // Test footer controls
+      const playButton = await page.$("#play-btn");
+      const volumeSlider = await page.$("#volume-slider");
+      const seekBar = await page.$("#waveform-seek-bar");
+
+      const footerElementsPresent = playButton && volumeSlider && seekBar;
+
+      this.logResult(
+        deviceType,
+        "Footer Controls",
+        footerElementsPresent,
+        footerElementsPresent
+          ? "All footer controls present"
+          : "Some footer controls missing",
+      );
+
+      // Test spectrogram canvas
+      const canvasSize = await page.evaluate(() => {
+        const canvas = document.getElementById("spectrogram-canvas");
+        return canvas ? { width: canvas.width, height: canvas.height } : null;
+      });
+
+      this.logResult(
+        deviceType,
+        "Spectrogram Canvas",
+        !!canvasSize,
+        canvasSize
+          ? `Canvas size: ${canvasSize.width}x${canvasSize.height}`
+          : "Canvas not found",
+      );
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "UI Elements",
     this.generateReport();
   }
 
@@ -186,6 +406,112 @@ class PWATestSuite {
     }
   }
 
+  /**
+   * Verify microphone and snapshot interactions. This toggles the microphone
+   * capture, checks permission/state changes, and ensures snapshot capture
+   * reports success via a toast notification.
+   */
+  async testMediaControls(page, deviceType) {
+    console.log("  🎤 Testing microphone and snapshot buttons...");
+
+    try {
+      // Ensure buttons exist before interacting
+      const micButton = await page.$(MICROPHONE_BUTTON_SELECTOR);
+      const snapshotButton = await page.$(SNAPSHOT_BUTTON_SELECTOR);
+
+      if (!micButton || !snapshotButton) {
+        this.logResult(
+          deviceType,
+          "Media Controls",
+          false,
+          "Required buttons not found",
+        );
+        return;
+      }
+
+      // Toggle microphone and observe permission/state
+      await micButton.click();
+      const micActive = await page
+        .waitForFunction(
+          (selector) => {
+            const btn = document.querySelector(selector);
+            return btn && btn.getAttribute("aria-pressed") === "true";
+          },
+          { timeout: MEDIA_UI_TIMEOUT_MS },
+          MICROPHONE_BUTTON_SELECTOR,
+        )
+        .then(() => true)
+        .catch(() => false);
+
+      const permissionState = await page.evaluate(async (perm) => {
+        try {
+          const status = await navigator.permissions.query({ name: perm });
+          return status.state;
+        } catch {
+          return "unavailable";
+        }
+      }, MICROPHONE_PERMISSION_NAME);
+
+      this.logResult(
+        deviceType,
+        "Microphone Toggle",
+        micActive,
+        micActive
+          ? `Microphone active (permission: ${permissionState})`
+          : `Microphone inactive (permission: ${permissionState})`,
+      );
+
+      // If microphone activated, stop capture
+      if (micActive) {
+        await micButton.click();
+        const micStopped = await page
+          .waitForFunction(
+            (selector) => {
+              const btn = document.querySelector(selector);
+              return btn && btn.getAttribute("aria-pressed") === "false";
+            },
+            { timeout: MEDIA_UI_TIMEOUT_MS },
+            MICROPHONE_BUTTON_SELECTOR,
+          )
+          .then(() => true)
+          .catch(() => false);
+
+        this.logResult(
+          deviceType,
+          "Microphone Stop",
+          micStopped,
+          micStopped ? "Microphone deactivated" : "Failed to stop microphone",
+        );
+      }
+
+      // Trigger snapshot and check for success notification
+      await snapshotButton.click();
+      const snapshotSucceeded = await page
+        .waitForFunction(
+          (text) =>
+            Array.from(document.querySelectorAll("*")).some((el) =>
+              (el.textContent || "").includes(text),
+            ),
+          { timeout: MEDIA_UI_TIMEOUT_MS },
+          SNAPSHOT_SUCCESS_TEXT,
+        )
+        .then(() => true)
+        .catch(() => false);
+
+      this.logResult(
+        deviceType,
+        "Snapshot Capture",
+        snapshotSucceeded,
+        snapshotSucceeded
+          ? "Snapshot notification appeared"
+          : "No snapshot success notification",
+      );
+
+      await this.takeScreenshot(page, deviceType, "media-controls");
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Media Controls",
   async testUIElements(page, deviceType) {
     console.log("  🎨 Testing UI elements...");
 
@@ -256,6 +582,30 @@ class PWATestSuite {
         return;
       }
 
+      // Create a file input element and simulate file selection
+      await page.evaluate((filePath) => {
+        // Create a mock file object (this is a simulation for testing)
+        const mockFile = new File([""], "Talisman.flac", {
+          type: "audio/flac",
+        });
+        Object.defineProperty(mockFile, "path", { value: filePath });
+
+        // Trigger file selection event
+        const fileInput = document.getElementById("file-input");
+        if (fileInput) {
+          const event = new Event("change", { bubbles: true });
+          Object.defineProperty(event, "target", {
+            value: { files: [mockFile] },
+            enumerable: true,
+          });
+          fileInput.dispatchEvent(event);
+        }
+      }, TEST_AUDIO_FILE);
+
+      // Wait for file processing
+      await this.wait(3000);
+
+      // Check if metadata was loaded
       // Synthesize a drag-and-drop operation with a mock File
       // to mimic user interaction without relying on the file input.
       await page.evaluate(
@@ -562,6 +912,30 @@ class PWATestSuite {
       const layoutValid =
         headerHeight > 0 && footerHeight > 0 && spectrogramHeight > 0;
 
+
+  async testResponsiveLayout(page, deviceType) {
+    console.log("  📱 Testing responsive layout...");
+
+    try {
+      // Check if elements are properly positioned for this screen size
+      const headerHeight = await page.evaluate(() => {
+        const header = document.querySelector(".header");
+        return header ? header.offsetHeight : 0;
+      });
+
+      const footerHeight = await page.evaluate(() => {
+        const footer = document.querySelector(".footer");
+        return footer ? footer.offsetHeight : 0;
+      });
+
+      const spectrogramHeight = await page.evaluate(() => {
+        const canvas = document.getElementById("spectrogram-canvas");
+        return canvas ? canvas.offsetHeight : 0;
+      });
+
+      const layoutValid =
+        headerHeight > 0 && footerHeight > 0 && spectrogramHeight > 0;
+
       this.logResult(
         deviceType,
         "Responsive Layout",
@@ -629,6 +1003,19 @@ class PWATestSuite {
         type: "png",
       });
 
+
+      // Create directory if it doesn't exist
+      const dir = path.dirname(filepath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      await page.screenshot({
+        path: filepath,
+        fullPage: true,
+        type: "png",
+      });
+
       this.screenshots.push({
         device: deviceType,
         test: testName,
@@ -639,6 +1026,25 @@ class PWATestSuite {
       console.log(`    ❌ Failed to take screenshot: ${error.message}`);
     }
   }
+
+  logResult(device, test, passed, details) {
+    const status = passed ? "✅" : "❌";
+    const result = {
+      device,
+      test,
+      passed,
+      details,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.results.push(result);
+    console.log(`    ${status} ${test}: ${details}`);
+  }
+
+  async wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
 
   logResult(device, test, passed, details) {
     const status = passed ? "✅" : "❌";
