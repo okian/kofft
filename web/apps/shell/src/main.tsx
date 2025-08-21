@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { DesignProvider } from "./DesignContext";
 import { DesignToggle } from "./DesignToggle";
-import "./design.css";
 
 /**
  * Hosts the micro-frontend by mounting the remote module

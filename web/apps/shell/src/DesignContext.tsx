@@ -22,6 +22,8 @@ const DesignContext = createContext<DesignContextValue | undefined>(undefined);
 const DESIGN_ATTR = "data-design";
 /** Name of the DOM attribute storing the active colour mode. */
 const MODE_ATTR = "data-mode";
+/** Prefix shared by Japanese design identifiers. */
+const JAPANESE_PREFIX = "japanese" as const;
 
 /** Apply a palette to the document root. */
 function applyPalette(palette: Palette): void {
@@ -33,6 +35,16 @@ function applyPalette(palette: Palette): void {
     root.style.setProperty("--color-secondary", palette.secondary);
   if (palette.tertiary)
     root.style.setProperty("--color-tertiary", palette.tertiary);
+}
+
+/**
+ * Dynamically load the CSS theme corresponding to a design. Using a
+ * function avoids duplicating import logic within effects and ensures
+ * the bundler can split CSS for performance.
+ */
+async function loadTheme(design: Design): Promise<void> {
+  const base = design.startsWith(JAPANESE_PREFIX) ? "japanese" : "bauhaus";
+  await import(`./themes/${base}.css`);
 }
 
 /**
@@ -50,6 +62,9 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
     const root = document.documentElement;
     root.setAttribute(DESIGN_ATTR, design);
     root.setAttribute(MODE_ATTR, mode);
+    loadTheme(design).catch((err) => {
+      console.error("Failed to load theme", err);
+    });
   }, [design, mode]);
 
   return (

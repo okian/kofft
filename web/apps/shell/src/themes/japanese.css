@@ -1,0 +1,34 @@
+/*
+  Japanese theme styling providing dedicated light and dark variants.
+  Rules are scoped to data-design attributes for variants A and B.
+  Each block sets presentation-focused properties only; colour values
+  are handled via CSS variables to keep logic in TypeScript.
+*/
+
+/* Common properties for Japanese designs. */
+:root[data-design='japanese-a'],
+:root[data-design='japanese-b'] {
+  --anim-duration: 300ms;
+  font-family: 'Noto Sans', sans-serif;
+}
+
+/* Light mode styles for Japanese designs. */
+:root[data-design='japanese-a'][data-mode='light'],
+:root[data-design='japanese-b'][data-mode='light'] {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Dark mode styles for Japanese designs. */
+:root[data-design='japanese-a'][data-mode='dark'],
+:root[data-design='japanese-b'][data-mode='dark'] {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Transition behaviour for minimalist Japanese designs. */
+:root[data-design='japanese-a'] *,
+:root[data-design='japanese-b'] * {
+  transition: background-color var(--anim-duration) ease-in-out,
+    color var(--anim-duration) ease-in-out;
+}
