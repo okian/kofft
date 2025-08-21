@@ -4,6 +4,60 @@ import { useAudioStore } from "@/shared/stores/audioStore";
 import { useAudioFile } from "@/shared/hooks/useAudioFile";
 import { conditionalToast } from "@/shared/utils/toast";
 
+/**
+ * Number of seconds to seek when using Arrow Left/Right.
+ * Chosen to provide responsive coarse navigation without large jumps.
+ */
+const SMALL_SEEK_SECONDS = 5;
+
+/**
+ * Number of seconds to seek when using J/L shortcuts.
+ * These keys mirror common media players for larger jumps.
+ */
+const LARGE_SEEK_SECONDS = 10;
+
+/**
+ * Increment applied to volume when using Arrow Up/Down.
+ * A small step keeps adjustments smooth for the user.
+ */
+const VOLUME_STEP = 0.05;
+
+/**
+ * Minimum allowed playback time in seconds to prevent negative seeks.
+ */
+const MIN_TIME_SECONDS = 0;
+
+/**
+ * Minimum and maximum volume bounds enforced for all volume operations.
+ */
+const MIN_VOLUME = 0;
+const MAX_VOLUME = 1;
+
+/**
+ * Delay before showing the initial keyboard help toast in milliseconds.
+ * A short delay avoids interrupting initial UI rendering.
+ */
+const HELP_TOAST_DELAY_MS = 2000;
+
+/**
+ * Index of the first item in an array; used for playlist boundary checks.
+ */
+const FIRST_INDEX = 0;
+
+/**
+ * Increment/decrement step when navigating playlist indices.
+ */
+const INDEX_STEP = 1;
+
+/**
+ * Value representing an empty playlist length.
+ */
+const EMPTY_PLAYLIST_LENGTH = 0;
+
+/**
+ * useKeyboardShortcuts centralizes global keyboard handling for playback and UI actions.
+ * It registers a keydown listener and exposes imperative helpers for programmatic control.
+ */
 export const useKeyboardShortcuts = () => {
   const {
     setMetadataPanelOpen,
@@ -29,8 +83,11 @@ export const useKeyboardShortcuts = () => {
 
   const audioFile = useAudioFile();
 
-  // Helper to centralize play/pause logic so we don't duplicate state checks.
-  // This keeps keyboard handling lean and makes programmatic control easier.
+  /**
+   * Toggle playback state while centralizing state checks.
+   * Starts playback if stopped and a track is selected, otherwise
+   * pauses or resumes based on the current status.
+   */
   const togglePlayPause = useCallback(() => {
     // If nothing has been played yet but a track is selected, start it.
     if (isStopped) {
@@ -48,7 +105,11 @@ export const useKeyboardShortcuts = () => {
     }
   }, [audioFile, currentTrack, isPlaying, isStopped]);
 
-  // Handle keyboard events
+  /**
+   * Respond to global key presses and trigger matching actions while
+   * ignoring interactive form elements. Modifier keys are validated for
+   * each shortcut to avoid accidental activation.
+   */
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       // Don't handle shortcuts if user is typing in an input field
@@ -64,8 +125,7 @@ export const useKeyboardShortcuts = () => {
 
       // Spacebar or K - Play/Pause. Browsers inconsistently report the
       // space key so we defensively check both `key` and `code` variations.
-      const isSpace =
-        code === "Space" || key === " " || key === "Spacebar";
+      const isSpace = code === "Space" || key === " " || key === "Spacebar";
       const isK = key.toLowerCase() === "k" || code === "KeyK";
       if ((isSpace || isK) && !ctrlKey && !shiftKey && !metaKey) {
         event.preventDefault();
@@ -77,7 +137,10 @@ export const useKeyboardShortcuts = () => {
       if (key === "ArrowLeft" && !ctrlKey && !metaKey && !altKey) {
         event.preventDefault();
         if (currentTrack) {
-          const newTime = Math.max(0, currentTime - 5);
+          const newTime = Math.max(
+            MIN_TIME_SECONDS,
+            currentTime - SMALL_SEEK_SECONDS,
+          );
           audioFile.seekTo(newTime);
         }
         return;
@@ -87,7 +150,7 @@ export const useKeyboardShortcuts = () => {
       if (key === "ArrowRight" && !ctrlKey && !metaKey && !altKey) {
         event.preventDefault();
         if (currentTrack) {
-          const newTime = Math.min(duration, currentTime + 5);
+          const newTime = Math.min(duration, currentTime + SMALL_SEEK_SECONDS);
           audioFile.seekTo(newTime);
         }
         return;
@@ -96,11 +159,11 @@ export const useKeyboardShortcuts = () => {
       // Ctrl/Cmd + Arrow Left - Previous track
       if (key === "ArrowLeft" && (ctrlKey || metaKey) && !altKey) {
         event.preventDefault();
-        if (playlist.length > 0) {
+        if (playlist.length > EMPTY_PLAYLIST_LENGTH) {
           const prevIndex =
-            currentTrackIndex <= 0
-              ? playlist.length - 1
-              : currentTrackIndex - 1;
+            currentTrackIndex <= FIRST_INDEX
+              ? playlist.length - INDEX_STEP
+              : currentTrackIndex - INDEX_STEP;
           const prevTrack = playlist[prevIndex];
           if (prevTrack) {
             audioFile.playTrack(prevTrack);
@@ -112,8 +175,8 @@ export const useKeyboardShortcuts = () => {
       // Ctrl/Cmd + Arrow Right - Next track
       if (key === "ArrowRight" && (ctrlKey || metaKey) && !altKey) {
         event.preventDefault();
-        if (playlist.length > 0) {
-          const nextIndex = (currentTrackIndex + 1) % playlist.length;
+        if (playlist.length > EMPTY_PLAYLIST_LENGTH) {
+          const nextIndex = (currentTrackIndex + INDEX_STEP) % playlist.length;
           const nextTrack = playlist[nextIndex];
           if (nextTrack) {
             audioFile.playTrack(nextTrack);
@@ -125,7 +188,7 @@ export const useKeyboardShortcuts = () => {
       // Arrow Up - Volume up
       if (key === "ArrowUp" && !ctrlKey && !shiftKey && !metaKey) {
         event.preventDefault();
-        const newVolume = Math.min(1, volume + 0.05);
+        const newVolume = Math.min(MAX_VOLUME, volume + VOLUME_STEP);
         audioFile.setAudioVolume(newVolume);
         return;
       }
@@ -133,7 +196,7 @@ export const useKeyboardShortcuts = () => {
       // Arrow Down - Volume down
       if (key === "ArrowDown" && !ctrlKey && !shiftKey && !metaKey) {
         event.preventDefault();
-        const newVolume = Math.max(0, volume - 0.05);
+        const newVolume = Math.max(MIN_VOLUME, volume - VOLUME_STEP);
         audioFile.setAudioVolume(newVolume);
         return;
       }
@@ -142,7 +205,10 @@ export const useKeyboardShortcuts = () => {
       if (key.toLowerCase() === "j" && !ctrlKey && !metaKey && !altKey) {
         event.preventDefault();
         if (currentTrack) {
-          const newTime = Math.max(0, currentTime - 10);
+          const newTime = Math.max(
+            MIN_TIME_SECONDS,
+            currentTime - LARGE_SEEK_SECONDS,
+          );
           audioFile.seekTo(newTime);
         }
         return;
@@ -152,7 +218,7 @@ export const useKeyboardShortcuts = () => {
       if (key.toLowerCase() === "l" && !ctrlKey && !metaKey && !altKey) {
         event.preventDefault();
         if (currentTrack) {
-          const newTime = Math.min(duration, currentTime + 10);
+          const newTime = Math.min(duration, currentTime + LARGE_SEEK_SECONDS);
           audioFile.seekTo(newTime);
         }
         return;
@@ -263,44 +329,63 @@ export const useKeyboardShortcuts = () => {
           "💡 Keyboard shortcuts available! Press ? to view all shortcuts.",
         );
         localStorage.setItem("spectrogram-keyboard-help", "true");
-      }, 2000);
+      }, HELP_TOAST_DELAY_MS);
     }
   }, []);
 
   return {
     // Expose shortcut functions for programmatic use
     togglePlayPause,
+    /**
+     * Play the previous track in the playlist, wrapping to the end when at start.
+     */
     previousTrack: () => {
-      if (playlist.length > 0) {
+      if (playlist.length > EMPTY_PLAYLIST_LENGTH) {
         const prevIndex =
-          currentTrackIndex <= 0 ? playlist.length - 1 : currentTrackIndex - 1;
+          currentTrackIndex <= FIRST_INDEX
+            ? playlist.length - INDEX_STEP
+            : currentTrackIndex - INDEX_STEP;
         const prevTrack = playlist[prevIndex];
         if (prevTrack) {
           audioFile.playTrack(prevTrack);
         }
       }
     },
+    /**
+     * Play the next track in the playlist, wrapping to the start when at end.
+     */
     nextTrack: () => {
-      if (playlist.length > 0) {
-        const nextIndex = (currentTrackIndex + 1) % playlist.length;
+      if (playlist.length > EMPTY_PLAYLIST_LENGTH) {
+        const nextIndex = (currentTrackIndex + INDEX_STEP) % playlist.length;
         const nextTrack = playlist[nextIndex];
         if (nextTrack) {
           audioFile.playTrack(nextTrack);
         }
       }
     },
+    /**
+     * Increase volume by a small step while respecting the maximum bound.
+     */
     volumeUp: () => {
-      const newVolume = Math.min(1, volume + 0.05);
+      const newVolume = Math.min(MAX_VOLUME, volume + VOLUME_STEP);
       audioFile.setAudioVolume(newVolume);
     },
+    /**
+     * Decrease volume by a small step while respecting the minimum bound.
+     */
     volumeDown: () => {
-      const newVolume = Math.max(0, volume - 0.05);
+      const newVolume = Math.max(MIN_VOLUME, volume - VOLUME_STEP);
       audioFile.setAudioVolume(newVolume);
     },
+    /** Toggle muted state of the audio output. */
     toggleMute: () => audioFile.toggleMute(),
+    /** Toggle visibility of the metadata panel. */
     toggleMetadataPanel: () => setMetadataPanelOpen(!metadataPanelOpen),
+    /** Toggle visibility of the playlist panel. */
     togglePlaylistPanel: () => setPlaylistPanelOpen(!playlistPanelOpen),
+    /** Open the settings panel. */
     openSettings: () => setSettingsPanelOpen(true),
+    /** Placeholder snapshot handler until implemented. */
     takeSnapshot: () => {
       // TODO: Implement snapshot functionality
       conditionalToast.success("Snapshot taken!");
