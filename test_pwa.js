@@ -62,6 +62,39 @@ const MEDIA_UI_TIMEOUT_MS = 5000;
  * access. Stored as a constant to prevent hard-coded strings and typos.
  */
 const MICROPHONE_PERMISSION_NAME = "microphone";
+/**
+ * Absolute path to the local audio file used during file-loading tests.
+ * The test suite aborts file-related assertions if this fixture is missing.
+ */
+const TEST_AUDIO_FILE =
+  "/Users/kianostad/Music/lib/AIR French Band/Moon Safari (2024)/05 - Talisman.flac";
+
+/**
+ * Resolved file name of the test audio file. Using a constant avoids
+ * repeating string literals when constructing mock File objects.
+ */
+const TEST_AUDIO_FILENAME = path.basename(TEST_AUDIO_FILE);
+
+/**
+ * Base URL where the PWA under test is expected to be served.
+ */
+const BASE_URL = "http://localhost:8000";
+
+/**
+ * CSS selector targeting the drag-and-drop zone element within the PWA.
+ */
+const DROP_ZONE_SELECTOR = '[data-testid="drop-zone"]';
+
+/**
+ * Duration in milliseconds to wait for the PWA to process a dropped file.
+ */
+const FILE_PROCESS_WAIT_MS = 3000;
+
+/**
+ * MIME type associated with the test audio file. Centralizing the string
+ * ensures consistent file construction and simplifies future test updates.
+ */
+const TEST_AUDIO_MIME_TYPE = "audio/flac";
 
 class PWATestSuite {
   constructor() {
@@ -139,6 +172,11 @@ class PWATestSuite {
         false,
         `Failed to test device: ${error.message}`,
       );
+
+    for (const [deviceType, config] of Object.entries(DEVICE_CONFIGS)) {
+      console.log(`📱 Testing on ${config.name}...`);
+      await this.testDevice(deviceType, config);
+      console.log(""); // Empty line for readability
     }
   }
 
@@ -259,6 +297,109 @@ class PWATestSuite {
       this.logResult(
         deviceType,
         "UI Elements",
+    this.generateReport();
+  }
+
+  async testDevice(deviceType, config) {
+    const puppeteer = require("puppeteer");
+
+    try {
+      const browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-web-security",
+          "--allow-file-access-from-files",
+          "--autoplay-policy=no-user-gesture-required",
+        ],
+      });
+
+      const page = await browser.newPage();
+
+      // Set viewport for device
+      await page.setViewport(config);
+
+      // Navigate to PWA
+      await page.goto(BASE_URL, { waitUntil: "networkidle0" });
+
+      // Wait for app to initialize
+      await page.waitForSelector("#app", { timeout: 10000 });
+      await this.wait(2000); // Give WebAssembly time to load
+
+      // Run tests for this device
+      await this.testInitialLoad(page, deviceType);
+      await this.testUIElements(page, deviceType);
+      await this.testFileLoading(page, deviceType);
+      await this.testPlaybackControls(page, deviceType);
+      await this.testSidebars(page, deviceType);
+      await this.testSettings(page, deviceType);
+      await this.testKeyboardShortcuts(page, deviceType);
+      await this.testResponsiveLayout(page, deviceType);
+
+      // Take final screenshot
+      await this.takeScreenshot(page, deviceType, "final-state");
+
+      await browser.close();
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Device Test",
+        false,
+        `Failed to test device: ${error.message}`,
+      );
+    }
+  }
+
+  async testInitialLoad(page, deviceType) {
+    console.log("  🔄 Testing initial load...");
+
+    try {
+      // Check if loading overlay disappears
+      await page.waitForFunction(
+        () => {
+          const overlay = document.getElementById("loading-overlay");
+          return !overlay || overlay.style.display === "none";
+        },
+        { timeout: 15000 },
+      );
+
+      // Check if main elements are present
+      const appContainer = await page.$("#app");
+      const header = await page.$(".header");
+      const mainContent = await page.$(".main-content");
+      const footer = await page.$(".footer");
+      const spectrogramCanvas = await page.$("#spectrogram-canvas");
+
+      const allPresent =
+        appContainer && header && mainContent && footer && spectrogramCanvas;
+
+      this.logResult(
+        deviceType,
+        "Initial Load",
+        allPresent,
+        allPresent
+          ? "All main elements loaded successfully"
+          : "Some main elements missing",
+      );
+
+      // Check theme application
+      const bodyClass = await page.evaluate(() => document.body.className);
+      const hasTheme = bodyClass.includes("theme-");
+
+      this.logResult(
+        deviceType,
+        "Theme Application",
+        hasTheme,
+        hasTheme ? `Theme applied: ${bodyClass}` : "No theme class found",
+      );
+
+      await this.takeScreenshot(page, deviceType, "initial-load");
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Initial Load",
         false,
         `Error: ${error.message}`,
       );
@@ -371,6 +512,55 @@ class PWATestSuite {
       this.logResult(
         deviceType,
         "Media Controls",
+  async testUIElements(page, deviceType) {
+    console.log("  🎨 Testing UI elements...");
+
+    try {
+      // Test header buttons
+      const headerButtons = await page.$$(".header .icon-button");
+      const hasHeaderButtons = headerButtons.length >= 4; // file, mic, settings, snapshot
+
+      this.logResult(
+        deviceType,
+        "Header Buttons",
+        hasHeaderButtons,
+        `Found ${headerButtons.length} header buttons`,
+      );
+
+      // Test footer controls
+      const playButton = await page.$("#play-btn");
+      const volumeSlider = await page.$("#volume-slider");
+      const seekBar = await page.$("#waveform-seek-bar");
+
+      const footerElementsPresent = playButton && volumeSlider && seekBar;
+
+      this.logResult(
+        deviceType,
+        "Footer Controls",
+        footerElementsPresent,
+        footerElementsPresent
+          ? "All footer controls present"
+          : "Some footer controls missing",
+      );
+
+      // Test spectrogram canvas
+      const canvasSize = await page.evaluate(() => {
+        const canvas = document.getElementById("spectrogram-canvas");
+        return canvas ? { width: canvas.width, height: canvas.height } : null;
+      });
+
+      this.logResult(
+        deviceType,
+        "Spectrogram Canvas",
+        !!canvasSize,
+        canvasSize
+          ? `Canvas size: ${canvasSize.width}x${canvasSize.height}`
+          : "Canvas not found",
+      );
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "UI Elements",
         false,
         `Error: ${error.message}`,
       );
@@ -416,6 +606,43 @@ class PWATestSuite {
       await this.wait(3000);
 
       // Check if metadata was loaded
+      // Synthesize a drag-and-drop operation with a mock File
+      // to mimic user interaction without relying on the file input.
+      await page.evaluate(
+        ({ filePath, fileName, selector, mimeType }) => {
+          const dropZone = document.querySelector(selector);
+          if (!dropZone) {
+            return;
+          }
+
+          // Create a mock File object and attach a `path` property so the
+          // application can resolve the real file from the filesystem.
+          const mockFile = new File([""], fileName, { type: mimeType });
+          Object.defineProperty(mockFile, "path", { value: filePath });
+
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(mockFile);
+
+          const dropEvent = new DragEvent("drop", {
+            dataTransfer,
+            bubbles: true,
+            cancelable: true,
+          });
+
+          dropZone.dispatchEvent(dropEvent);
+        },
+        {
+          filePath: TEST_AUDIO_FILE,
+          fileName: TEST_AUDIO_FILENAME,
+          selector: DROP_ZONE_SELECTOR,
+          mimeType: TEST_AUDIO_MIME_TYPE,
+        },
+      );
+
+      // Wait for the application to process the dropped file
+      await this.wait(FILE_PROCESS_WAIT_MS);
+
+      // Verify that dropping the file populates metadata elements
       const trackTitle = await page
         .$eval("#track-title", (el) => el.textContent.trim())
         .catch(() => "");
@@ -685,6 +912,30 @@ class PWATestSuite {
       const layoutValid =
         headerHeight > 0 && footerHeight > 0 && spectrogramHeight > 0;
 
+
+  async testResponsiveLayout(page, deviceType) {
+    console.log("  📱 Testing responsive layout...");
+
+    try {
+      // Check if elements are properly positioned for this screen size
+      const headerHeight = await page.evaluate(() => {
+        const header = document.querySelector(".header");
+        return header ? header.offsetHeight : 0;
+      });
+
+      const footerHeight = await page.evaluate(() => {
+        const footer = document.querySelector(".footer");
+        return footer ? footer.offsetHeight : 0;
+      });
+
+      const spectrogramHeight = await page.evaluate(() => {
+        const canvas = document.getElementById("spectrogram-canvas");
+        return canvas ? canvas.offsetHeight : 0;
+      });
+
+      const layoutValid =
+        headerHeight > 0 && footerHeight > 0 && spectrogramHeight > 0;
+
       this.logResult(
         deviceType,
         "Responsive Layout",
@@ -752,6 +1003,19 @@ class PWATestSuite {
         type: "png",
       });
 
+
+      // Create directory if it doesn't exist
+      const dir = path.dirname(filepath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      await page.screenshot({
+        path: filepath,
+        fullPage: true,
+        type: "png",
+      });
+
       this.screenshots.push({
         device: deviceType,
         test: testName,
@@ -762,6 +1026,25 @@ class PWATestSuite {
       console.log(`    ❌ Failed to take screenshot: ${error.message}`);
     }
   }
+
+  logResult(device, test, passed, details) {
+    const status = passed ? "✅" : "❌";
+    const result = {
+      device,
+      test,
+      passed,
+      details,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.results.push(result);
+    console.log(`    ${status} ${test}: ${details}`);
+  }
+
+  async wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
 
   logResult(device, test, passed, details) {
     const status = passed ? "✅" : "❌";
