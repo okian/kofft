@@ -1,46 +1,56 @@
 import React from "react";
 import { useDesign } from "./DesignContext";
 import type { Design, Mode } from "./designs";
-import { PALETTES } from "./designs";
 
 /** Consistent spacing for the toggle container. */
 const CONTROL_SPACING = "0.5rem" as const;
 
 /**
- * Lookup set of allowed design identifiers. Using a Set provides constant
- * time membership checks and avoids repeatedly allocating arrays on each
- * render.
- */
-const VALID_DESIGNS: ReadonlySet<Design> = new Set(
-  Object.keys(PALETTES) as Design[],
-);
-
-/**
- * Lookup set of allowed colour modes. Maintained separately so that any
- * change in supported modes requires updating a single constant.
- */
-const VALID_MODES: ReadonlySet<Mode> = new Set<Mode>(["light", "dark"]);
-
-/**
- * Convert an arbitrary string into a validated Design. Rejects unknown values
- * with a descriptive error to prevent silent fallbacks.
+ * Validate a candidate design string against the supported set.
+ * Using an explicit `switch` provides compile-time exhaustiveness
+ * checks so new designs cannot be forgotten.
  */
 export function parseDesign(value: string): Design {
-  if (!VALID_DESIGNS.has(value as Design)) {
-    throw new Error(`Unknown design: ${value}`);
+  switch (value) {
+    case "japanese-a":
+    case "japanese-b":
+    case "bauhaus":
+      return value;
+    default:
+      throw new Error(`Unknown design: ${value}`);
   }
-  return value as Design;
 }
 
 /**
- * Convert an arbitrary string into a validated Mode. Rejects unknown values
- * with a descriptive error to prevent silent fallbacks.
+ * Validate a candidate colour mode. A `switch` keeps the check
+ * explicit and ensures unsupported modes fail fast.
  */
 export function parseMode(value: string): Mode {
-  if (!VALID_MODES.has(value as Mode)) {
-    throw new Error(`Unknown mode: ${value}`);
+  switch (value) {
+    case "light":
+    case "dark":
+      return value;
+    default:
+      throw new Error(`Unknown mode: ${value}`);
   }
-  return value as Mode;
+}
+
+/**
+ * Validate and apply a new design value via the provided setter. The helper
+ * is exported to enable direct unit testing of the defensive parsing logic.
+ */
+export function applyDesign(value: string, setter: (d: Design) => void): void {
+  const design = parseDesign(value);
+  setter(design);
+}
+
+/**
+ * Validate and apply a new colour mode. Exported for unit testing of invalid
+ * inputs without needing to interact with the DOM.
+ */
+export function applyMode(value: string, setter: (m: Mode) => void): void {
+  const modeValue = parseMode(value);
+  setter(modeValue);
 }
 
 /**
@@ -57,8 +67,7 @@ export function DesignToggle() {
    * surface issues immediately.
    */
   const handleDesignChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = parseDesign(e.target.value);
-    setDesign(value);
+    applyDesign(e.target.value, setDesign);
   };
 
   /**
@@ -66,8 +75,7 @@ export function DesignToggle() {
    * only supported modes reach the context state.
    */
   const handleModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = parseMode(e.target.value);
-    setMode(value);
+    applyMode(e.target.value, setMode);
   };
 
   return (
