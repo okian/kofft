@@ -4,13 +4,13 @@ use core::cmp;
 use core::f32;
 use core::fmt;
 
-/// Absolute tolerance used when comparing sample rates.
+/// Relative tolerance used when comparing sample rates.
 ///
-/// When the source and destination rates differ by less than this epsilon we
-/// treat them as equal and avoid doing any work.  Using a named constant avoids
-/// scattering `f32::EPSILON` throughout the code and clearly documents the
-/// comparison threshold.
-const RATE_EPSILON: f32 = f32::EPSILON;
+/// Two rates that differ by less than this fraction of the larger rate are
+/// considered effectively equal.  This accommodates minor rounding
+/// discrepancies (for example 44_100 vs 44_100.01) without masking genuinely
+/// different rates, avoiding unnecessary resampling work.
+const RATE_REL_TOLERANCE: f32 = 1e-5;
 
 /// Minimum number of channels accepted by the resampler.
 ///
@@ -32,6 +32,8 @@ pub enum ResampleError {
     InvalidChannels,
     /// The input length was not a multiple of the channel count.
     MisalignedChannels,
+    /// The resampled output would exceed addressable memory.
+    OutputTooLarge,
 }
 
 impl fmt::Display for ResampleError {
@@ -49,6 +51,9 @@ impl fmt::Display for ResampleError {
             }
             ResampleError::MisalignedChannels => {
                 write!(f, "input length must be a multiple of the channel count")
+            }
+            ResampleError::OutputTooLarge => {
+                write!(f, "resampled output size overflowed")
             }
         }
     }
@@ -115,14 +120,21 @@ pub fn linear_resample_channels(
         return Err(ResampleError::MisalignedChannels);
     }
 
-    if (src_rate - dst_rate).abs() < RATE_EPSILON {
+    if ((src_rate - dst_rate).abs() / src_rate.max(dst_rate)) < RATE_REL_TOLERANCE {
         return Ok(input.to_vec());
     }
 
     let frames = input.len() / channels;
     let ratio = dst_rate / src_rate;
-    let out_frames = (frames as f32 * ratio).ceil() as usize;
-    let mut output = vec![0.0; out_frames * channels];
+    let out_frames_f = frames as f32 * ratio;
+    if !out_frames_f.is_finite() || out_frames_f > usize::MAX as f32 {
+        return Err(ResampleError::OutputTooLarge);
+    }
+    let out_frames = out_frames_f.ceil() as usize;
+    let out_len = out_frames
+        .checked_mul(channels)
+        .ok_or(ResampleError::OutputTooLarge)?;
+    let mut output = vec![0.0; out_len];
     let last = frames - 1;
 
     for ch in 0..channels {

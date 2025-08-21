@@ -6,8 +6,7 @@ use std::time::Instant;
 /// This intentionally slow implementation helps verify that the linear
 /// interpolator performs at least as well in terms of error while providing a
 /// simple reference for boundary behaviour.
-
-
+///
 /// Source rate used for extreme upsampling tests.
 const EXTREME_LOW_RATE: f32 = 1.0;
 /// Destination rate used for extreme upsampling tests.
@@ -227,4 +226,39 @@ fn linear_resample_extreme_downsample() {
     let output = linear_resample(&input, EXTREME_HIGH_RATE, EXTREME_LOW_RATE).unwrap();
     assert!(!output.is_empty());
     assert!(output.iter().all(|v| v.is_finite()));
+}
+
+/// Rates within the relative tolerance should bypass resampling.
+#[test]
+fn linear_resample_skips_for_nearly_equal_rates() {
+    let input = vec![0.0f32, 1.0, 0.0];
+    let output = linear_resample(&input, 44_100.0, 44_100.01).unwrap();
+    assert_eq!(output, input);
+}
+
+/// Stress test with many channels to ensure output size calculations don't overflow.
+#[test]
+fn linear_resample_handles_many_channels() {
+    const CHANNELS: usize = 64;
+    const FRAMES: usize = 1_000;
+    let input = vec![0.0f32; CHANNELS * FRAMES];
+    let out = linear_resample_channels(&input, 48_000.0, 44_100.0, CHANNELS).unwrap();
+    assert_eq!(out.len(), CHANNELS * FRAMES);
+}
+
+/// Stress test with a long input to exercise internal indexing.
+#[test]
+fn linear_resample_handles_long_input() {
+    const FRAMES: usize = 200_000;
+    let input = vec![0.0f32; FRAMES];
+    let out = linear_resample(&input, 44_100.0, 48_000.0).unwrap();
+    assert!(!out.is_empty());
+}
+
+/// Extremely large destination rates should trigger overflow detection.
+#[test]
+fn linear_resample_detects_overflow() {
+    let input = vec![0.0f32, 1.0f32];
+    let err = linear_resample_channels(&input, 1.0, f32::MAX, 2).unwrap_err();
+    assert!(matches!(err, ResampleError::OutputTooLarge));
 }

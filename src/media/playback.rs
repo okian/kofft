@@ -40,6 +40,8 @@ pub enum PlaybackError {
     InvalidTrackId,
     /// An error bubbled up from the underlying SQLite database.
     Database(rusqlite::Error),
+    /// Waveform bytes could not be decoded into 32-bit samples.
+    InvalidWaveformBytes,
 }
 
 impl fmt::Display for PlaybackError {
@@ -50,6 +52,12 @@ impl fmt::Display for PlaybackError {
             }
             PlaybackError::InvalidTrackId => write!(f, "invalid track identifier"),
             PlaybackError::Database(e) => write!(f, "database error: {e}"),
+            PlaybackError::InvalidWaveformBytes => {
+                write!(
+                    f,
+                    "waveform byte length must be a multiple of {BYTES_PER_SAMPLE}"
+                )
+            }
         }
     }
 }
@@ -120,7 +128,7 @@ fn load_waveform(conn: &Connection, track_id: &str) -> Result<Option<Vec<f32>>, 
     let mut rows = stmt.query(params![track_id])?;
     if let Some(row) = rows.next()? {
         let blob: Vec<u8> = row.get(0)?;
-        Ok(Some(bytes_to_waveform(&blob)))
+        Ok(Some(bytes_to_waveform(&blob)?))
     } else {
         Ok(None)
     }
@@ -174,13 +182,20 @@ fn waveform_as_bytes(waveform: &[f32]) -> Vec<u8> {
 /// Reconstruct a waveform from its byte representation loaded from the database.
 ///
 /// The input slice length must be a multiple of [`BYTES_PER_SAMPLE`]; otherwise
-/// any trailing incomplete sample is silently discarded. The function performs
-/// no allocations other than the output vector.
-fn bytes_to_waveform(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(BYTES_PER_SAMPLE)
-        .map(|b| f32::from_le_bytes(b.try_into().expect("chunk size fixed")))
-        .collect()
+/// an error is returned. The function performs no allocations other than the
+/// output vector and fails fast on malformed inputs.
+fn bytes_to_waveform(bytes: &[u8]) -> Result<Vec<f32>, PlaybackError> {
+    let chunks = bytes.chunks_exact(BYTES_PER_SAMPLE);
+    if !chunks.remainder().is_empty() {
+        return Err(PlaybackError::InvalidWaveformBytes);
+    }
+    Ok(chunks
+        .map(|b| {
+            let mut arr = [0u8; BYTES_PER_SAMPLE];
+            arr.copy_from_slice(b);
+            f32::from_le_bytes(arr)
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -259,7 +274,15 @@ mod tests {
     fn waveform_bytes_roundtrip() {
         let samples = vec![0.0f32, 1.0, -0.5];
         let bytes = waveform_as_bytes(&samples);
-        let decoded = bytes_to_waveform(&bytes);
+        let decoded = bytes_to_waveform(&bytes).unwrap();
         assert_eq!(samples, decoded);
+    }
+
+    /// Decoding should fail when byte length is not a multiple of the sample size.
+    #[test]
+    fn bytes_to_waveform_rejects_misaligned_input() {
+        let bytes = vec![0u8; BYTES_PER_SAMPLE + 1];
+        let err = bytes_to_waveform(&bytes).unwrap_err();
+        assert!(matches!(err, PlaybackError::InvalidWaveformBytes));
     }
 }
