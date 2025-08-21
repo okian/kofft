@@ -66,6 +66,8 @@ compile_error!("stft requires `wasm` and `simd` features to be enabled");
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
+#[cfg(feature = "parallel")]
+use core::mem::take; // for efficiently resetting buffers without reallocations
 
 /// Compute the STFT of a real-valued signal.
 ///
