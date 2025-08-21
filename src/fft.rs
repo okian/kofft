@@ -37,12 +37,34 @@ use crate::fft_kernels::{fft2, fft4};
 #[cfg(feature = "parallel")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
-use rayon::prelude::*;
+use rayon::{prelude::*, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
 #[cfg(all(feature = "parallel", feature = "std"))]
 use std::sync::OnceLock;
+
+#[cfg(feature = "parallel")]
+/// Default per-core L1 cache size in bytes used when no override or environment
+/// variable is provided.
+const DEFAULT_L1_CACHE_BYTES: usize = 32 * 1024;
+#[cfg(feature = "parallel")]
+/// Default minimum amount of complex work per core before the FFT runs in
+/// parallel. Chosen conservatively to avoid overhead.
+const DEFAULT_PER_CORE_WORK: usize = 4096;
+#[cfg(feature = "parallel")]
+/// Default block size used when partitioning work among threads.
+const DEFAULT_BLOCK_SIZE: usize = 1024;
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Buffer size in bytes used for memory bandwidth calibration.
+const CALIBRATION_BUFFER_BYTES: usize = 1 << 20; // 1 MB
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Nanoseconds per second – used to convert elapsed time into throughput.
+const NANOS_PER_SECOND: usize = 1_000_000_000;
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Minimum per-core work allowed after calibration to avoid extremely small
+/// tasks that would degrade performance.
+const MIN_CALIBRATED_WORK: usize = 4096;
 
 /// Override for the parallel FFT threshold.
 ///
@@ -51,12 +73,16 @@ use std::sync::OnceLock;
 static PARALLEL_FFT_THRESHOLD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "parallel")]
+/// Override for cache size used in parallel FFT heuristics.
 static PARALLEL_FFT_CACHE_BYTES_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "parallel")]
+/// Override for per-core work estimate in parallel FFT heuristics.
 static PARALLEL_FFT_PER_CORE_WORK_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "parallel")]
+/// Override for block size when partitioning work across threads.
 static PARALLEL_FFT_BLOCK_SIZE_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "parallel")]
+/// Override for the number of threads used for parallel FFT execution.
 static PARALLEL_FFT_THREAD_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(all(feature = "parallel", feature = "std"))]
@@ -73,69 +99,73 @@ static ENV_THREADS: OnceLock<usize> = OnceLock::new();
 static CALIBRATED_PER_CORE_WORK: OnceLock<usize> = OnceLock::new();
 #[cfg(all(feature = "parallel", feature = "std"))]
 static PARALLEL_FFT_THRESHOLD: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static PARALLEL_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Helper to parse an environment variable into `usize` or use `default` when
+/// the variable is absent. Parsing failures cause a panic so configuration
+/// errors surface early.
+fn parse_env_usize(var: &str, default: usize) -> usize {
+    match std::env::var(var) {
+        Ok(v) => v
+            .parse::<usize>()
+            .unwrap_or_else(|_| panic!("{} must be a positive integer", var)),
+        Err(std::env::VarError::NotPresent) => default,
+        Err(e) => panic!("failed to read {}: {}", var, e),
+    }
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Read the `KOFFT_PAR_FFT_THRESHOLD` environment variable with strict parsing.
 fn env_parallel_fft_threshold() -> usize {
-    *ENV_THRESHOLD.get_or_init(|| {
-        std::env::var("KOFFT_PAR_FFT_THRESHOLD")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(0)
-    })
+    *ENV_THRESHOLD.get_or_init(|| parse_env_usize("KOFFT_PAR_FFT_THRESHOLD", 0))
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Read the `KOFFT_PAR_FFT_CACHE_BYTES` environment variable with strict parsing.
 fn env_parallel_fft_cache_bytes() -> usize {
-    *ENV_CACHE_BYTES.get_or_init(|| {
-        std::env::var("KOFFT_PAR_FFT_CACHE_BYTES")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(32 * 1024)
-    })
+    *ENV_CACHE_BYTES
+        .get_or_init(|| parse_env_usize("KOFFT_PAR_FFT_CACHE_BYTES", DEFAULT_L1_CACHE_BYTES))
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Read the `KOFFT_PAR_FFT_PER_CORE_WORK` environment variable with strict parsing.
 fn env_parallel_fft_per_core_work() -> usize {
-    *ENV_PER_CORE_WORK.get_or_init(|| {
-        std::env::var("KOFFT_PAR_FFT_PER_CORE_WORK")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(4096)
-    })
+    *ENV_PER_CORE_WORK
+        .get_or_init(|| parse_env_usize("KOFFT_PAR_FFT_PER_CORE_WORK", DEFAULT_PER_CORE_WORK))
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Read the `KOFFT_PAR_FFT_BLOCK_SIZE` environment variable with strict parsing.
 fn env_parallel_fft_block_size() -> usize {
-    *ENV_BLOCK_SIZE.get_or_init(|| {
-        std::env::var("KOFFT_PAR_FFT_BLOCK_SIZE")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1024)
-    })
+    *ENV_BLOCK_SIZE.get_or_init(|| parse_env_usize("KOFFT_PAR_FFT_BLOCK_SIZE", DEFAULT_BLOCK_SIZE))
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Read the `KOFFT_PAR_FFT_THREADS` environment variable with strict parsing.
 fn env_parallel_fft_threads() -> usize {
     *ENV_THREADS.get_or_init(|| {
-        std::env::var("KOFFT_PAR_FFT_THREADS")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or_else(|| num_cpus::get().max(1))
+        let default = num_cpus::get().max(1);
+        parse_env_usize("KOFFT_PAR_FFT_THREADS", default)
     })
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Estimate how many complex elements a core can process in a second by
+/// measuring memory bandwidth. This provides a dynamic fallback for
+/// `env_parallel_fft_per_core_work` when no override is supplied.
 fn calibrated_per_core_work() -> usize {
     use std::time::Instant;
     *CALIBRATED_PER_CORE_WORK.get_or_init(|| {
-        let n = 1 << 20; // 1MB
+        let n = CALIBRATION_BUFFER_BYTES;
         let a = vec![0u8; n];
         let mut b = vec![0u8; n];
         let start = Instant::now();
         b.copy_from_slice(&a);
         let elapsed = start.elapsed().as_nanos().max(1) as usize;
         let elems = n / core::mem::size_of::<crate::num::Complex32>();
-        ((elems * 1_000_000_000) / elapsed).max(4096)
+        ((elems * NANOS_PER_SECOND) / elapsed).max(MIN_CALIBRATED_WORK)
     })
 }
 
@@ -160,6 +190,7 @@ fn parallel_fft_threshold() -> usize {
 }
 
 #[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
+/// Expose the computed parallel FFT threshold for integration tests.
 pub fn __test_parallel_fft_threshold() -> usize {
     parallel_fft_threshold()
 }
@@ -209,6 +240,7 @@ pub fn set_parallel_fft_block_size(size: usize) {
 }
 
 #[cfg(feature = "parallel")]
+/// Return the number of threads to use for parallel FFT execution.
 fn parallel_fft_threads() -> usize {
     let override_thr = PARALLEL_FFT_THREAD_OVERRIDE.load(Ordering::Relaxed);
     if override_thr != 0 {
@@ -225,6 +257,7 @@ fn parallel_fft_threads() -> usize {
 }
 
 #[cfg(feature = "parallel")]
+/// Return the block size used when distributing work across threads.
 fn parallel_fft_block_size() -> usize {
     let override_size = PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.load(Ordering::Relaxed);
     if override_size != 0 {
@@ -236,11 +269,13 @@ fn parallel_fft_block_size() -> usize {
     }
     #[cfg(not(feature = "std"))]
     {
-        1024
+        DEFAULT_BLOCK_SIZE
     }
 }
 
 #[cfg(feature = "parallel")]
+/// Decide if an FFT of length `n` should run in parallel given a baseline
+/// `base_threshold`.
 fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     let override_thr = PARALLEL_FFT_THRESHOLD_OVERRIDE.load(Ordering::Relaxed);
     let threshold = if override_thr != 0 {
@@ -285,7 +320,7 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
             if override_bytes != 0 {
                 override_bytes
             } else {
-                32 * 1024
+                DEFAULT_L1_CACHE_BYTES
             }
         };
         let per_core_work = {
@@ -293,7 +328,7 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
             if override_work != 0 {
                 override_work
             } else {
-                4096
+                DEFAULT_PER_CORE_WORK
             }
         };
         let bytes_per_elem = core::mem::size_of::<crate::num::Complex32>();
@@ -304,6 +339,23 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
         );
         n >= per_core_min * parallel_fft_threads()
     }
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Obtain the global Rayon thread pool respecting configured thread limits.
+fn parallel_pool() -> &'static ThreadPool {
+    PARALLEL_POOL.get_or_init(|| {
+        ThreadPoolBuilder::new()
+            .num_threads(parallel_fft_threads())
+            .build()
+            .expect("Failed to build Rayon thread pool")
+    })
+}
+
+#[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
+/// Expose the current thread count of the internal thread pool for tests.
+pub fn __test_parallel_pool_thread_count() -> usize {
+    parallel_pool().current_num_threads()
 }
 
 pub use crate::fft_kernels::{fft16, fft8};
@@ -330,6 +382,8 @@ pub fn split_to_complex32(split: &SplitComplex<'_, f32>, out: &mut [Complex32]) 
 type BluesteinPair<T> = (Arc<[Complex<T>]>, Arc<[Complex<T>]>);
 
 #[cfg(feature = "precomputed-twiddles")]
+/// Cast an [`Arc`] of one slice element type to another without copying. This
+/// relies on both types having identical size and alignment.
 fn arc_cast<A, B>(arc: Arc<[A]>) -> Arc<[B]> {
     assert_eq!(core::mem::size_of::<A>(), core::mem::size_of::<B>());
     assert_eq!(core::mem::align_of::<A>(), core::mem::align_of::<B>());
@@ -359,6 +413,7 @@ impl<T: Float> Default for FftPlanner<T> {
 }
 
 impl<T: Float> FftPlanner<T> {
+    /// Create a new planner with empty twiddle and scratch buffers.
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
@@ -1159,13 +1214,15 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {
                 let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                input32.par_iter_mut().for_each(|c| c.im = -c.im);
+                parallel_pool().install(|| input32.par_iter_mut().for_each(|c| c.im = -c.im));
                 self.fft(input)?;
                 let scale = 1.0 / n as f32;
-                input32.par_iter_mut().for_each(|c| {
-                    c.im = -c.im;
-                    c.re *= scale;
-                    c.im *= scale;
+                parallel_pool().install(|| {
+                    input32.par_iter_mut().for_each(|c| {
+                        c.im = -c.im;
+                        c.re *= scale;
+                        c.im *= scale;
+                    });
                 });
                 return Ok(());
             }
