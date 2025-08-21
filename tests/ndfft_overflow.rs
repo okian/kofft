@@ -24,5 +24,5 @@ fn fft3d_inplace_overflow() {
     };
     let fft = ScalarFftImpl::<f32>::default();
     let res = fft3d_inplace(&mut data, usize::MAX, 2, 2, &fft, &mut scratch);
-    assert_eq!(res, Err(FftError::Overflow));
+    assert_eq!(res, Err(FftError::LengthOverflow));
 }

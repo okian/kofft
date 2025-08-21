@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { DesignProvider, useDesign } from "./DesignContext";
 import { PALETTES, Design, Mode } from "./designs";
 
@@ -23,6 +23,11 @@ function rootStyles(): CSSStyleDeclaration {
   return getComputedStyle(document.documentElement);
 }
 
+/** Name of the CSS variable for secondary accent colour. */
+const VAR_SECONDARY = "--color-secondary" as const;
+/** Name of the CSS variable for tertiary accent colour. */
+const VAR_TERTIARY = "--color-tertiary" as const;
+
 describe("DesignProvider", () => {
   it.each([
     ["japanese-a", "light"],
@@ -39,12 +44,49 @@ describe("DesignProvider", () => {
     );
     const styles = rootStyles();
     const palette = PALETTES[design as Design][mode as Mode];
-    expect(styles.getPropertyValue("--color-bg").trim()).toBe(palette.background);
+    expect(styles.getPropertyValue("--color-bg").trim()).toBe(
+      palette.background,
+    );
     expect(styles.getPropertyValue("--color-text").trim()).toBe(palette.text);
-    expect(styles.getPropertyValue("--color-accent").trim()).toBe(palette.accent);
+    expect(styles.getPropertyValue("--color-accent").trim()).toBe(
+      palette.accent,
+    );
     if (palette.secondary)
-      expect(styles.getPropertyValue("--color-secondary").trim()).toBe(palette.secondary);
+      expect(styles.getPropertyValue("--color-secondary").trim()).toBe(
+        palette.secondary,
+      );
     if (palette.tertiary)
-      expect(styles.getPropertyValue("--color-tertiary").trim()).toBe(palette.tertiary);
+      expect(styles.getPropertyValue("--color-tertiary").trim()).toBe(
+        palette.tertiary,
+      );
+  });
+
+  /**
+   * Switching from Bauhaus to Japanese should clear Bauhaus-only CSS variables
+   * to avoid stale values polluting minimalist designs.
+   */
+  it("removes Bauhaus-only variables when switching to Japanese", async () => {
+    const { rerender } = render(
+      <DesignProvider>
+        <Apply design={"bauhaus" as Design} mode={"light" as Mode} />
+      </DesignProvider>,
+    );
+    const bauhaus = PALETTES.bauhaus.light;
+    expect(rootStyles().getPropertyValue(VAR_SECONDARY).trim()).toBe(
+      bauhaus.secondary,
+    );
+    expect(rootStyles().getPropertyValue(VAR_TERTIARY).trim()).toBe(
+      bauhaus.tertiary,
+    );
+    rerender(
+      <DesignProvider>
+        <Apply design={"japanese-a" as Design} mode={"light" as Mode} />
+      </DesignProvider>,
+    );
+    await waitFor(() => {
+      const styles = rootStyles();
+      expect(styles.getPropertyValue(VAR_SECONDARY)).toBe("");
+      expect(styles.getPropertyValue(VAR_TERTIARY)).toBe("");
+    });
   });
 });
