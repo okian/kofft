@@ -26,15 +26,40 @@ pub const MIN_LEN: usize = STRIDE;
 /// Maximum number of cached twiddle tables to retain in the planner.
 pub const MAX_CACHE_ENTRIES: usize = 64;
 
-/// Byte alignment in bytes required for safe SIMD loads and stores.
+/// Byte alignment required for safe SIMD loads and stores.
+///
+/// The value depends on the enabled instruction set to ensure the most
+/// stringent requirement is met:
+/// - AVX-512 needs 64-byte alignment.
+/// - AVX (256-bit) needs 32-byte alignment.
+/// - NEON uses 16-byte alignment.
+/// - Scalar code works with any alignment.
+#[cfg(all(target_arch = "x86_64", feature = "x86_64", target_feature = "avx512f"))]
+pub const SIMD_ALIGN: usize = 64;
+
+#[cfg(all(
+    target_arch = "x86_64",
+    feature = "x86_64",
+    not(target_feature = "avx512f")
+))]
+pub const SIMD_ALIGN: usize = 32;
+
+#[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
 pub const SIMD_ALIGN: usize = 16;
+
+// Fallback when no SIMD feature is enabled; alignment is irrelevant.
+#[cfg(not(any(
+    all(target_arch = "x86_64", feature = "x86_64"),
+    all(target_arch = "aarch64", feature = "aarch64"),
+)))]
+pub const SIMD_ALIGN: usize = 1;
 
 /// Determine whether a slice's starting pointer satisfies [`SIMD_ALIGN`] alignment.
 ///
 /// Empty slices are considered aligned because no memory access occurs.
 #[inline]
 fn is_aligned<T>(slice: &[T]) -> bool {
-    slice.is_empty() || (slice.as_ptr() as usize) % SIMD_ALIGN == 0
+    slice.is_empty() || slice.as_ptr().align_offset(SIMD_ALIGN) == 0
 }
 
 /// Trait providing specialized real FFT implementations for concrete
@@ -646,6 +671,14 @@ where
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return rfft_direct_f32_scalar(fft, input, output, scratch, twiddles, _pack_twiddles);
+    }
     for i in 0..m {
         output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
     }
@@ -903,6 +936,14 @@ where
     let m = n / STRIDE;
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
+    }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return rfft_direct_f32_scalar(fft, input, output, scratch, twiddles, _pack_twiddles);
     }
     for i in 0..m {
         output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
