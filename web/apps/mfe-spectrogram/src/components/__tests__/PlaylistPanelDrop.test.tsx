@@ -10,7 +10,7 @@ vi.mock('@/hooks/useAudioFile', () => ({
   })
 }))
 
-vi.mock('@/utils/wasm', () => ({
+vi.mock('@/shared/utils/wasm', () => ({
   extractMetadata: vi.fn()
 }))
 

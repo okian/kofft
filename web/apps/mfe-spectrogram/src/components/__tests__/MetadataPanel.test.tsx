@@ -4,7 +4,7 @@ import { MetadataPanel } from '../layout/MetadataPanel'
 import { AudioTrack } from '@/types'
 
 // Mock the utility functions
-vi.mock('@/utils/audio', () => ({
+vi.mock('@/shared/utils/audio', () => ({
   formatDuration: vi.fn((duration: number) => {
     const minutes = Math.floor(duration / 60)
     const seconds = Math.floor(duration % 60)

@@ -1,5 +1,7 @@
+/// Generate small radix FFT kernel implementations.
 macro_rules! define_kernels {
     () => {
+        /// Compute a size-2 in-place FFT.
         #[inline(always)]
         pub fn fft2<T: Float>(input: &mut [Complex<T>]) {
             debug_assert_eq!(input.len(), 2);
@@ -9,6 +11,7 @@ macro_rules! define_kernels {
             input[1] = a.sub(b);
         }
 
+        /// Compute a size-4 in-place FFT.
         #[inline(always)]
         pub fn fft4<T: Float>(input: &mut [Complex<T>]) {
             debug_assert_eq!(input.len(), 4);
@@ -28,6 +31,7 @@ macro_rules! define_kernels {
             input[3] = even1.sub(t1);
         }
 
+        /// Compute a size-8 in-place FFT.
         #[inline(always)]
         pub fn fft8<T: Float>(input: &mut [Complex<T>]) {
             debug_assert_eq!(input.len(), 8);
@@ -85,6 +89,7 @@ macro_rules! define_kernels {
             input[7] = e3.sub(t3);
         }
 
+        /// Compute a size-16 in-place FFT.
         #[inline(always)]
         pub fn fft16<T: Float>(input: &mut [Complex<T>]) {
             debug_assert_eq!(input.len(), 16);
@@ -226,12 +231,14 @@ macro_rules! define_kernels {
 }
 
 #[cfg(feature = "simd")]
+/// SIMD-accelerated kernel implementations.
 mod simd {
     use crate::num::{Complex, Float};
     define_kernels!();
 }
 
 #[cfg(not(feature = "simd"))]
+/// Scalar fallback kernel implementations.
 mod scalar {
     use crate::num::{Complex, Float};
     define_kernels!();
