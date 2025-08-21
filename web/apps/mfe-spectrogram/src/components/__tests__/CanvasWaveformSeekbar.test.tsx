@@ -8,6 +8,9 @@ import { describe, it, expect, beforeEach, vi, beforeAll } from "vitest";
 vi.mock("@wasm/react_spectrogram_wasm", () => ({ default: async () => {} }), {
   virtual: true,
 });
+vi.mock("@wasm/web_spectrogram", () => ({ default: async () => {} }), {
+  virtual: true,
+});
 let CanvasWaveformSeekbar: any;
 let BAR_WIDTH: number;
 let BAR_GAP: number;
@@ -118,6 +121,45 @@ describe("CanvasWaveformSeekbar", () => {
   "bg": "rgba(0, 0, 0, 0)",
   "border": "0px none rgb(0, 0, 0)",
 }`);
+  });
+
+  it("ignores pointer events when canvas has not mounted", () => {
+    // Small dataset and spy to verify no seek events are dispatched.
+    const audioData = new Float32Array(10);
+    const onSeek = vi.fn();
+    // Preserve the original hook so only the canvas ref is affected.
+    const originalUseRef = React.useRef;
+    const useRefSpy = vi.spyOn(React, "useRef");
+    // First call is containerRef; let React handle it normally.
+    useRefSpy.mockImplementationOnce((arg: unknown) => originalUseRef(arg));
+    // Second call is canvasRef; simulate an unresolved ref that never mounts.
+    useRefSpy.mockImplementationOnce(() => {
+      const ref: { current: HTMLCanvasElement | null } = { current: null };
+      Object.defineProperty(ref, "current", {
+        get: () => null,
+        set: () => {},
+      });
+      return ref;
+    });
+
+    const { getByTestId } = render(
+      <CanvasWaveformSeekbar
+        audioData={audioData}
+        currentTime={0}
+        duration={10}
+        onSeek={onSeek}
+      />,
+    );
+
+    const bar = getByTestId("progress-bar");
+    // Trigger a full pointer interaction sequence; all steps should be ignored.
+    expect(() => {
+      fireEvent.pointerDown(bar, { clientX: 5 });
+      fireEvent.pointerMove(bar, { clientX: 6 });
+      fireEvent.pointerUp(bar, { clientX: 7 });
+    }).not.toThrow();
+    expect(onSeek).not.toHaveBeenCalled();
+    useRefSpy.mockRestore();
   });
 
   it("avoids partial bars across varying widths", async () => {

@@ -485,9 +485,17 @@ export function CanvasWaveformSeekbar({
     readCss,
   ]);
 
-  // Helpers for pointer interactions.
-  const normalise = useCallback((clientX: number) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
+  /**
+   * Convert a pointer X-coordinate into a normalised [0,1] position.
+   * Returns `null` when the canvas is unavailable so callers can bail out.
+   */
+  const normalise = useCallback((clientX: number): number | null => {
+    if (!Number.isFinite(clientX)) {
+      throw new Error("clientX must be a finite number");
+    }
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   }, []);
 
@@ -506,22 +514,28 @@ export function CanvasWaveformSeekbar({
     [duration, onSeek],
   );
 
+  /** Begin tracking a seek gesture if the bar is interactive and ready. */
   const handlePointerDown = (e: React.PointerEvent) => {
     if (disabled) return;
     const pos = normalise(e.clientX);
+    if (pos === null) return;
     setIsSeeking(true);
     setSeekProgress(pos);
     dispatched.current = false;
   };
+  /** Update the seek position as the pointer moves during a drag. */
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isSeeking) return;
     const pos = normalise(e.clientX);
+    if (pos === null) return;
     setSeekProgress(pos);
     dispatchSeek(pos);
   };
+  /** Finish a seek gesture, dispatching a final seek if necessary. */
   const endSeek = (e: React.PointerEvent) => {
     if (!isSeeking) return;
     const pos = normalise(e.clientX);
+    if (pos === null) return;
     setIsSeeking(false);
     setSeekProgress(0);
     if (!dispatched.current) onSeek(pos * duration);
