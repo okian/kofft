@@ -5,7 +5,7 @@ use kofft::rfft::RfftPlanner;
 fn rfft_irfft_roundtrip_dispatch() {
     // f32 path
     let fft32 = ScalarFftImpl::<f32>::default();
-    let mut planner32 = RfftPlanner::<f32>::new();
+    let mut planner32 = RfftPlanner::<f32>::new().unwrap();
     let mut input32 = vec![1.0f32, 2.0, 3.0, 4.0];
     let orig32 = input32.clone();
     let mut freq32 = vec![Complex32::new(0.0, 0.0); input32.len() / 2 + 1];
@@ -23,7 +23,7 @@ fn rfft_irfft_roundtrip_dispatch() {
 
     // f64 path
     let fft64 = ScalarFftImpl::<f64>::default();
-    let mut planner64 = RfftPlanner::<f64>::new();
+    let mut planner64 = RfftPlanner::<f64>::new().unwrap();
     let mut input64 = vec![1.0f64, 2.0, 3.0, 4.0];
     let orig64 = input64.clone();
     let mut freq64 = vec![Complex64::new(0.0, 0.0); input64.len() / 2 + 1];

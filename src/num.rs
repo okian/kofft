@@ -18,6 +18,9 @@ pub trait Float:
     fn zero() -> Self;
     fn one() -> Self;
     fn from_f32(x: f32) -> Self;
+    /// Attempt to convert a `usize` into the floating-point type.
+    /// Returns `None` if the value cannot be represented exactly.
+    fn from_usize(x: usize) -> Option<Self>;
     fn cos(self) -> Self;
     fn sin(self) -> Self;
     fn sin_cos(self) -> (Self, Self);
@@ -46,6 +49,14 @@ impl Float for f32 {
     }
     fn from_f32(x: f32) -> Self {
         x
+    }
+    fn from_usize(x: usize) -> Option<Self> {
+        const MAX_EXACT: usize = 1usize << 24;
+        if x < MAX_EXACT {
+            Some(x as f32)
+        } else {
+            None
+        }
     }
     fn cos(self) -> Self {
         f32::cos(self)
@@ -83,6 +94,14 @@ impl Float for f64 {
     }
     fn from_f32(x: f32) -> Self {
         x as f64
+    }
+    fn from_usize(x: usize) -> Option<Self> {
+        const MAX_EXACT: usize = 1usize << 53;
+        if x < MAX_EXACT {
+            Some(x as f64)
+        } else {
+            None
+        }
     }
     fn cos(self) -> Self {
         f64::cos(self)

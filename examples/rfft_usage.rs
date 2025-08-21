@@ -5,7 +5,7 @@ use kofft::Complex32;
 fn main() {
     // Planner-based real FFT
     let fft = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::new();
+    let mut planner = RfftPlanner::new().expect("planner creation");
     let mut input = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let mut spectrum = vec![Complex32::new(0.0, 0.0); input.len() / 2 + 1];
     let mut scratch = vec![Complex32::new(0.0, 0.0); input.len() / 2];

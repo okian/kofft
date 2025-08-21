@@ -15,7 +15,7 @@ fn rfft_matches_scalar() {
     let mut simd_out = vec![Complex32::new(0.0, 0.0); size / 2 + 1];
     let mut scratch = vec![Complex32::new(0.0, 0.0); size / 2];
     let fft_scalar = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::<f32>::new();
+    let mut planner = RfftPlanner::<f32>::new().unwrap();
     planner
         .rfft_with_scratch(
             &fft_scalar,
