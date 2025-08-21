@@ -7,9 +7,10 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::fft::{FftError, ScalarFftImpl};
+use crate::fft::{FftError, FftImpl, FftStrategy, ScalarFftImpl};
 use crate::window::hann;
 use crate::Complex32;
+use std::sync::Mutex;
 
 /// Minimal positive value used to prevent division by zero and logarithm
 /// of zero when converting magnitudes to decibel-based scales.
@@ -59,7 +60,8 @@ pub fn stft_magnitudes(
     hop: usize,
 ) -> Result<(Vec<Vec<f32>>, f32), FftError> {
     let window = hann(win_len);
-    let fft = ScalarFftImpl::<f32>::default();
+    // Wrap the default FFT in a mutex to provide `Sync` for parallel processing.
+    let fft = SyncFft::default();
     let mut frames = vec![vec![]; samples.len().div_ceil(hop)];
     compute_stft(samples, &window, hop, &mut frames, &fft)?;
 
@@ -79,7 +81,76 @@ pub fn stft_magnitudes(
     Ok((mags, max_mag))
 }
 
-fn compute_stft<Fft: crate::fft::FftImpl<f32>>(
+/// Thread-safe wrapper around [`ScalarFftImpl`] allowing shared access across threads.
+#[derive(Default)]
+struct SyncFft(Mutex<ScalarFftImpl<f32>>);
+
+impl FftImpl<f32> for SyncFft {
+    /// Forward FFT through an internal mutex-protected implementation.
+    fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        self.0.lock().unwrap().fft(input)
+    }
+    /// Inverse FFT through the inner implementation.
+    fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+        self.0.lock().unwrap().ifft(input)
+    }
+    /// Delegate strided FFT to the inner implementation.
+    fn fft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
+        self.0.lock().unwrap().fft_strided(input, stride, scratch)
+    }
+    /// Delegate strided IFFT to the inner implementation.
+    fn ifft_strided(
+        &self,
+        input: &mut [Complex32],
+        stride: usize,
+        scratch: &mut [Complex32],
+    ) -> Result<(), FftError> {
+        self.0.lock().unwrap().ifft_strided(input, stride, scratch)
+    }
+    /// Delegate out-of-place strided FFT to the inner implementation.
+    fn fft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        self.0
+            .lock()
+            .unwrap()
+            .fft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+    /// Delegate out-of-place strided IFFT to the inner implementation.
+    fn ifft_out_of_place_strided(
+        &self,
+        input: &[Complex32],
+        in_stride: usize,
+        output: &mut [Complex32],
+        out_stride: usize,
+    ) -> Result<(), FftError> {
+        self.0
+            .lock()
+            .unwrap()
+            .ifft_out_of_place_strided(input, in_stride, output, out_stride)
+    }
+    /// Delegate strategy-based FFT to the inner implementation.
+    fn fft_with_strategy(
+        &self,
+        input: &mut [Complex32],
+        strategy: FftStrategy,
+    ) -> Result<(), FftError> {
+        self.0.lock().unwrap().fft_with_strategy(input, strategy)
+    }
+}
+
+/// Compute the STFT using either the parallel or sequential implementation
+/// depending on feature flags.
+fn compute_stft<Fft: crate::fft::FftImpl<f32> + Sync>(
     signal: &[f32],
     window: &[f32],
     hop: usize,
@@ -245,6 +316,8 @@ pub fn log_scale_bins(values: &[f32], max_bin: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fft::{FftError, FftImpl, FftStrategy, ScalarFftImpl};
+    use std::sync::Mutex;
 
     #[test]
     fn db_conversion_works() {
@@ -287,9 +360,72 @@ mod tests {
         assert!(c[1] > 0 && c[1] < 65535);
     }
 
+    /// FFT wrapper that makes a non-`Sync` implementation safe to share across threads.
+    struct SyncFft(Mutex<ScalarFftImpl<f32>>);
+    impl Default for SyncFft {
+        fn default() -> Self {
+            Self(Mutex::new(ScalarFftImpl::<f32>::default()))
+        }
+    }
+    impl FftImpl<f32> for SyncFft {
+        fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+            self.0.lock().unwrap().fft(input)
+        }
+        fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
+            self.0.lock().unwrap().ifft(input)
+        }
+        fn fft_strided(
+            &self,
+            input: &mut [Complex32],
+            stride: usize,
+            scratch: &mut [Complex32],
+        ) -> Result<(), FftError> {
+            self.0.lock().unwrap().fft_strided(input, stride, scratch)
+        }
+        fn ifft_strided(
+            &self,
+            input: &mut [Complex32],
+            stride: usize,
+            scratch: &mut [Complex32],
+        ) -> Result<(), FftError> {
+            self.0.lock().unwrap().ifft_strided(input, stride, scratch)
+        }
+        fn fft_out_of_place_strided(
+            &self,
+            input: &[Complex32],
+            in_stride: usize,
+            output: &mut [Complex32],
+            out_stride: usize,
+        ) -> Result<(), FftError> {
+            self.0
+                .lock()
+                .unwrap()
+                .fft_out_of_place_strided(input, in_stride, output, out_stride)
+        }
+        fn ifft_out_of_place_strided(
+            &self,
+            input: &[Complex32],
+            in_stride: usize,
+            output: &mut [Complex32],
+            out_stride: usize,
+        ) -> Result<(), FftError> {
+            self.0
+                .lock()
+                .unwrap()
+                .ifft_out_of_place_strided(input, in_stride, output, out_stride)
+        }
+        fn fft_with_strategy(
+            &self,
+            input: &mut [Complex32],
+            strategy: FftStrategy,
+        ) -> Result<(), FftError> {
+            self.0.lock().unwrap().fft_with_strategy(input, strategy)
+        }
+    }
+
+    /// Ensure the helper computes identical results to the direct STFT.
     #[test]
     fn compute_stft_matches_sequential() {
-        use crate::fft::ScalarFftImpl;
         use crate::stft::stft;
         use crate::window::hann;
 
@@ -297,7 +433,7 @@ mod tests {
         let win_len = 4;
         let hop = 2;
         let window = hann(win_len);
-        let fft = ScalarFftImpl::<f32>::default();
+        let fft = SyncFft::default();
         let mut seq = vec![vec![]; signal.len().div_ceil(hop)];
         stft(&signal, &window, hop, &mut seq, &fft).unwrap();
         let mut helper = vec![vec![]; signal.len().div_ceil(hop)];
