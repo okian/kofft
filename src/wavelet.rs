@@ -287,11 +287,14 @@ where
         return Err(WaveletError::EmptyInput);
     }
     if details.is_empty() {
-        return Err(WaveletError::InvalidLevels {
-            requested: 0,
-            max: max_levels(approx.len()),
-        // Zero-level inverse: just return the approximation as is.
+        // Zero-level inverse: just return the approximation unchanged.
         return Ok(approx.to_vec());
+    }
+    if details.len() > max_levels(approx.len()) {
+        return Err(WaveletError::InvalidLevels {
+            requested: details.len(),
+            max: max_levels(approx.len()),
+        });
     }
     let mut current = Vec::with_capacity(approx.len());
     current.extend_from_slice(approx);

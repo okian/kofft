@@ -1010,7 +1010,10 @@ mod tests {
         ));
         let neg_hop = (-1i32) as usize;
         assert!(matches!(
-        let overflow_hop = (-1i32) as usize;
+            stft(&signal, &window, neg_hop, &mut frames, &fft),
+            Err(FftError::InvalidHopSize)
+        ));
+        let overflow_hop = usize::MAX;
         assert!(matches!(
             stft(&signal, &window, overflow_hop, &mut frames, &fft),
             Err(FftError::InvalidHopSize)
