@@ -1,6 +1,7 @@
 import React, { CSSProperties, ReactNode, useMemo } from "react";
 import { useMinimalFades } from "./useMinimalFades";
 import { LAYOUT_GAP_REM } from "../../ui/Spacing";
+import { THEME_TRANSITION_CLASS } from "../../ui/ThemeTransitionClass";
 
 /** Height of the layout viewport ensuring full-screen coverage. */
 const FULL_HEIGHT = "100vh" as const;
@@ -49,9 +50,18 @@ export function JapaneseLayout({
 
   return (
     <div style={containerStyle}>
-      <header style={fadeStyle}>{header}</header>
-      <main style={{ ...mainStyle, ...fadeStyle }}>{children}</main>
-      <footer style={fadeStyle}>{footer}</footer>
+      <header className={THEME_TRANSITION_CLASS} style={fadeStyle}>
+        {header}
+      </header>
+      <main
+        className={THEME_TRANSITION_CLASS}
+        style={{ ...mainStyle, ...fadeStyle }}
+      >
+        {children}
+      </main>
+      <footer className={THEME_TRANSITION_CLASS} style={fadeStyle}>
+        {footer}
+      </footer>
     </div>
   );
 }
