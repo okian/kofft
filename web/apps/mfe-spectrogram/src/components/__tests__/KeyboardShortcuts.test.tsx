@@ -2,6 +2,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import App from "../../App";
+import * as snapshotModule from "@/shared/utils/snapshot";
+import { conditionalToast } from "@/shared/utils/toast";
 
 // Mock file input
 const createMockFile = (
@@ -610,6 +612,24 @@ describe("Keyboard Shortcut Functionality", () => {
 
       // App should still be functional
       expect(screen.getByTestId("play-pause-icon")).toBeInTheDocument();
+    });
+  });
+
+  describe("Snapshot Shortcut", () => {
+    it("captures a snapshot with Ctrl+Shift+S", async () => {
+      // Spy on snapshot utility and toast to verify integration.
+      const snapSpy = vi
+        .spyOn(snapshotModule, "takeSnapshot")
+        .mockResolvedValue(true);
+      const toastSpy = vi.spyOn(conditionalToast, "success");
+
+      render(<App />);
+      const appContainer = screen.getByTestId("app-container");
+      appContainer.focus();
+      await user.keyboard("{Control>}{Shift>}s{/Shift}{/Control}");
+
+      expect(snapSpy).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalled();
     });
   });
 });

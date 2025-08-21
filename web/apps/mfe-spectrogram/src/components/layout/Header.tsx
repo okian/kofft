@@ -6,6 +6,8 @@ import { useMicrophone } from "@/shared/hooks/useMicrophone";
 import { useScreenSize } from "@/shared/hooks/useScreenSize";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
 import { useKeyboardShortcuts } from "@shared/hooks/useKeyboardShortcuts";
+import { takeSnapshot as captureSnapshot } from "@/shared/utils/snapshot";
+import { conditionalToast } from "@/shared/utils/toast";
 import { SPACING, TYPOGRAPHY, GRID } from "@/shared/layout";
 import type { Theme } from "@/shared/types";
 import {
@@ -89,10 +91,14 @@ export const Header: React.FC = () => {
     await microphone.toggleMicrophone();
   }, [microphone]);
 
-  // Take snapshot
-  const takeSnapshot = useCallback(() => {
-    // TODO: Implement snapshot functionality
-    console.log("Snapshot feature not yet implemented");
+  /** Capture the current spectrogram canvas and notify the user. */
+  const handleSnapshot = useCallback(async () => {
+    const ok = await captureSnapshot();
+    if (ok) {
+      conditionalToast.success("Snapshot saved");
+    } else {
+      conditionalToast.error("Snapshot failed");
+    }
   }, []);
 
   // Keyboard shortcuts
@@ -256,7 +262,7 @@ export const Header: React.FC = () => {
         {/* Snapshot button */}
         {buttonConfig.showSnapshotButton && (
           <button
-            onClick={takeSnapshot}
+            onClick={handleSnapshot}
             className={cn(
               "p-2 rounded-lg transition-colors duration-200",
               "hover:bg-neutral-800 active:bg-neutral-700",
