@@ -106,7 +106,14 @@ export async function fuzzyScores(
   // JS fallback: compute scores sequentially to avoid unbounded concurrency.
   const results: number[] = [];
   for (const c of candidates) {
-    results.push(await fuzzyScore(pattern, c));
+  // JS fallback: compute scores in batches to avoid unbounded concurrency.
+  const results: number[] = [];
+  for (let i = 0; i < candidates.length; i += batchSize) {
+    const batch = candidates.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map((c) => fuzzyScore(pattern, c))
+    );
+    results.push(...batchResults);
   }
   return results;
 }
