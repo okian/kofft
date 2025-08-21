@@ -1,6 +1,7 @@
 //! Discrete Cosine Transform (DCT) module
 //! Supports DCT-I through DCT-IV for f32 (real input)
 //! no_std + alloc compatible
+#![allow(clippy::items_after_test_module)] // tests are defined near the top for consolidated planner verification
 
 extern crate alloc;
 use crate::fft::{Complex32, FftError, ScalarFftImpl};
