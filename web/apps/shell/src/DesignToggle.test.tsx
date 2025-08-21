@@ -2,9 +2,9 @@ import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
 import { DesignProvider } from "./DesignContext";
-import { DesignToggle } from "./DesignToggle";
+import { DesignToggle, applyDesign, applyMode, parseDesign, parseMode } from "./DesignToggle";
+import type { Design, Mode } from "./designs";
 import { PALETTES } from "./designs";
-import { parseDesign, parseMode } from "./DesignToggle";
 
 /**
  * Convenience helper rendering the toggle within its provider. The wrapper
@@ -85,5 +85,43 @@ describe("DesignToggle", () => {
    */
   it("throws on invalid mode", () => {
     expect(() => parseMode("weird" as string)).toThrow(/Unknown mode/);
+  });
+
+  /**
+   * Applying a known design should update the provided setter.
+   */
+  it("applies valid design selection", () => {
+    let selected: Design | undefined;
+    applyDesign("bauhaus", (d) => {
+      selected = d;
+    });
+    expect(selected).toBe("bauhaus");
+  });
+
+  /**
+   * Attempting to apply an unknown design must throw immediately.
+   */
+  it("rejects invalid design selection", () => {
+    expect(() => applyDesign("mystery" as string, () => {})).toThrow(
+      /Unknown design/,
+    );
+  });
+
+  /**
+    * Applying a valid mode should reach the setter unchanged.
+    */
+  it("applies valid mode selection", () => {
+    let selected: Mode | undefined;
+    applyMode("dark", (m) => {
+      selected = m;
+    });
+    expect(selected).toBe("dark");
+  });
+
+  /**
+   * Unknown modes are rejected to prevent unsupported UI states.
+   */
+  it("rejects invalid mode selection", () => {
+    expect(() => applyMode("pink" as string, () => {})).toThrow(/Unknown mode/);
   });
 });
