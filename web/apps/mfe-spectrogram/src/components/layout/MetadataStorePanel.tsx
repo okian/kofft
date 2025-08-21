@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Trash2, Database, BarChart3, RefreshCw, AlertTriangle } from 'lucide-react'
-import { metadataStore } from '@/utils/metadataStore'
-import { conditionalToast } from '@/utils/toast'
+import { metadataStore } from '@/shared/utils/metadataStore'
+import { conditionalToast } from '@/shared/utils/toast'
 
 interface DatabaseStats {
   metadataCount: number

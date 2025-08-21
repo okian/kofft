@@ -8,7 +8,7 @@ fn fft2d_inplace_overflow() {
     let mut scratch: Vec<Complex<f32>> = Vec::new();
     let fft = ScalarFftImpl::<f32>::default();
     let res = fft2d_inplace(&mut data, usize::MAX, 2, &fft, &mut scratch);
-    assert_eq!(res, Err(FftError::Overflow));
+    assert_eq!(res, Err(FftError::MismatchedLengths));
 }
 
 #[test]

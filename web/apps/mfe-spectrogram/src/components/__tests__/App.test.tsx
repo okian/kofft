@@ -59,7 +59,7 @@ vi.mock("@/shared/hooks/useScreenSize", () => ({
   useScreenSize: () => ({ isMobile: false, isTablet: false }),
 }));
 
-vi.mock("../../utils/wasm", () => ({
+vi.mock("@/shared/utils/wasm", () => ({
   initWASM: vi.fn(async () => ({})),
 }));
 

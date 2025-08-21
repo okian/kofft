@@ -29,12 +29,15 @@ static A: CountingAlloc = CountingAlloc;
 /// length outside of [`fuzzy_score`] does not introduce extra allocations.
 #[test]
 fn fuzzy_match_allocations() {
+    let pattern = "abc";
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_score("abc", "abc", 3);
+    let pattern = "abc";
+    let pattern_len = pattern.chars().count();
+    fuzzy_score(pattern, "abc", pattern_len);
     let score_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_match("abc", 3, "abc");
+    fuzzy_match(pattern, pattern_len, "abc");
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     assert_eq!(

@@ -27,8 +27,8 @@ import {
   RefreshRate,
 } from "@/shared/types";
 import { THEME_COLORS } from "@/shared/theme";
-import { cn } from "@/utils/cn";
-import { conditionalToast, directToast } from "@/utils/toast";
+import { cn } from "@/shared/utils/cn";
+import { conditionalToast, directToast } from "@/shared/utils/toast";
 import { MetadataStorePanel } from "./MetadataStorePanel";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { LUTSettingsPanel } from "@/features/settings/LUTSettingsPanel";
