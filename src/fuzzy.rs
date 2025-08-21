@@ -24,6 +24,7 @@ pub const MATCH_THRESHOLD_DIVISOR: usize = 2;
 ///
 /// Panics if either input exceeds [`MAX_INPUT_LENGTH`].
 pub fn fuzzy_score(pattern: &str, text: &str, pattern_len: usize) -> usize {
+    // Count characters without allocating to keep memory usage minimal.
     let text_len = text.chars().count();
 
     if pattern_len > MAX_INPUT_LENGTH || text_len > MAX_INPUT_LENGTH {
