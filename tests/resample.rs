@@ -6,8 +6,7 @@ use std::time::Instant;
 /// This intentionally slow implementation helps verify that the linear
 /// interpolator performs at least as well in terms of error while providing a
 /// simple reference for boundary behaviour.
-
-
+///
 /// Source rate used for extreme upsampling tests.
 const EXTREME_LOW_RATE: f32 = 1.0;
 /// Destination rate used for extreme upsampling tests.

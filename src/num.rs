@@ -458,9 +458,10 @@ impl From<Vec<Complex32>> for ComplexVec {
 
 impl From<ComplexVec> for Vec<Complex32> {
     fn from(cv: ComplexVec) -> Self {
-        cv.re
-            .into_iter()
-            .zip(cv.im.into_iter())
+        // Destructure to move the internal vectors without redundant `into_iter` calls.
+        let ComplexVec { re, im } = cv;
+        re.into_iter()
+            .zip(im)
             .map(|(r, i)| Complex32::new(r, i))
             .collect()
     }

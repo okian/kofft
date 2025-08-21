@@ -9,9 +9,11 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 /// Convenience alias for a two-dimensional `Vec`.
+#[allow(dead_code)] // Retained for future expansion and documentation.
 type Vec2<T> = Vec<Vec<T>>;
 
 /// Convenience alias for a three-dimensional `Vec`.
+#[allow(dead_code)] // Retained for future expansion and documentation.
 type Vec3<T> = Vec<Vec<Vec<T>>>;
 use core::fmt;
 
@@ -24,6 +26,7 @@ pub const HAAR_SCALE: f32 = 0.5;
 pub type BatchOutput = (Vec<Vec<f32>>, Vec<Vec<f32>>);
 /// Output of [`multi_level_forward_batch`]: per-input averages and per-level
 /// detail coefficients.
+#[allow(dead_code)] // Currently unused but documented for potential future APIs.
 pub type MultiLevelBatchOutput = (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>);
 /// Daubechies-4 low-pass decomposition filter coefficients.
 /// Each value represents a tap of the scaling filter used during the forward transform.
@@ -89,10 +92,10 @@ pub const DB2_ANALYSIS_LOW: [f32; 4] = [
 /// Daubechies-2 (db2) high-pass analysis filter coefficients.
 /// These coefficients are used during the forward transform to compute detail components.
 pub const DB2_ANALYSIS_HIGH: [f32; 4] = [
-    0.019787513117910776,  // g0: first detail coefficient
-    0.4463951772316719,    // g1: second detail coefficient
-    -0.5054728575456481,   // g2: third detail coefficient
-    0.16290171400361862,   // g3: fourth detail coefficient
+    0.019787513117910776, // g0: first detail coefficient
+    0.4463951772316719,   // g1: second detail coefficient
+    -0.5054728575456481,  // g2: third detail coefficient
+    0.16290171400361862,  // g3: fourth detail coefficient
 ];
 
 /// Daubechies-2 (db2) low-pass synthesis filter coefficients.
@@ -107,10 +110,10 @@ pub const DB2_SYNTHESIS_LOW: [f32; 4] = [
 /// Daubechies-2 (db2) high-pass synthesis filter coefficients.
 /// These coefficients are used during the inverse transform to reconstruct detail components.
 pub const DB2_SYNTHESIS_HIGH: [f32; 4] = [
-    0.019787513117910776,  // g0: first reconstruction detail coefficient
-    0.4463951772316719,    // g1: second reconstruction detail coefficient
-    -0.5054728575456481,   // g2: third reconstruction detail coefficient
-    0.16290171400361862,   // g3: fourth reconstruction detail coefficient
+    0.019787513117910776, // g0: first reconstruction detail coefficient
+    0.4463951772316719,   // g1: second reconstruction detail coefficient
+    -0.5054728575456481,  // g2: third reconstruction detail coefficient
+    0.16290171400361862,  // g3: fourth reconstruction detail coefficient
 ];
 
 /// Errors produced by wavelet operations.
@@ -144,10 +147,12 @@ impl std::error::Error for WaveletError {}
 
 /// Output of a batch forward transform: averages and detail coefficients for
 /// each input signal.
+#[allow(dead_code)] // Alias kept for symmetry with `MultiLevelForwardOutput`.
 type BatchForwardOutput = (Vec<Vec<f32>>, Vec<Vec<f32>>);
 
 /// Output of a batch multi-level forward transform: final approximations and
 /// per-level detail coefficients for each input signal.
+#[allow(dead_code)] // Alias kept for potential reuse in API revisions.
 type MultiLevelForwardOutput = (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>);
 
 /// Forward Haar wavelet transform (single level)
@@ -193,7 +198,7 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
 pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
-#[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
