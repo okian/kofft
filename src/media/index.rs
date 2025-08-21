@@ -6,6 +6,14 @@
 //! entry.
 
 #[cfg(feature = "std")]
+/// Default buffer size, in bytes, used when hashing files.
+///
+/// A larger buffer may improve I/O throughput at the cost of stack space.
+/// Adjust this constant if profiling indicates different tuning is required
+/// for your target environment.
+pub const HASH_BUF_SIZE: usize = 8192;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
 #[cfg(feature = "std")]
 use std::fs::File;
@@ -36,13 +44,33 @@ impl SongIndex {
         Self::default()
     }
 
-    /// Compute the BLAKE3 hash of a file.
+    /// Compute the BLAKE3 hash of a file using the default buffer size
+    /// [`HASH_BUF_SIZE`].
     fn hash_file(path: &Path) -> io::Result<[u8; 32]> {
+        let mut buf = [0u8; HASH_BUF_SIZE];
+        Self::hash_file_with_buffer(path, &mut buf)
+    }
+
+    /// Compute the BLAKE3 hash of a file using the caller-provided buffer.
+    ///
+    /// Supplying a custom buffer allows tuning of I/O performance for
+    /// different environments while avoiding repeated allocations.
+    ///
+    /// # Errors
+    /// Returns an [`io::Error`] with [`io::ErrorKind::InvalidInput`] if the
+    /// provided buffer is empty or if reading the file fails.
+    fn hash_file_with_buffer(path: &Path, buf: &mut [u8]) -> io::Result<[u8; 32]> {
+        if buf.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "buffer must not be empty",
+            ));
+        }
+
         let mut file = File::open(path)?;
         let mut hasher = blake3::Hasher::new();
-        let mut buf = [0u8; 8192];
         loop {
-            let n = file.read(&mut buf)?;
+            let n = file.read(buf)?;
             if n == 0 {
                 break;
             }
@@ -131,5 +159,16 @@ mod tests {
         std::fs::remove_file(&p).unwrap();
         let id2 = idx.identify(&p).unwrap();
         assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn empty_buffer_errors() {
+        let mut idx = SongIndex::new();
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(b"data").unwrap();
+        let mut buf: [u8; 0] = [];
+        assert!(SongIndex::hash_file_with_buffer(file.path(), &mut buf).is_err());
+        // ensure normal hashing still works after error case
+        assert!(idx.index_song(file.path()).is_ok());
     }
 }
