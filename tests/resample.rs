@@ -7,7 +7,6 @@ use std::time::Instant;
 /// interpolator performs at least as well in terms of error while providing a
 /// simple reference for boundary behaviour.
 
-
 /// Source rate used for extreme upsampling tests.
 const EXTREME_LOW_RATE: f32 = 1.0;
 /// Destination rate used for extreme upsampling tests.
@@ -16,6 +15,16 @@ const EXTREME_HIGH_RATE: f32 = 1_000.0;
 const NAN_RATE: f32 = f32::NAN;
 /// Example invalid rate representing an infinite value.
 const INF_RATE: f32 = f32::INFINITY;
+
+/// Relative tolerance mirroring the library's resampling threshold.
+///
+/// Differences between sample rates smaller than `SRC_RATE * REL_TOL` should
+/// bypass resampling, serving as a guard against floating point noise in tests.
+const REL_TOL: f32 = 1e-6;
+
+/// Scaling factor used to produce a noticeable rate difference that must
+/// trigger resampling.
+const LARGE_DIFF_RATIO: f32 = 1.01;
 
 fn naive_nearest(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
     let ratio = src_rate / dst_rate;
@@ -72,6 +81,35 @@ fn linear_resample_handles_trailing_sample() {
     let input = vec![0.0, 1.0, 0.0];
     let output = linear_resample(&input, 3.0, 6.0).unwrap();
     assert_eq!(output.last().copied(), input.last().copied());
+}
+
+/// Verify that identical sample rates bypass any processing.
+#[test]
+fn linear_resample_skips_equal_rates() {
+    let input = vec![0.0, 1.0, 2.0];
+    let rate = 48_000.0;
+    let output = linear_resample(&input, rate, rate).unwrap();
+    assert_eq!(output, input);
+}
+
+/// Ensure the relative tolerance prevents tiny rate differences from resampling
+/// while sufficiently large differences still trigger processing.
+#[test]
+fn linear_resample_honours_relative_tolerance() {
+    let input = vec![0.0, 1.0, 2.0];
+    let src_rate = 48_000.0;
+    let small_diff = src_rate * (1.0 + REL_TOL / 2.0);
+    let large_diff = src_rate * LARGE_DIFF_RATIO;
+
+    // Differences within the tolerance should be treated as identical and avoid
+    // resampling, yielding an output exactly matching the input.
+    let small_output = linear_resample(&input, src_rate, small_diff).unwrap();
+    assert_eq!(small_output, input);
+
+    // Larger differences must perform resampling and therefore alter the output
+    // length and/or values.
+    let large_output = linear_resample(&input, src_rate, large_diff).unwrap();
+    assert_ne!(large_output, input);
 }
 
 /// Rough performance check to catch egregious slowdowns.
