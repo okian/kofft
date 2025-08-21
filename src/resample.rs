@@ -4,13 +4,20 @@ use core::cmp;
 use core::f32;
 use core::fmt;
 
-/// Absolute tolerance used when comparing sample rates.
+/// Absolute tolerance used when validating sample rates.
 ///
-/// When the source and destination rates differ by less than this epsilon we
-/// treat them as equal and avoid doing any work.  Using a named constant avoids
-/// scattering `f32::EPSILON` throughout the code and clearly documents the
-/// comparison threshold.
+/// Extremely small positive rates are effectively equivalent to zero and lead
+/// to unstable ratios.  A named constant documents this boundary and avoids
+/// sprinkling `f32::EPSILON` throughout the code base.
 const RATE_EPSILON: f32 = f32::EPSILON;
+
+/// Relative tolerance used when comparing source and destination rates.
+///
+/// Resampling is skipped when the absolute difference between `src_rate` and
+/// `dst_rate` is less than or equal to `src_rate * RATE_REL_TOL`, preventing
+/// unnecessary work for nearly identical rates while still avoiding floating
+/// point noise.
+const RATE_REL_TOL: f32 = 1e-6;
 
 /// Minimum number of channels accepted by the resampler.
 ///
@@ -99,10 +106,10 @@ pub fn linear_resample_channels(
     dst_rate: f32,
     channels: usize,
 ) -> Result<Vec<f32>, ResampleError> {
-    if !src_rate.is_finite() || src_rate <= 0.0 {
+    if !src_rate.is_finite() || src_rate <= RATE_EPSILON {
         return Err(ResampleError::InvalidSrcRate);
     }
-    if !dst_rate.is_finite() || dst_rate <= 0.0 {
+    if !dst_rate.is_finite() || dst_rate <= RATE_EPSILON {
         return Err(ResampleError::InvalidDstRate);
     }
     if input.is_empty() {
@@ -115,7 +122,11 @@ pub fn linear_resample_channels(
         return Err(ResampleError::MisalignedChannels);
     }
 
-    if (src_rate - dst_rate).abs() < RATE_EPSILON {
+    // Skip processing when the source and destination rates are effectively
+    // identical under a relative tolerance.  This guards against doing expensive
+    // work for minute differences caused by floating point rounding.
+    let abs_diff = (src_rate - dst_rate).abs();
+    if abs_diff <= src_rate * RATE_REL_TOL {
         return Ok(input.to_vec());
     }
 

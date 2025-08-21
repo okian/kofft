@@ -1,5 +1,5 @@
 use kofft::fft::{Complex32, FftError, ScalarFftImpl};
-use kofft::rfft::{rfft_stack, RfftPlanner, MAX_CACHE_ENTRIES, STRIDE};
+use kofft::rfft::{rfft_stack, RfftPlanner, STRIDE};
 
 /// Helper to build a zero-filled complex buffer of length `n`.
 fn zero_complex(len: usize) -> Vec<Complex32> {
