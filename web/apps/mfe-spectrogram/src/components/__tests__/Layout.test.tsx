@@ -71,7 +71,7 @@ vi.mock("@/shared/hooks/useAudioFile", () => ({
   }),
 }));
 
-vi.mock("../../utils/wasm", () => ({
+vi.mock("@/shared/utils/wasm", () => ({
   initWASM: vi.fn().mockResolvedValue({}),
 }));
 

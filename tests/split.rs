@@ -1,3 +1,4 @@
+// Test intent: verifies split behavior including edge cases.
 use kofft::fft::{
     complex32_to_split, fft_split_complex, ifft_split_complex, Complex32, FftImpl, ScalarFftImpl,
     SplitComplex32,

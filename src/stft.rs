@@ -79,11 +79,14 @@ use rayon::prelude::*;
 /// amplification when overlap-adding STFT frames. Any accumulated window power
 /// below this threshold is treated as silence.
 const NORM_EPSILON: f32 = 1e-8;
-
 /// Minimum allowed window length to ensure meaningful analysis.
 const MIN_WINDOW_LEN: usize = 1;
 /// Minimum hop size required to advance the analysis window.
 const MIN_HOP_SIZE: usize = 1;
+/// Extra padding multiplier used when allocating internal buffers for streaming
+/// ISTFT. The padding ensures enough headroom for overlap-add operations without
+/// frequent reallocations while keeping memory usage bounded.
+const STREAM_PAD_MULTIPLIER: usize = 2;
 
 /// Compute the STFT of a real-valued signal.
 ///
@@ -93,7 +96,13 @@ const MIN_HOP_SIZE: usize = 1;
 /// - `output`: output frames (each frame is Vec<Complex32> of length win_len)
 /// - `fft`: FFT implementation to reuse cached plans
 ///
-/// Returns Ok(()) on success, or FftError on failure.
+/// Returns `Ok(())` on success.
+///
+/// # Errors
+///
+/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds `window.len()`.
+/// - [`FftError::MismatchedLengths`] if `output` does not contain exactly the
+///   number of frames required or the window is empty.
 pub fn stft<Fft: FftImpl<f32>>(
     signal: &[f32],
     window: &[f32],
@@ -101,17 +110,17 @@ pub fn stft<Fft: FftImpl<f32>>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size < MIN_HOP_SIZE {
+    if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
     }
-    if window.len() < MIN_WINDOW_LEN {
-        return Err(FftError::EmptyInput);
-    }
-    let required = signal.len().div_ceil(hop_size);
-    if output.len() < required {
+    let win_len = window.len();
+    if win_len == 0 {
         return Err(FftError::MismatchedLengths);
     }
-    let win_len = window.len();
+    let required = signal.len().div_ceil(hop_size);
+    if output.len() != required {
+        return Err(FftError::MismatchedLengths);
+    }
     for (frame_idx, frame) in output.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
         frame.resize(win_len, Complex32::new(0.0, 0.0));
@@ -290,7 +299,14 @@ mod parallel_tests {
 /// - `scratch`: scratch buffer for overlap-add normalization (length = `output.len()`)
 /// - `fft`: FFT implementation to reuse cached plans
 ///
-/// Returns Ok(()) on success, or [`FftError`] on failure.
+/// Returns `Ok(())` on success.
+///
+/// # Errors
+///
+/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds
+///   `window.len()`.
+/// - [`FftError::MismatchedLengths`] if frame, window, or buffer sizes are
+///   inconsistent.
 pub fn istft<Fft: FftImpl<f32>>(
     frames: &mut [alloc::vec::Vec<Complex32>],
     window: &[f32],
@@ -299,13 +315,24 @@ pub fn istft<Fft: FftImpl<f32>>(
     scratch: &mut [f32],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size == 0 {
+    if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
     }
     if scratch.len() != output.len() {
         return Err(FftError::MismatchedLengths);
     }
     let win_len = window.len();
+    if win_len == 0 {
+        return Err(FftError::MismatchedLengths);
+    }
+    let required = if frames.is_empty() {
+        0
+    } else {
+        (frames.len() - 1) * hop_size + win_len
+    };
+    if output.len() != required {
+        return Err(FftError::MismatchedLengths);
+    }
     // Clear normalization buffer before accumulating window power.
     scratch.fill(0.0);
     // Overlap-add
@@ -316,10 +343,8 @@ pub fn istft<Fft: FftImpl<f32>>(
         }
         fft.ifft(frame)?;
         for i in 0..win_len {
-            if start + i < output.len() {
-                output[start + i] += frame[i].re * window[i];
-                scratch[start + i] += window[i] * window[i];
-            }
+            output[start + i] += frame[i].re * window[i];
+            scratch[start + i] += window[i] * window[i];
         }
     }
     // Normalize by window sum
@@ -347,6 +372,9 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
     /// Validates that `window` is non-empty and that `hop_size` advances by at
     /// least one sample. Returns [`FftError::InvalidHopSize`] or
     /// [`FftError::EmptyInput`] on invalid parameters.
+    /// Create a streaming STFT iterator over `signal`.
+    ///
+    /// Validates hop size and window length to prevent misaligned frames.
     pub fn new(
         signal: &'a [f32],
         window: &'a [f32],
@@ -372,6 +400,10 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
     /// Returns `Ok(true)` when a frame is produced or `Ok(false)` after the
     /// signal is exhausted. Errors if `out` does not match the configured
     /// window length.
+    /// Compute the next FFT frame into `out`.
+    ///
+    /// Returns `Ok(true)` while frames remain or `Ok(false)` when the end of
+    /// the signal is reached. Errors if `out` does not match the window length.
     pub fn next_frame(&mut self, out: &mut [Complex32]) -> Result<bool, FftError> {
         let win_len = self.window.len();
         if out.len() != win_len {
@@ -415,9 +447,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
 /// - `output`: pre-allocated buffer for FFT frames
 /// - `fft`: FFT implementation reused across frames
 ///
-/// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero or
-/// [`FftError::MismatchedLengths`] when `output` does not contain enough
-/// frames.
+/// # Errors
+///
+/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds `window.len()`.
+/// - [`FftError::MismatchedLengths`] when `output` does not contain exactly the
+///   required number of frames or the window is empty.
 ///
 /// # Examples
 /// ```ignore
@@ -437,17 +471,18 @@ pub fn parallel<Fft: FftImpl<f32> + Sync>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size < MIN_HOP_SIZE {
+    use rayon::prelude::*;
+    if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
     }
-    if window.len() < MIN_WINDOW_LEN {
-        return Err(FftError::EmptyInput);
-    }
-    let required = signal.len().div_ceil(hop_size);
-    if output.len() < required {
+    let win_len = window.len();
+    if win_len == 0 {
         return Err(FftError::MismatchedLengths);
     }
-    let win_len = window.len();
+    let required = signal.len().div_ceil(hop_size);
+    if output.len() != required {
+        return Err(FftError::MismatchedLengths);
+    }
     // Pre-size frames to avoid repeated allocations in the parallel loop
     for frame in output.iter_mut() {
         frame.resize(win_len, Complex32::zero());
@@ -484,7 +519,11 @@ pub fn parallel<Fft: FftImpl<f32> + Sync>(
 /// * `output` - buffer to receive the reconstructed signal
 /// * `fft` - FFT implementation to reuse cached plans
 ///
-/// Returns [`FftError::InvalidHopSize`] if `hop_size` is zero.
+/// # Errors
+///
+/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds
+///   `window.len()`.
+/// - [`FftError::MismatchedLengths`] if frame or buffer sizes are inconsistent.
 ///
 /// # Examples
 /// ```ignore
@@ -505,59 +544,71 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     if hop_size < MIN_HOP_SIZE {
+    if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
     }
     if window.len() < MIN_WINDOW_LEN {
         return Err(FftError::EmptyInput);
     }
     let win_len = window.len();
+    if win_len == 0 {
+        return Err(FftError::MismatchedLengths);
+    }
+    let required = if frames.is_empty() {
+        0
+    } else {
+        (frames.len() - 1) * hop_size + win_len
+    };
+    if output.len() != required {
+        return Err(FftError::MismatchedLengths);
+    }
     type Accum = (usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>);
     type AccumResult = Result<alloc::vec::Vec<Accum>, FftError>;
-    let partials: AccumResult = rayon_pool().install(|| {
-        frames
-            .par_iter()
-            .enumerate()
-            .map_init(
-                || {
-                    (
-                        vec![Complex32::new(0.0, 0.0); win_len],
-                        vec![0.0f32; win_len],
-                        vec![0.0f32; win_len],
-                    )
-                },
-                |(time_buf, acc, norm), (frame_idx, frame)| {
-                    let start = frame_idx * hop_size;
-                    time_buf.copy_from_slice(frame);
-                    fft.ifft(time_buf)?;
-                    // `acc` and `norm` are emptied by `take` at the end of the previous
-                    // iteration. Resize them here to restore capacity without reallocating.
-                    if acc.len() < win_len {
-                        acc.resize(win_len, 0.0);
-                        norm.resize(win_len, 0.0);
-                    }
-                    for i in 0..win_len {
-                        acc[i] = time_buf[i].re * window[i];
-                        norm[i] = window[i] * window[i];
-                    }
-                    // Move the accumulated data out for this frame while leaving the
-                    // buffers empty for reuse in the next iteration.
-                    let acc_frame = take(acc);
-                    let norm_frame = take(norm);
-                    Ok((start, acc_frame, norm_frame))
-                },
-            )
-            .collect()
-    });
+    let partials: AccumResult = frames
+        .par_iter()
+        .enumerate()
+        .map_init(
+            || {
+                (
+                    vec![Complex32::new(0.0, 0.0); win_len],
+                    vec![0.0f32; win_len],
+                    vec![0.0f32; win_len],
+                )
+            },
+            |(time_buf, acc, norm), (frame_idx, frame)| {
+                if frame.len() != win_len {
+                    return Err(FftError::MismatchedLengths);
+                }
+                let start = frame_idx * hop_size;
+                time_buf.copy_from_slice(frame);
+                fft.ifft(time_buf)?;
+                // `acc` and `norm` are emptied by `take` at the end of the previous
+                // iteration. Resize them here to restore capacity without reallocating.
+                if acc.len() < win_len {
+                    acc.resize(win_len, 0.0);
+                    norm.resize(win_len, 0.0);
+                }
+                for i in 0..win_len {
+                    acc[i] = time_buf[i].re * window[i];
+                    norm[i] = window[i] * window[i];
+                }
+                // Move the accumulated data out for this frame while leaving the
+                // buffers empty for reuse in the next iteration.
+                let acc_frame = take(acc);
+                let norm_frame = take(norm);
+                Ok((start, acc_frame, norm_frame))
+            },
+        )
+        .collect();
     let partials = partials?;
     output.fill(0.0);
     let mut norm = alloc::vec::Vec::with_capacity(output.len());
     norm.resize(output.len(), 0.0);
     for (start, acc_frame, norm_frame) in partials {
         for i in 0..win_len {
-            if start + i < output.len() {
-                output[start + i] += acc_frame[i];
-                norm[start + i] += norm_frame[i];
-            }
+            let idx = start + i;
+            output[idx] += acc_frame[i];
+            norm[idx] += norm_frame[i];
         }
     }
     for i in 0..output.len() {
@@ -663,14 +714,15 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         window: &'a [f32],
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
-        if hop < MIN_HOP_SIZE {
+        if win_len < MIN_WINDOW_LEN || window.len() != win_len {
+        if hop == 0 || hop > win_len {
             return Err(FftError::InvalidHopSize);
         }
-        if win_len < MIN_WINDOW_LEN || window.len() != win_len {
+        if window.len() != win_len || win_len == 0 {
             return Err(FftError::MismatchedLengths);
         }
-        let buffer = vec![0.0f32; win_len + hop * 2];
-        let norm_buf = vec![0.0f32; win_len + hop * 2];
+        let buffer = vec![0.0f32; win_len + hop * STREAM_PAD_MULTIPLIER];
+        let norm_buf = vec![0.0f32; win_len + hop * STREAM_PAD_MULTIPLIER];
         Ok(Self {
             win_len,
             hop,
@@ -688,7 +740,8 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     ///
     /// Returns a slice of length `hop` containing the next chunk of time-domain
     /// signal. Remaining samples after all frames have been pushed can be
-    /// retrieved via [`flush`].
+    /// retrieved via [`flush`]. Errors if the provided frame length does not
+    /// match `win_len`.
     pub fn push_frame(&mut self, frame: &mut [crate::fft::Complex32]) -> Result<&[f32], FftError> {
         if frame.len() != self.win_len {
             return Err(FftError::MismatchedLengths);
@@ -772,6 +825,8 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 mod tests {
     use super::*;
     // Only the complex type and scalar FFT implementation are required for tests.
+    #[cfg(feature = "parallel")]
+    use crate::fft::FftStrategy;
     use crate::fft::{Complex32, ScalarFftImpl};
 
     #[test]
@@ -821,10 +876,10 @@ mod tests {
         }
         let fft = ScalarFftImpl::<f32>::default();
         stft(&signal, &window, hop, &mut frames, &fft).unwrap();
-        let mut output = vec![0.0f32; n];
-        let mut scratch = vec![0.0f32; n];
+        let mut output = vec![0.0f32; n + win_len - hop];
+        let mut scratch = vec![0.0f32; output.len()];
         istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
-        for (a, b) in signal.iter().zip(output.iter()) {
+        for (a, b) in signal.iter().zip(output.iter().take(n)) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
     }
@@ -908,9 +963,9 @@ mod tests {
         }
         let fft = SyncFft::default();
         parallel(&signal, &window, hop, &mut frames, &fft).unwrap();
-        let mut output = vec![0.0f32; n];
+        let mut output = vec![0.0f32; n + win_len - hop];
         inverse_parallel(&frames, &window, hop, &mut output, &fft).unwrap();
-        for (a, b) in signal.iter().zip(output.iter()) {
+        for (a, b) in signal.iter().zip(output.iter().take(n)) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
     }
@@ -935,10 +990,11 @@ mod streaming_tests {
         while stft_stream.next_frame(&mut frame).unwrap() {
             frames.push(frame.clone());
         }
-        let mut output = vec![0.0f32; signal.len()];
+        let win_len = window.len();
+        let mut output = vec![0.0f32; signal.len() + win_len - hop];
         let mut scratch = vec![0.0f32; output.len()];
         istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
-        for (a, b) in signal.iter().zip(output.iter()) {
+        for (a, b) in signal.iter().zip(output.iter().take(signal.len())) {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
     }
@@ -954,12 +1010,12 @@ mod edge_case_tests {
     fn test_empty_signal_batch() {
         let signal: [f32; 0] = [];
         let window = [1.0, 1.0, 1.0, 1.0];
-        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let mut frames: Vec<Vec<Complex32>> = Vec::new();
         let fft = ScalarFftImpl::<f32>::default();
         let res = stft(&signal, &window, 2, &mut frames, &fft);
         assert!(res.is_ok());
-        let mut output = vec![0.0f32; 0];
-        let mut scratch = vec![0.0f32; 0];
+        let mut output = vec![];
+        let mut scratch = vec![];
         let res = istft(&mut frames, &window, 2, &mut output, &mut scratch, &fft);
         assert!(res.is_ok());
     }
@@ -973,7 +1029,7 @@ mod edge_case_tests {
         let mut scratch = vec![0.0f32; output.len()];
         let fft = ScalarFftImpl::<f32>::default();
         let res = istft(&mut frames, &window, 2, &mut output, &mut scratch, &fft);
-        assert!(res.is_ok()); // Should not panic, just not fill all output
+        assert!(matches!(res, Err(FftError::MismatchedLengths)));
     }
 
     #[test]
@@ -1025,10 +1081,11 @@ mod edge_case_tests {
                 assert_eq!(c.im, 0.0);
             }
         }
-        let mut output = vec![0.0f32; signal.len()];
+        let win_len = window.len();
+        let mut output = vec![0.0f32; signal.len() + win_len - hop];
         let mut scratch = vec![0.0f32; output.len()];
         istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
-        for &x in &output {
+        for &x in &output[..signal.len()] {
             assert_eq!(x, 0.0);
         }
     }
@@ -1049,11 +1106,11 @@ mod edge_case_tests {
         }
         let fft = ScalarFftImpl::<f32>::default();
         stft(&signal, &window, hop, &mut frames, &fft).unwrap();
-        let mut output = vec![0.0f32; n];
+        let mut output = vec![0.0f32; n + win_len - hop];
         let mut scratch = vec![0.0f32; output.len()];
         istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
         // Should roughly reconstruct signal (Hann window has edge attenuation)
-        for (a, b) in signal.iter().zip(output.iter()) {
+        for (a, b) in signal.iter().zip(output.iter().take(n)) {
             assert!((a - b).abs() < 1.1, "{} vs {}", a, b);
         }
     }
@@ -1089,7 +1146,7 @@ mod edge_case_tests {
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; required];
         let fft = ScalarFftImpl::<f32>::default();
         stft(&signal, &window, 1, &mut frames, &fft).unwrap();
-        let mut output = vec![0.0f32; signal.len()];
+        let mut output = vec![0.0f32; signal.len() + window.len() - 1];
         let mut scratch = vec![0.0f32; output.len()];
         istft(&mut frames, &window, 1, &mut output, &mut scratch, &fft).unwrap();
         // With such a tiny window, normalization should treat the output as silence
@@ -1103,14 +1160,14 @@ mod edge_case_tests {
 mod coverage_tests {
     use super::*;
     use crate::fft::{Complex32, ScalarFftImpl};
-    use alloc::format;
+    use alloc::{format, vec::Vec};
     use proptest::prelude::*;
 
     #[test]
     fn test_stft_empty() {
         let signal: [f32; 0] = [];
         let window = [1.0, 1.0, 1.0, 1.0];
-        let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
+        let mut frames: Vec<Vec<Complex32>> = Vec::new();
         let fft = ScalarFftImpl::<f32>::default();
         let res = stft(&signal, &window, 2, &mut frames, &fft);
         assert!(res.is_ok());
@@ -1224,10 +1281,11 @@ mod coverage_tests {
                 assert_eq!(c.im, 0.0);
             }
         }
-        let mut output = vec![0.0f32; signal.len()];
+        let win_len = window.len();
+        let mut output = vec![0.0f32; signal.len() + win_len - hop];
         let mut scratch = vec![0.0f32; output.len()];
         istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
-        for &x in &output {
+        for &x in &output[..signal.len()] {
             assert_eq!(x, 0.0);
         }
     }
@@ -1246,10 +1304,11 @@ mod coverage_tests {
             }
             let fft = ScalarFftImpl::<f32>::default();
             stft(signal, &window, hop, &mut frames, &fft).unwrap();
-            let mut output = vec![0.0f32; len];
+            let expected = (num_frames - 1) * hop + win_len;
+            let mut output = vec![0.0f32; expected];
             let mut scratch = vec![0.0f32; output.len()];
             istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
-            for (a, b) in signal.iter().zip(output.iter()) {
+            for (a, b) in signal.iter().zip(output.iter().take(len)) {
                 prop_assert!((a - b).abs() < 1e-2);
             }
         }

@@ -1,3 +1,4 @@
+// Test intent: verifies backend detection behavior including edge cases.
 #[cfg(target_arch = "x86_64")]
 #[test]
 fn selects_x86_backend() {

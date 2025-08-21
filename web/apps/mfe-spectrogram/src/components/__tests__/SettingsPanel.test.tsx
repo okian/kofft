@@ -11,7 +11,7 @@ vi.mock("@/shared/stores/settingsStore", () => ({
   },
 }));
 
-vi.mock("@/utils/toast", () => ({
+vi.mock("@/shared/utils/toast", () => ({
   conditionalToast: {
     success: vi.fn(),
     error: toastError,

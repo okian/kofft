@@ -7,6 +7,12 @@
 extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
+
+/// Convenience alias for a two-dimensional `Vec`.
+type Vec2<T> = Vec<Vec<T>>;
+
+/// Convenience alias for a three-dimensional `Vec`.
+type Vec3<T> = Vec<Vec<Vec<T>>>;
 use core::fmt;
 
 /// Number of samples processed together in the Haar transform pair.
@@ -19,6 +25,57 @@ pub type BatchOutput = (Vec<Vec<f32>>, Vec<Vec<f32>>);
 /// Output of [`multi_level_forward_batch`]: per-input averages and per-level
 /// detail coefficients.
 pub type MultiLevelBatchOutput = (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>);
+/// Daubechies-4 low-pass decomposition filter coefficients.
+/// Each value represents a tap of the scaling filter used during the forward transform.
+pub const DB4_FORWARD_LOWPASS: [f32; 8] = [
+    -0.010597401785069032, // h0: first smoothing coefficient
+    0.0328830116668852,    // h1: second smoothing coefficient
+    0.030841381835560764,  // h2: third smoothing coefficient
+    -0.18703481171909309,  // h3: fourth smoothing coefficient
+    -0.027983769416859854, // h4: fifth smoothing coefficient
+    0.6308807679298589,    // h5: sixth smoothing coefficient
+    0.7148465705529157,    // h6: seventh smoothing coefficient
+    0.2303778133088965,    // h7: eighth smoothing coefficient
+];
+
+/// Daubechies-4 high-pass decomposition filter coefficients.
+/// Applied during the forward transform to compute detail components.
+pub const DB4_FORWARD_HIGHPASS: [f32; 8] = [
+    -0.2303778133088965,   // g0: first detail coefficient
+    0.7148465705529157,    // g1: second detail coefficient
+    -0.6308807679298589,   // g2: third detail coefficient
+    -0.027983769416859854, // g3: fourth detail coefficient
+    0.18703481171909309,   // g4: fifth detail coefficient
+    0.030841381835560764,  // g5: sixth detail coefficient
+    -0.0328830116668852,   // g6: seventh detail coefficient
+    -0.010597401785069032, // g7: eighth detail coefficient
+];
+
+/// Daubechies-4 low-pass reconstruction filter coefficients.
+/// These coefficients rebuild the approximation component during the inverse transform.
+pub const DB4_INVERSE_LOWPASS: [f32; 8] = [
+    0.2303778133088965,    // g0: first reconstruction coefficient
+    0.7148465705529157,    // g1: second reconstruction coefficient
+    0.6308807679298589,    // g2: third reconstruction coefficient
+    -0.027983769416859854, // g3: fourth reconstruction coefficient
+    -0.18703481171909309,  // g4: fifth reconstruction coefficient
+    0.030841381835560764,  // g5: sixth reconstruction coefficient
+    0.0328830116668852,    // g6: seventh reconstruction coefficient
+    -0.010597401785069032, // g7: eighth reconstruction coefficient
+];
+
+/// Daubechies-4 high-pass reconstruction filter coefficients.
+/// These values rebuild the detail component during the inverse transform.
+pub const DB4_INVERSE_HIGHPASS: [f32; 8] = [
+    -0.010597401785069032, // h0: first reconstruction detail coefficient
+    -0.0328830116668852,   // h1: second reconstruction detail coefficient
+    0.030841381835560764,  // h2: third reconstruction detail coefficient
+    0.18703481171909309,   // h3: fourth reconstruction detail coefficient
+    -0.027983769416859854, // h4: fifth reconstruction detail coefficient
+    -0.6308807679298589,   // h5: sixth reconstruction detail coefficient
+    0.7148465705529157,    // h6: seventh reconstruction detail coefficient
+    -0.2303778133088965,   // h7: eighth reconstruction detail coefficient
+];
 
 /// Errors produced by wavelet operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +105,14 @@ impl fmt::Display for WaveletError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for WaveletError {}
+
+/// Output of a batch forward transform: averages and detail coefficients for
+/// each input signal.
+type BatchForwardOutput = (Vec<Vec<f32>>, Vec<Vec<f32>>);
+
+/// Output of a batch multi-level forward transform: final approximations and
+/// per-level detail coefficients for each input signal.
+type MultiLevelForwardOutput = (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>);
 
 /// Forward Haar wavelet transform (single level)
 ///
@@ -92,6 +157,7 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
 pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
+#[allow(clippy::type_complexity)]
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -153,6 +219,14 @@ where
 {
     let mut current = approx.to_vec();
     for d in details.iter().rev() {
+        if current.len() < d.len() {
+            return Err(WaveletError::BufferSizeMismatch {
+                avg: current.len(),
+                diff: d.len(),
+            });
+        } else if current.len() > d.len() {
+            current.truncate(d.len());
+        }
         current = inverse(&current, d)?;
     }
     Ok(current)
@@ -162,6 +236,7 @@ where
 ///
 /// # Errors
 /// Propagates any error produced by [`multi_level_forward`].
+#[allow(clippy::type_complexity)]
 pub fn multi_level_forward_batch<F>(
     inputs: &[Vec<f32>],
     levels: usize,
@@ -237,33 +312,22 @@ pub fn db2_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
     let n = input.len() / 2;
     let mut approx = vec![0.0; n];
     let mut detail = vec![0.0; n];
-    // db2 coefficients
-    let h0 = 0.4829629131445341;
-    let h1 = 0.8365163037378079;
-    let h2 = 0.2241438680420134;
-    let h3 = -0.1294095225512604;
-    let g0 = -0.1294095225512604;
-    let g1 = -0.2241438680420134;
-    let g2 = 0.8365163037378079;
-    let g3 = -0.4829629131445341;
     let len = input.len();
+    // Symmetric extension helper: reflect indices outside the signal range.
     let reflect = |mut idx: isize| -> f32 {
         let n = len as isize;
         while idx < 0 || idx >= n {
-            if idx < 0 {
-                idx = -idx;
-            } else {
-                idx = 2 * (n - 1) - idx;
-            }
+            idx = if idx < 0 { -idx } else { 2 * (n - 1) - idx };
         }
         input[idx as usize]
     };
     for i in 0..n {
         let j = 2 * i as isize;
-        approx[i] =
-            h0 * reflect(j) + h1 * reflect(j + 1) + h2 * reflect(j + 2) + h3 * reflect(j + 3);
-        detail[i] =
-            g0 * reflect(j) + g1 * reflect(j + 1) + g2 * reflect(j + 2) + g3 * reflect(j + 3);
+        for k in 0..4 {
+            let sample = reflect(j + k as isize);
+            approx[i] += DB2_ANALYSIS_LOW[k] * sample;
+            detail[i] += DB2_ANALYSIS_HIGH[k] * sample;
+        }
     }
     (approx, detail)
 }
@@ -273,54 +337,23 @@ pub fn db2_inverse(approx: &[f32], detail: &[f32]) -> Vec<f32> {
     let n = approx.len();
     let len = n * 2;
     let mut output = vec![0.0; len];
-    // Synthesis filters (reverse of analysis filters)
-    let _g0 = 0.4829629131445341;
-    let _g1 = 0.8365163037378079;
-    let _g2 = 0.2241438680420134;
-    let _g3 = -0.1294095225512604;
-    let _h0 = -0.1294095225512604;
-    let _h1 = -0.2241438680420134;
-    let _h2 = 0.8365163037378079;
-    let _h3 = -0.4829629131445341;
+    // Symmetric extension helper: reflect indices outside the signal range.
     let reflect = |mut idx: isize| -> usize {
         let n = len as isize;
         while idx < 0 || idx >= n {
-            if idx < 0 {
-                idx = -idx;
-            } else {
-                idx = 2 * (n - 1) - idx;
-            }
+            idx = if idx < 0 { -idx } else { 2 * (n - 1) - idx };
         }
         idx as usize
     };
-    // Upsample and convolve
+    // Upsample and convolve with synthesis filters.
     for i in 0..n {
         let j = 2 * i;
         for k in 0..4 {
             let idx = reflect(j as isize + k as isize);
-            output[idx] += gk(k) * approx[i] + hk(k) * detail[i];
+            output[idx] += DB2_SYNTHESIS_LOW[k] * approx[i] + DB2_SYNTHESIS_HIGH[k] * detail[i];
         }
     }
     output
-}
-// Helper functions for synthesis filter taps
-fn gk(k: usize) -> f32 {
-    match k {
-        0 => 0.4829629131445341,
-        1 => 0.8365163037378079,
-        2 => 0.2241438680420134,
-        3 => -0.1294095225512604,
-        _ => 0.0,
-    }
-}
-fn hk(k: usize) -> f32 {
-    match k {
-        0 => -0.1294095225512604,
-        1 => -0.2241438680420134,
-        2 => 0.8365163037378079,
-        3 => -0.4829629131445341,
-        _ => 0.0,
-    }
 }
 /// Batch db2 forward transform
 pub fn db2_forward_batch(inputs: &[Vec<f32>]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
@@ -341,32 +374,17 @@ pub fn db2_inverse_batch(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Vec<Vec<f32>>
         .collect()
 }
 
-/// Daubechies-4 (db4) wavelet transform (single level)
-pub fn db4_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
-    let n = input.len() / 2;
+/// Daubechies-4 (db4) wavelet transform (single level).
+///
+/// # Errors
+/// Returns [`WaveletError::InputLengthOdd`] when the input length is not even.
+pub fn db4_forward(input: &[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError> {
+    if input.len() % HAAR_PAIR_LEN != 0 {
+        return Err(WaveletError::InputLengthOdd { len: input.len() });
+    }
+    let n = input.len() / HAAR_PAIR_LEN;
     let mut approx = vec![0.0; n];
     let mut detail = vec![0.0; n];
-    // db4 coefficients
-    let h = [
-        -0.010597401785069032,
-        0.0328830116668852,
-        0.030841381835560764,
-        -0.18703481171909309,
-        -0.027983769416859854,
-        0.6308807679298589,
-        0.7148465705529157,
-        0.2303778133088965,
-    ];
-    let g = [
-        -0.2303778133088965,
-        0.7148465705529157,
-        -0.6308807679298589,
-        -0.027983769416859854,
-        0.18703481171909309,
-        0.030841381835560764,
-        -0.0328830116668852,
-        -0.010597401785069032,
-    ];
     let len = input.len();
     let reflect = |mut idx: isize| -> f32 {
         let n = len as isize;
@@ -381,40 +399,29 @@ pub fn db4_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
     };
     for i in 0..n {
         let j = 2 * i as isize;
-        for k in 0..8 {
+        for k in 0..DB4_FORWARD_LOWPASS.len() {
             let val = reflect(j + k as isize);
-            approx[i] += h[k] * val;
-            detail[i] += g[k] * val;
+            approx[i] += DB4_FORWARD_LOWPASS[k] * val;
+            detail[i] += DB4_FORWARD_HIGHPASS[k] * val;
         }
     }
-    (approx, detail)
+    Ok((approx, detail))
 }
 
-/// Daubechies-4 (db4) inverse wavelet transform (single level)
-pub fn db4_inverse(approx: &[f32], detail: &[f32]) -> Vec<f32> {
+/// Daubechies-4 (db4) inverse wavelet transform (single level).
+///
+/// # Errors
+/// Returns [`WaveletError::BufferSizeMismatch`] when `approx` and `detail` differ in length.
+pub fn db4_inverse(approx: &[f32], detail: &[f32]) -> Result<Vec<f32>, WaveletError> {
+    if approx.len() != detail.len() {
+        return Err(WaveletError::BufferSizeMismatch {
+            avg: approx.len(),
+            diff: detail.len(),
+        });
+    }
     let n = approx.len();
-    let len = n * 2;
+    let len = n * HAAR_PAIR_LEN;
     let mut output = vec![0.0; len];
-    let g = [
-        0.2303778133088965,
-        0.7148465705529157,
-        0.6308807679298589,
-        -0.027983769416859854,
-        -0.18703481171909309,
-        0.030841381835560764,
-        0.0328830116668852,
-        -0.010597401785069032,
-    ];
-    let h = [
-        -0.010597401785069032,
-        -0.0328830116668852,
-        0.030841381835560764,
-        0.18703481171909309,
-        -0.027983769416859854,
-        -0.6308807679298589,
-        0.7148465705529157,
-        -0.2303778133088965,
-    ];
     let reflect = |mut idx: isize| -> usize {
         let n = len as isize;
         while idx < 0 || idx >= n {
@@ -428,12 +435,12 @@ pub fn db4_inverse(approx: &[f32], detail: &[f32]) -> Vec<f32> {
     };
     for i in 0..n {
         let j = 2 * i;
-        for k in 0..8 {
+        for k in 0..DB4_INVERSE_LOWPASS.len() {
             let idx = reflect(j as isize + k as isize);
-            output[idx] += g[k] * approx[i] + h[k] * detail[i];
+            output[idx] += DB4_INVERSE_LOWPASS[k] * approx[i] + DB4_INVERSE_HIGHPASS[k] * detail[i];
         }
     }
-    output
+    Ok(output)
 }
 
 /// Symlet-4 (sym4) wavelet transform (single level)
@@ -616,13 +623,23 @@ pub fn coif1_inverse(approx: &[f32], detail: &[f32]) -> Vec<f32> {
     output
 }
 
-// Convenience wrappers for multi-level operations
+/// Multi-level Haar forward transform.
+/// Pads odd-length inputs by repeating the last sample to avoid indexing errors.
+///
+/// # Errors
+/// Propagates any error from [`haar_forward`].
 pub fn haar_forward_multi(
     input: &[f32],
     levels: usize,
 ) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
     multi_level_forward(input, levels, haar_forward)
 }
+
+/// Multi-level Haar inverse transform.
+/// Truncates intermediate buffers when necessary to maintain valid lengths.
+///
+/// # Errors
+/// Propagates any error from [`haar_inverse`].
 pub fn haar_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
     multi_level_inverse(avg, details, haar_inverse)
 }
@@ -635,14 +652,25 @@ pub fn db2_forward_multi(
 pub fn db2_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
     multi_level_inverse(avg, details, |a, d| Ok(db2_inverse(a, d)))
 }
+/// Multi-level db4 forward transform.
+/// Mirrors edge samples to handle boundaries and avoid index errors.
+///
+/// # Errors
+/// Propagates any error from [`db4_forward`].
 pub fn db4_forward_multi(
     input: &[f32],
     levels: usize,
 ) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
-    multi_level_forward(input, levels, |x| Ok(db4_forward(x)))
+    multi_level_forward(input, levels, db4_forward)
 }
+
+/// Multi-level db4 inverse transform.
+/// Truncates intermediate buffers when padding was applied during decomposition.
+///
+/// # Errors
+/// Propagates any error from [`db4_inverse`].
 pub fn db4_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
-    multi_level_inverse(avg, details, |a, d| Ok(db4_inverse(a, d)))
+    multi_level_inverse(avg, details, db4_inverse)
 }
 pub fn sym4_forward_multi(
     input: &[f32],

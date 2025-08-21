@@ -8,9 +8,9 @@ use core::fmt;
 pub enum ResampleError {
     /// The input slice was empty.
     EmptyInput,
-    /// The source sample rate was non-positive.
+    /// The source sample rate was non-positive or non-finite.
     InvalidSrcRate,
-    /// The destination sample rate was non-positive.
+    /// The destination sample rate was non-positive or non-finite.
     InvalidDstRate,
 }
 
@@ -19,10 +19,10 @@ impl fmt::Display for ResampleError {
         match self {
             ResampleError::EmptyInput => write!(f, "input slice is empty"),
             ResampleError::InvalidSrcRate => {
-                write!(f, "source sample rate must be positive")
+                write!(f, "source sample rate must be finite and positive")
             }
             ResampleError::InvalidDstRate => {
-                write!(f, "destination sample rate must be positive")
+                write!(f, "destination sample rate must be finite and positive")
             }
         }
     }
@@ -37,16 +37,17 @@ impl std::error::Error for ResampleError {}
 ///
 /// # Errors
 ///
-/// Returns [`ResampleError`] if the input is empty or either rate is non-positive.
+/// Returns [`ResampleError`] if the input is empty or either rate is non-positive
+/// or non-finite.
 pub fn linear_resample(
     input: &[f32],
     src_rate: f32,
     dst_rate: f32,
 ) -> Result<Vec<f32>, ResampleError> {
-    if src_rate <= 0.0 {
+    if !src_rate.is_finite() || src_rate <= 0.0 {
         return Err(ResampleError::InvalidSrcRate);
     }
-    if dst_rate <= 0.0 {
+    if !dst_rate.is_finite() || dst_rate <= 0.0 {
         return Err(ResampleError::InvalidDstRate);
     }
     if input.is_empty() {
