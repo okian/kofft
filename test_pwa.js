@@ -5,6 +5,12 @@
 
 const fs = require("fs");
 const path = require("path");
+// Utility helpers to wait for explicit conditions instead of arbitrary timeouts
+const {
+  waitForElement,
+  waitForCondition,
+  waitForNetworkIdle,
+} = require("./test-utils/wait");
 
 // Test configurations for different devices
 const DEVICE_CONFIGS = {
@@ -28,6 +34,15 @@ const DEVICE_CONFIGS = {
   },
 };
 
+// Absolute path to a local audio file used for upload simulations
+const TEST_AUDIO_FILE =
+  "/Users/kianostad/Music/lib/AIR French Band/Moon Safari (2024)/05 - Talisman.flac";
+// URL where the PWA under test is expected to be served
+const BASE_URL = "http://localhost:8000";
+// WebAssembly modules can take a while to initialize; allow generous timeout
+const WASM_LOAD_TIMEOUT_MS = 10000;
+// File processing (metadata extraction) can also be slow
+const FILE_PROCESS_TIMEOUT_MS = 10000;
 const TEST_AUDIO_FILE =
   "/Users/kianostad/Music/lib/AIR French Band/Moon Safari (2024)/05 - Talisman.flac";
 const BASE_URL = "http://localhost:8000";
@@ -101,7 +116,7 @@ class PWATestSuite {
     this.results = [];
     this.screenshots = [];
   }
-
+  
   async runAllTests() {
     console.log("🚀 Starting PWA Test Suite...\n");
 
@@ -179,6 +194,12 @@ class PWATestSuite {
       console.log(""); // Empty line for readability
     }
   }
+
+    this.generateReport();
+  }
+
+  async testDevice(deviceType, config) {
+    const puppeteer = require("puppeteer");
 
   async testInitialLoad(page, deviceType) {
     console.log("  🔄 Testing initial load...");
@@ -315,6 +336,92 @@ class PWATestSuite {
           "--autoplay-policy=no-user-gesture-required",
         ],
       });
+
+      const page = await browser.newPage();
+
+      // Set viewport for device
+      await page.setViewport(config);
+
+      // Navigate to PWA
+      await page.goto(BASE_URL, { waitUntil: "networkidle0" });
+
+      // Wait for app to initialize
+      await page.waitForSelector("#app", { timeout: 10000 });
+      // Wait for spectrogram canvas which signals WebAssembly ready
+      await waitForElement(page, "#spectrogram-canvas", WASM_LOAD_TIMEOUT_MS);
+
+      // Run tests for this device
+      await this.testInitialLoad(page, deviceType);
+      await this.testUIElements(page, deviceType);
+      await this.testFileLoading(page, deviceType);
+      await this.testPlaybackControls(page, deviceType);
+      await this.testSidebars(page, deviceType);
+      await this.testSettings(page, deviceType);
+      await this.testKeyboardShortcuts(page, deviceType);
+      await this.testResponsiveLayout(page, deviceType);
+
+      // Take final screenshot
+      await this.takeScreenshot(page, deviceType, "final-state");
+
+      await browser.close();
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Device Test",
+        false,
+        `Failed to test device: ${error.message}`,
+      );
+    }
+  }
+
+  async testInitialLoad(page, deviceType) {
+    console.log("  🔄 Testing initial load...");
+
+    try {
+      // Check if loading overlay disappears
+      await page.waitForFunction(
+        () => {
+          const overlay = document.getElementById("loading-overlay");
+          return !overlay || overlay.style.display === "none";
+        },
+        { timeout: 15000 },
+      );
+
+      // Check if main elements are present
+      const appContainer = await page.$("#app");
+      const header = await page.$(".header");
+      const mainContent = await page.$(".main-content");
+      const footer = await page.$(".footer");
+      const spectrogramCanvas = await page.$("#spectrogram-canvas");
+
+      const allPresent =
+        appContainer && header && mainContent && footer && spectrogramCanvas;
+
+      this.logResult(
+        deviceType,
+        "Initial Load",
+        allPresent,
+        allPresent
+          ? "All main elements loaded successfully"
+          : "Some main elements missing",
+      );
+
+      // Check theme application
+      const bodyClass = await page.evaluate(() => document.body.className);
+      const hasTheme = bodyClass.includes("theme-");
+
+      this.logResult(
+        deviceType,
+        "Theme Application",
+        hasTheme,
+        hasTheme ? `Theme applied: ${bodyClass}` : "No theme class found",
+      );
+
+      await this.takeScreenshot(page, deviceType, "initial-load");
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Initial Load",
 
       const page = await browser.newPage();
 
@@ -567,6 +674,55 @@ class PWATestSuite {
     }
   }
 
+  async testUIElements(page, deviceType) {
+    console.log("  🎨 Testing UI elements...");
+
+    try {
+      // Test header buttons
+      const headerButtons = await page.$$(".header .icon-button");
+      const hasHeaderButtons = headerButtons.length >= 4; // file, mic, settings, snapshot
+
+      this.logResult(
+        deviceType,
+        "Header Buttons",
+        hasHeaderButtons,
+        `Found ${headerButtons.length} header buttons`,
+      );
+
+      // Test footer controls
+      const playButton = await page.$("#play-btn");
+      const volumeSlider = await page.$("#volume-slider");
+      const seekBar = await page.$("#waveform-seek-bar");
+
+      const footerElementsPresent = playButton && volumeSlider && seekBar;
+
+      this.logResult(
+        deviceType,
+        "Footer Controls",
+        footerElementsPresent,
+        footerElementsPresent
+          ? "All footer controls present"
+          : "Some footer controls missing",
+      );
+
+      // Test spectrogram canvas
+      const canvasSize = await page.evaluate(() => {
+        const canvas = document.getElementById("spectrogram-canvas");
+        return canvas ? { width: canvas.width, height: canvas.height } : null;
+      });
+
+      this.logResult(
+        deviceType,
+        "Spectrogram Canvas",
+        !!canvasSize,
+        canvasSize
+          ? `Canvas size: ${canvasSize.width}x${canvasSize.height}`
+          : "Canvas not found",
+      );
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "UI Elements",
   async testFileLoading(page, deviceType) {
     console.log("  📁 Testing file loading...");
 
@@ -677,6 +833,81 @@ class PWATestSuite {
     }
   }
 
+  async testFileLoading(page, deviceType) {
+    console.log("  📁 Testing file loading...");
+
+    try {
+      // Check if test file exists
+      if (!fs.existsSync(TEST_AUDIO_FILE)) {
+        this.logResult(
+          deviceType,
+          "File Loading",
+          false,
+          "Test audio file not found",
+        );
+        return;
+      }
+
+      // Create a file input element and simulate file selection
+      await page.evaluate((filePath) => {
+        // Create a mock file object (this is a simulation for testing)
+        const mockFile = new File([""], "Talisman.flac", {
+          type: "audio/flac",
+        });
+        Object.defineProperty(mockFile, "path", { value: filePath });
+
+        // Trigger file selection event
+        const fileInput = document.getElementById("file-input");
+        if (fileInput) {
+          const event = new Event("change", { bubbles: true });
+          Object.defineProperty(event, "target", {
+            value: { files: [mockFile] },
+            enumerable: true,
+          });
+          fileInput.dispatchEvent(event);
+        }
+      }, TEST_AUDIO_FILE);
+
+      // Wait until metadata has been populated indicating processing finished
+      await waitForCondition(
+        page,
+        () => {
+          const title = document.getElementById("track-title");
+          return title && title.textContent.trim() !== "No track loaded";
+        },
+        FILE_PROCESS_TIMEOUT_MS,
+      );
+
+      // Check if metadata was loaded
+      const trackTitle = await page
+        .$eval("#track-title", (el) => el.textContent.trim())
+        .catch(() => "");
+      const hasMetadata = trackTitle && trackTitle !== "No track loaded";
+
+      this.logResult(
+        deviceType,
+        "Metadata Loading",
+        hasMetadata,
+        hasMetadata ? `Track title: ${trackTitle}` : "No metadata loaded",
+      );
+
+      // Check if playlist was updated
+      const playlistItems = await page.$$(".playlist-item").catch(() => []);
+      const hasPlaylistItems = playlistItems.length > 0;
+
+      this.logResult(
+        deviceType,
+        "Playlist Update",
+        hasPlaylistItems,
+        `Playlist items: ${playlistItems.length}`,
+      );
+
+      await this.takeScreenshot(page, deviceType, "file-loaded");
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "File Loading",
+
   async testPlaybackControls(page, deviceType) {
     console.log("  ▶️ Testing playback controls...");
 
@@ -731,6 +962,259 @@ class PWATestSuite {
       this.logResult(
         deviceType,
         "Playback Controls",
+        false,
+        `Error: ${error.message}`,
+      );
+    }
+  }
+
+  async testPlaybackControls(page, deviceType) {
+    console.log("  ▶️ Testing playback controls...");
+
+    try {
+      // Test play button
+      const playButton = await page.$("#play-btn");
+      if (playButton) {
+        await playButton.click();
+        // Wait for play button to acquire 'playing' state
+        await waitForCondition(page, () => {
+          const playBtn = document.getElementById("play-btn");
+          return playBtn && playBtn.classList.contains("playing");
+        });
+
+        // Check if play state changed
+        const isPlaying = await page.evaluate(() => {
+          const playBtn = document.getElementById("play-btn");
+          return playBtn ? playBtn.classList.contains("playing") : false;
+        });
+
+        this.logResult(
+          deviceType,
+          "Play Button",
+          isPlaying,
+          "Play button toggled to playing",
+        );
+      }
+
+      // Test volume control
+      const volumeSlider = await page.$("#volume-slider");
+      if (volumeSlider) {
+        await volumeSlider.click();
+        this.logResult(
+          deviceType,
+          "Volume Control",
+          true,
+          "Volume slider interactive",
+        );
+      }
+
+      // Test seek bar
+      const seekBar = await page.$("#waveform-seek-bar");
+      if (seekBar) {
+        const seekBarBounds = await seekBar.boundingBox();
+        if (seekBarBounds) {
+          await page.mouse.click(
+            seekBarBounds.x + seekBarBounds.width * 0.5,
+            seekBarBounds.y + seekBarBounds.height * 0.5,
+          );
+          this.logResult(deviceType, "Seek Bar", true, "Seek bar clickable");
+        }
+      }
+
+      await this.takeScreenshot(page, deviceType, "playback-controls");
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Playback Controls",
+        false,
+        `Error: ${error.message}`,
+      );
+    }
+  }
+
+  async testSidebars(page, deviceType) {
+    console.log("  📋 Testing sidebars...");
+
+    try {
+      // Test metadata sidebar
+      const metadataToggle = await page.$("#metadata-toggle");
+      if (metadataToggle) {
+        await metadataToggle.click();
+        // Wait for sidebar to slide into view
+        await waitForCondition(page, () => {
+          const el = document.getElementById("metadata-sidebar");
+          return el && !window.getComputedStyle(el).transform.includes("-100%");
+        });
+
+        const metadataSidebar = await page.$("#metadata-sidebar");
+        const isVisible = await page.evaluate((el) => {
+          return (
+            el && window.getComputedStyle(el).transform !== "translateX(-100%)"
+          );
+        }, metadataSidebar);
+
+        this.logResult(
+          deviceType,
+          "Metadata Sidebar",
+          isVisible,
+          "Metadata sidebar toggleable",
+        );
+
+        // Close it
+        if (metadataToggle) await metadataToggle.click();
+      }
+
+      // Test playlist sidebar
+      const playlistToggle = await page.$("#playlist-toggle");
+      if (playlistToggle) {
+        await playlistToggle.click();
+        // Wait for playlist sidebar animation to complete
+        await waitForCondition(page, () => {
+          const el = document.getElementById("playlist-sidebar");
+          return el && !window.getComputedStyle(el).transform.includes("100%");
+        });
+
+        this.logResult(
+          deviceType,
+          "Playlist Sidebar",
+          true,
+          "Playlist sidebar toggleable",
+        );
+
+        // Close it
+        if (playlistToggle) await playlistToggle.click();
+      }
+
+      await this.takeScreenshot(page, deviceType, "sidebars-test");
+    } catch (error) {
+      this.logResult(deviceType, "Sidebars", false, `Error: ${error.message}`);
+    }
+  }
+
+  async testSettings(page, deviceType) {
+    console.log("  ⚙️ Testing settings...");
+
+    try {
+      // Open settings modal
+      const settingsButton = await page.$("#settings-btn");
+      if (settingsButton) {
+        await settingsButton.click();
+        // Wait for settings modal to become active
+        await waitForElement(page, "#settings-modal");
+        const settingsModal = await page.$("#settings-modal");
+        const modalVisible = await page.evaluate((modal) => {
+          return modal && modal.classList.contains("active");
+        }, settingsModal);
+
+        this.logResult(
+          deviceType,
+          "Settings Modal",
+          modalVisible,
+          "Settings modal opens",
+        );
+
+        if (modalVisible) {
+          // Test theme selector
+          const themeSelect = await page.$("#theme-select");
+          if (themeSelect) {
+            await themeSelect.select("light");
+            // Wait for body class to reflect theme change
+            await waitForCondition(page, () =>
+              document.body.className.includes("theme-light"),
+            );
+
+            const bodyClass = await page.evaluate(
+              () => document.body.className,
+            );
+            const themeChanged = bodyClass.includes("theme-light");
+
+            this.logResult(
+              deviceType,
+              "Theme Switching",
+              themeChanged,
+              themeChanged ? "Theme changed to light" : "Theme change failed",
+            );
+
+            // Switch back to dark
+            await themeSelect.select("dark");
+            await waitForCondition(page, () =>
+              document.body.className.includes("theme-dark"),
+            );
+          }
+
+          // Close settings
+          const closeButton = await page.$("#settings-close");
+          if (closeButton) {
+            await closeButton.click();
+            // Wait for modal to hide after close
+            await waitForCondition(page, () => {
+              const modal = document.getElementById("settings-modal");
+              return modal && !modal.classList.contains("active");
+            });
+          }
+        }
+      }
+
+      await this.takeScreenshot(page, deviceType, "settings-test");
+    } catch (error) {
+      this.logResult(deviceType, "Settings", false, `Error: ${error.message}`);
+    }
+  }
+
+  async testKeyboardShortcuts(page, deviceType) {
+    console.log("  ⌨️ Testing keyboard shortcuts...");
+
+    try {
+      // Test spacebar (play/pause)
+      await page.keyboard.press("Space");
+      // Wait for play button to toggle state
+      await waitForCondition(page, () => {
+        const btn = document.getElementById("play-btn");
+        return btn && btn.classList.contains("playing");
+      });
+
+      // Test M key (metadata toggle)
+      await page.keyboard.press("KeyM");
+      // Wait for metadata sidebar to open
+      await waitForCondition(page, () => {
+        const el = document.getElementById("metadata-sidebar");
+        return el && !window.getComputedStyle(el).transform.includes("-100%");
+      });
+      await page.keyboard.press("KeyM"); // Close it
+
+      // Test P key (playlist toggle)
+      await page.keyboard.press("KeyP");
+      // Wait for playlist sidebar to open
+      await waitForCondition(page, () => {
+        const el = document.getElementById("playlist-sidebar");
+        return el && !window.getComputedStyle(el).transform.includes("100%");
+      });
+      await page.keyboard.press("KeyP"); // Close it
+
+      // Test S key (settings)
+      await page.keyboard.press("KeyS");
+      // Wait for settings modal to activate
+      await waitForCondition(page, () => {
+        const modal = document.getElementById("settings-modal");
+        return modal && modal.classList.contains("active");
+      });
+      await page.keyboard.press("Escape"); // Close settings
+      // Ensure modal closes
+      await waitForCondition(page, () => {
+        const modal = document.getElementById("settings-modal");
+        return modal && !modal.classList.contains("active");
+      });
+
+      this.logResult(
+        deviceType,
+        "Keyboard Shortcuts",
+        true,
+        "Keyboard shortcuts tested",
+      );
+    } catch (error) {
+      this.logResult(
+        deviceType,
+        "Keyboard Shortcuts",
         false,
         `Error: ${error.message}`,
       );
@@ -1003,7 +1487,6 @@ class PWATestSuite {
         type: "png",
       });
 
-
       // Create directory if it doesn't exist
       const dir = path.dirname(filepath);
       if (!fs.existsSync(dir)) {
@@ -1036,6 +1519,15 @@ class PWATestSuite {
       details,
       timestamp: new Date().toISOString(),
     };
+
+    this.results.push(result);
+    console.log(`    ${status} ${test}: ${details}`);
+  }
+
+  generateReport() {
+    console.log("\n📊 TEST RESULTS SUMMARY\n");
+    // Divider line for readability
+    console.log("=".repeat(50));
 
     this.results.push(result);
     console.log(`    ${status} ${test}: ${details}`);
