@@ -43,6 +43,14 @@ impl fmt::Display for WaveletError {
 #[cfg(feature = "std")]
 impl std::error::Error for WaveletError {}
 
+/// Output of a batch forward transform: averages and detail coefficients for
+/// each input signal.
+type BatchForwardOutput = (Vec<Vec<f32>>, Vec<Vec<f32>>);
+
+/// Output of a batch multi-level forward transform: final approximations and
+/// per-level detail coefficients for each input signal.
+type MultiLevelForwardOutput = (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>);
+
 /// Forward Haar wavelet transform (single level)
 ///
 /// # Errors
@@ -85,7 +93,7 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 ///
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
-pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<(Vec<Vec<f32>>, Vec<Vec<f32>>), WaveletError> {
+pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchForwardOutput, WaveletError> {
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -160,7 +168,7 @@ pub fn multi_level_forward_batch<F>(
     inputs: &[Vec<f32>],
     levels: usize,
     forward: F,
-) -> Result<(Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>), WaveletError>
+) -> Result<MultiLevelForwardOutput, WaveletError>
 where
     F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
