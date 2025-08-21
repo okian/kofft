@@ -36,6 +36,7 @@ fn fuzzy_match_allocations() {
 
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     fuzzy_match(pattern, len, "abc");
+
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     assert_eq!(
