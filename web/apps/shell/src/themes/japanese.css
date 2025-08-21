@@ -25,6 +25,14 @@
   color: var(--color-text);
 }
 
+/* Transition behaviour for minimalist Japanese designs. */
+:root[data-design="japanese-a"] *,
+:root[data-design="japanese-b"] * {
+  /* Leverage the global animation duration for all colour changes. */
+  transition-property: background-color, color;
+  transition-duration: var(--anim-duration);
+  transition-timing-function: ease-in-out;
+}
 /*
   Transition behaviour for minimalist Japanese designs. The rule targets the
   shared `theme-transition` class rather than all elements to avoid expensive

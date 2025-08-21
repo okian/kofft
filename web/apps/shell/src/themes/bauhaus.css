@@ -23,6 +23,13 @@
   color: var(--color-text);
 }
 
+/* Transition behaviour emphasising motion. */
+:root[data-design="bauhaus"] * {
+  /* Ensure geometric motions use the shared animation pacing. */
+  transition-property: transform;
+  transition-duration: var(--anim-duration);
+  transition-timing-function: ease-in-out;
+}
 /*
   Transition behaviour emphasising motion. Targeting the dedicated
   `theme-transition` class avoids the costly universal selector while
