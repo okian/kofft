@@ -1,54 +1,54 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import federation from '@originjs/vite-plugin-federation'
-import { fileURLToPath, URL } from 'node:url'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import federation from "@originjs/vite-plugin-federation";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
-  server: { 
+  server: {
     port: 5175,
     headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Opener-Policy": "same-origin",
     },
     fs: {
-      allow: ['..']
+      allow: ["..", "../.."],
     },
-    middlewareMode: false
+    middlewareMode: false,
   },
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@wasm': fileURLToPath(new URL('./wasm', import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@wasm": fileURLToPath(new URL("./wasm", import.meta.url)),
+      "@shared": fileURLToPath(new URL("../../src/shared", import.meta.url)),
     },
   },
   plugins: [
     react(),
     federation({
-      name: 'mf_spectrogram',
-      filename: 'remoteEntry.js',
+      name: "mf_spectrogram",
+      filename: "remoteEntry.js",
       exposes: {
-        './remote': './src/index.tsx',
+        "./remote": "./src/index.tsx",
       },
       shared: {
-        react: { singleton: true, eager: true, requiredVersion: '^18' },
-        'react-dom': { singleton: true, eager: true, requiredVersion: '^18' },
+        react: { singleton: true, eager: true, requiredVersion: "^18" },
+        "react-dom": { singleton: true, eager: true, requiredVersion: "^18" },
       },
     }),
     {
-      name: 'wasm-mime-type',
+      name: "wasm-mime-type",
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
-          if (req.url?.includes('.wasm')) {
-            res.setHeader('Content-Type', 'application/wasm');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+          if (req.url?.includes(".wasm")) {
+            res.setHeader("Content-Type", "application/wasm");
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+            res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
           }
           next();
         });
       },
     },
   ],
-  build: { target: 'esnext', modulePreload: false, minify: false },
-})
-
+  build: { target: "esnext", modulePreload: false, minify: false },
+});

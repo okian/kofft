@@ -97,32 +97,32 @@ const mockUseSettingsStore = vi.fn(() => ({
   setShowLegend: vi.fn(),
 }));
 
-vi.mock("../../hooks/useAudioFile", () => ({
+vi.mock("@/shared/hooks/useAudioFile", () => ({
   useAudioFile: mockUseAudioFile,
 }));
 
-vi.mock("../../hooks/useMicrophone", () => ({
+vi.mock("@/shared/hooks/useMicrophone", () => ({
   useMicrophone: mockUseMicrophone,
 }));
 
 // Mock unified keyboard shortcut hook to prevent real listeners during tests
-vi.mock("../../shared/hooks/useKeyboardShortcuts", () => ({
+vi.mock("@shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: mockUseKeyboardShortcuts,
 }));
 
-vi.mock("../../hooks/useScreenSize", () => ({
+vi.mock("@/shared/hooks/useScreenSize", () => ({
   useScreenSize: mockUseScreenSize,
 }));
 
-vi.mock("../../stores/audioStore", () => ({
+vi.mock("@/shared/stores/audioStore", () => ({
   useAudioStore: mockUseAudioStore,
 }));
 
-vi.mock("../../stores/uiStore", () => ({
+vi.mock("@/shared/stores/uiStore", () => ({
   useUIStore: mockUseUIStore,
 }));
 
-vi.mock("../../stores/settingsStore", () => ({
+vi.mock("@/shared/stores/settingsStore", () => ({
   useSettingsStore: mockUseSettingsStore,
 }));
 

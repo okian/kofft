@@ -3,14 +3,14 @@ import { describe, it, expect, vi } from "vitest";
 import { Header } from "../layout/Header";
 
 // Mock the hooks
-vi.mock("../../hooks/useAudioFile", () => ({
+vi.mock("@/shared/hooks/useAudioFile", () => ({
   useAudioFile: () => ({
     loadAudioFile: vi.fn(),
     loadMultipleFiles: vi.fn(),
   }),
 }));
 
-vi.mock("../../hooks/useMicrophone", () => ({
+vi.mock("@/shared/hooks/useMicrophone", () => ({
   useMicrophone: () => ({
     startMicrophone: vi.fn(),
     stopMicrophone: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("../../hooks/useMicrophone", () => ({
 }));
 
 // Mock unified keyboard shortcut hook to prevent real listeners during tests
-vi.mock("../../shared/hooks/useKeyboardShortcuts", () => ({
+vi.mock("@shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: () => ({}),
 }));
 

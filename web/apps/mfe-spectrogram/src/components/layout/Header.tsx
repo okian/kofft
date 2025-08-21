@@ -1,10 +1,13 @@
 import React, { useRef, useCallback, useMemo } from "react";
-import { useUIStore } from "@/stores/uiStore";
-import { useAudioStore } from "@/stores/audioStore";
-import { useAudioFile } from "@/hooks/useAudioFile";
-import { useMicrophone } from "@/hooks/useMicrophone";
-import { useScreenSize } from "@/hooks/useScreenSize";
-import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
+import { useUIStore } from "@/shared/stores/uiStore";
+import { useAudioStore } from "@/shared/stores/audioStore";
+import { useAudioFile } from "@/shared/hooks/useAudioFile";
+import { useMicrophone } from "@/shared/hooks/useMicrophone";
+import { useScreenSize } from "@/shared/hooks/useScreenSize";
+import { useSettingsStore } from "@/shared/stores/settingsStore";
+import { useKeyboardShortcuts } from "@shared/hooks/useKeyboardShortcuts";
+import { SPACING, TYPOGRAPHY, GRID } from "@/shared/layout";
+import type { Theme } from "@/shared/types";
 import {
   FileAudio,
   Mic,
@@ -17,6 +20,32 @@ import {
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 
+/** Height utility applied to the header on mobile devices. */
+const HEIGHT_MOBILE = "h-14" as const;
+
+/** Height utility applied to the header on larger viewports. */
+const HEIGHT_DESKTOP = "h-12" as const;
+
+/**
+ * Derives the header's class string from theme tokens and viewport state.
+ * Using a helper avoids duplicated Tailwind logic across tests and runtime code.
+ */
+export function getHeaderClasses(theme: Theme, isMobile: boolean): string {
+  return cn(
+    "bg-neutral-900 border-b border-neutral-800",
+    "flex items-center justify-between",
+    SPACING[theme],
+    TYPOGRAPHY[theme],
+    GRID[theme],
+    "transition-colors duration-300",
+    isMobile ? HEIGHT_MOBILE : HEIGHT_DESKTOP,
+  );
+}
+
+/**
+ * Renders the application header containing global navigation controls and
+ * wires up core hooks such as keyboard shortcuts and media loaders.
+ */
 export const Header: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -31,6 +60,7 @@ export const Header: React.FC = () => {
 
   const audioFile = useAudioFile();
   const microphone = useMicrophone();
+  const theme = useSettingsStore((s) => s.theme);
 
   // Handle file selection
   const handleFileSelect = useCallback(
@@ -105,12 +135,7 @@ export const Header: React.FC = () => {
 
   return (
     <header
-      className={cn(
-        "bg-neutral-900 border-b border-neutral-800",
-        "flex items-center justify-between px-4",
-        "transition-colors duration-300",
-        isMobile ? "h-14" : "h-12",
-      )}
+      className={getHeaderClasses(theme, isMobile)}
       data-testid="header"
       role="banner"
       aria-label="Application header"
