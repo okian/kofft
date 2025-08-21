@@ -12,11 +12,14 @@ import {
   APIKeyStatus,
   LUT,
   LUTMode,
+  AnimationStyle,
 } from "@/shared/types";
 
 interface SettingsStore extends SpectrogramSettings {
   // Actions
   setTheme: (theme: Theme) => void;
+  /** Manual override primarily used in tests. */
+  setAnimationStyle: (style: AnimationStyle) => void;
   setAmplitudeScale: (scale: AmplitudeScale) => void;
   setFrequencyScale: (scale: FrequencyScale) => void;
   setResolution: (resolution: Resolution) => void;
@@ -68,6 +71,7 @@ interface SettingsStore extends SpectrogramSettings {
 const defaultSettings: SpectrogramSettings = {
   // Conservative monochrome theme avoids overly bright colours by default.
   theme: "japanese-a-light",
+  animationStyle: "calm",
   amplitudeScale: "db",
   frequencyScale: "logarithmic",
   resolution: "medium",
@@ -111,6 +115,15 @@ const SEEKBAR_MIN_SIGNIFICANCE = 0;
 /** Maximum accepted seekbar significance. */
 const SEEKBAR_MAX_SIGNIFICANCE = 1;
 
+/** Prefix used to identify Bauhaus themes. */
+const THEME_PREFIX_BAUHAUS = "bauhaus";
+
+/** Map theme to animation style. Bauhaus opts into snappy geometry,
+ * while everything else remains calm to avoid overwhelming users. */
+function mapThemeToAnimationStyle(theme: Theme): AnimationStyle {
+  return theme.startsWith(THEME_PREFIX_BAUHAUS) ? "geometric" : "calm";
+}
+
 /** Trim and validate a CSS colour string. Returns empty string if invalid. */
 function sanitiseColor(color: string): string {
   const trimmed = color.trim();
@@ -134,6 +147,8 @@ function sanitiseSettings(input: any): SpectrogramSettings {
   // Theme
   if (typeof input.theme === "string" && input.theme in THEME_COLORS)
     result.theme = input.theme as Theme;
+  // Animation style follows theme
+  result.animationStyle = mapThemeToAnimationStyle(result.theme);
 
   // Spectrogram settings
   if (
@@ -275,7 +290,13 @@ export const useSettingsStore = create<SettingsStore>()(
   subscribeWithSelector((set, get) => ({
     ...defaultSettings,
 
-    setTheme: (theme) => set((state) => ({ ...state, theme })),
+    setTheme: (theme) =>
+      set((state) => ({
+        ...state,
+        theme,
+        animationStyle: mapThemeToAnimationStyle(theme),
+      })),
+    setAnimationStyle: (style) => set((state) => ({ ...state, animationStyle: style })),
     setAmplitudeScale: (amplitudeScale) =>
       set((state) => ({ ...state, amplitudeScale })),
     setFrequencyScale: (frequencyScale) =>
@@ -360,6 +381,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
     loadFromStorage: () => {
       try {
+        if (typeof localStorage === "undefined") return;
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
@@ -373,8 +395,45 @@ export const useSettingsStore = create<SettingsStore>()(
 
     saveToStorage: () => {
       try {
-        const settings = get();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+        if (typeof localStorage === "undefined") return;
+        // Strip out action functions so only serialisable settings persist.
+        const {
+          setTheme: _st,
+          setAnimationStyle: _sas,
+          setAmplitudeScale: _a1,
+          setFrequencyScale: _a2,
+          setResolution: _a3,
+          setRefreshRate: _a4,
+          setColormap: _a5,
+          setShowLegend: _a6,
+          setEnableToastNotifications: _a7,
+          setSeekPlayedColor: _a8,
+          setSeekUnplayedColor: _a9,
+          setSeekPlayheadColor: _a10,
+          setShowSeekbarPlayhead: _a11,
+          resetSeekbarColors: _a12,
+          setSeekbarMode: _a13,
+          setSeekbarSignificance: _a14,
+          setSeekbarAmplitudeScale: _a15,
+          updateSettings: _a16,
+          resetToDefaults: _a17,
+          loadFromStorage: _a18,
+          saveToStorage: _a19,
+          setAPIKey: _a20,
+          validateAPIKey: _a21,
+          getAPIKeyStatus: _a22,
+          setEnableExternalArtwork: _a23,
+          setEnableAcoustID: _a24,
+          setEnableMusicBrainz: _a25,
+          setEnablePlaceholderArtwork: _a26,
+          setLUTMode: _a27,
+          setCurrentLUT: _a28,
+          addCustomLUT: _a29,
+          removeCustomLUT: _a30,
+          updateCustomLUT: _a31,
+          ...persistable
+        } = get();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
       } catch (error) {
         console.error("Failed to save settings", error);
       }

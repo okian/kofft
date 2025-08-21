@@ -1,3 +1,17 @@
+import React, { useRef, useCallback, useMemo } from 'react'
+import { motion } from 'framer-motion'
+import { useUIStore } from '../shared/stores/uiStore'
+import { useAudioStore } from '../shared/stores/audioStore'
+import { useAudioFile } from '../shared/hooks/useAudioFile'
+import { useMicrophone } from '../shared/hooks/useMicrophone'
+import { useScreenSize } from '../shared/hooks/useScreenSize'
+import { useKeyboardShortcuts } from '../shared/hooks/useKeyboardShortcuts'
+import { useSettingsStore } from '../shared/stores/settingsStore'
+import { FileAudio, Mic, MicOff, Settings, Camera, Info, List } from 'lucide-react'
+import { cn } from '../shared/utils/cn'
+import { SPACING, TYPOGRAPHY, GRID } from '../shared/layout'
+import type { Theme } from '../shared/types'
+import { useAnimationPreset } from '../shared/animations'
 import React, { useRef, useCallback, useMemo } from "react";
 import { useUIStore } from "@/shared/stores/uiStore";
 import { useAudioStore } from "@/shared/stores/audioStore";
@@ -112,6 +126,12 @@ export const Header: React.FC = () => {
         showMenuButton: false,
       };
     }
+    return { showFileButton: true, showMicButton: true, showSettingsButton: true, showMetadataButton: true, showPlaylistButton: true, showSnapshotButton: true, showMenuButton: false }
+  }, [isMobile, isTablet])
+  const animation = useAnimationPreset('fade')
+
+  return (
+    <motion.header {...animation} className={getHeaderClasses(theme, isMobile)} data-testid="app-header">
     return {
       showFileButton: true,
       showMicButton: true,
@@ -276,6 +296,10 @@ export const Header: React.FC = () => {
         )}
       </div>
 
+      <input ref={fileInputRef} type="file" accept="audio/*" multiple onChange={handleFileSelect} className="hidden" />
+    </motion.header>
+  )
+}
       <input
         ref={fileInputRef}
         type="file"
