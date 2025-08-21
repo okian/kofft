@@ -1,3 +1,5 @@
+#![cfg(all(feature = "std", feature = "wasm", feature = "simd"))]
+
 use kofft::visual::spectrogram::db_scale;
 
 /// Ensure zero or extremely small maximum magnitudes yield a neutral output
