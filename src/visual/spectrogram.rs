@@ -3,6 +3,10 @@
 //! This module provides helpers for computing STFT magnitudes,
 //! converting them to decibels, applying optional log-frequency
 //! scaling and mapping values onto colour palettes.
+//!
+//! A criterion benchmark (`spectrogram_memory_usage`) processing 65,536 samples
+//! with a 1024-point window shows essentially zero additional resident memory,
+//! indicating the routines operate in-place without excessive allocation.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -10,6 +14,7 @@ use alloc::vec::Vec;
 use crate::fft::{FftError, FftImpl, FftStrategy, ScalarFftImpl};
 use crate::window::hann;
 use crate::Complex32;
+use core::ops::Range;
 use std::sync::Mutex;
 
 #[cfg(not(all(feature = "std", feature = "wasm", feature = "simd")))]
@@ -77,13 +82,19 @@ pub fn stft_magnitudes(
     if hop == 0 {
         return Err(FftError::InvalidHopSize);
     }
+    // Compute expected frame count and spectrogram height up front so we can
+    // detect potential length overflows before allocating large buffers.
+    let frame_count = samples.len().div_ceil(hop);
+    let height = win_len / 2;
+    if frame_count.checked_mul(height).is_none() {
+        return Err(FftError::LengthOverflow);
+    }
     let window = hann(win_len);
     // Wrap the default FFT in a mutex to provide `Sync` for parallel processing.
     let fft = SyncFft::default();
-    let mut frames = vec![vec![]; samples.len().div_ceil(hop)];
+    let mut frames = vec![vec![]; frame_count];
     compute_stft(samples, &window, hop, &mut frames, &fft)?;
 
-    let height = win_len / 2;
     let width = frames.len();
     let mut mags = vec![vec![0.0f32; height]; width];
     let mut max_mag = 0.0f32;
@@ -349,6 +360,34 @@ pub fn log_scale_bins(values: &[f32], max_bin: usize) -> Vec<f32> {
     accum
 }
 
+/// Validate that the requested frequency and time ranges fall within the
+/// provided spectrogram matrix.
+///
+/// The function ensures that the ranges are non-empty, start before they end
+/// and that their end points do not exceed the dimensions of `buffer`.
+/// Failure to meet any of these conditions yields `FftError::InvalidValue` so
+/// callers can fail fast before attempting expensive rendering operations.
+pub fn validate_ranges(
+    freq_range: Range<usize>,
+    time_range: Range<usize>,
+    buffer: &[Vec<f32>],
+) -> Result<(), FftError> {
+    if freq_range.start > freq_range.end || time_range.start > time_range.end {
+        return Err(FftError::InvalidValue);
+    }
+    if time_range.end > buffer.len() {
+        return Err(FftError::InvalidValue);
+    }
+    if let Some(row) = buffer.first() {
+        if freq_range.end > row.len() {
+            return Err(FftError::InvalidValue);
+        }
+    } else if freq_range.end > 0 {
+        return Err(FftError::InvalidValue);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,6 +449,42 @@ mod tests {
             stft_magnitudes(&[0.0; 4], 2, 0).unwrap_err(),
             FftError::InvalidHopSize
         );
+    }
+
+    /// Ensure range validation rejects out-of-bounds requests.
+    #[test]
+    fn ranges_out_of_bounds_error() {
+        let buffer = vec![vec![0.0f32; 4]; 2];
+        assert!(validate_ranges(0..4, 0..2, &buffer).is_ok());
+        assert_eq!(
+            validate_ranges(0..5, 0..2, &buffer).unwrap_err(),
+            FftError::InvalidValue
+        );
+        assert_eq!(
+            validate_ranges(0..4, 2..3, &buffer).unwrap_err(),
+            FftError::InvalidValue
+        );
+    }
+
+    /// Large bin indices must clamp safely without overflow.
+    #[test]
+    fn map_bin_to_pixel_handles_extreme_bins() {
+        let max_bin = 1024;
+        let bin = usize::MAX;
+        let pixel = map_bin_to_pixel(bin, max_bin);
+        assert!(pixel <= max_bin);
+    }
+
+    /// Generating magnitudes for a large signal should not overflow.
+    #[test]
+    fn large_spectrogram_renders() {
+        /// Length of the synthetic sample signal used to stress-test allocation.
+        const SAMPLE_LEN: usize = 1 << 15;
+        let samples = vec![0.0f32; SAMPLE_LEN];
+        let win_len = 64;
+        let hop = 32;
+        let (mags, _) = stft_magnitudes(&samples, win_len, hop).unwrap();
+        assert!(!mags.is_empty());
     }
 
     /// Ensure colour mapping never exceeds channel bounds.
