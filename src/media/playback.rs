@@ -91,6 +91,16 @@ pub fn init_db(conn: &Connection) -> Result<(), PlaybackError> {
     Ok(())
 }
 
+/// Close the waveform cache database connection.
+///
+/// Consumes the provided [`Connection`], ensuring all underlying SQLite
+/// resources are released and any pending transactions are finalized.
+/// Returning a [`PlaybackError`] surfaces potential database issues during
+/// closure so callers can fail fast rather than silently leaking resources.
+pub fn close_db(conn: Connection) -> Result<(), PlaybackError> {
+    conn.close().map_err(|(_, e)| PlaybackError::Database(e))
+}
+
 /// Validate a track identifier for safety before using it in SQL queries.
 ///
 /// Identifiers must be non-empty, ASCII-only, and no longer than
@@ -209,11 +219,21 @@ mod tests {
     use alloc::vec;
 
     /// Prepare an in-memory database initialized with the waveform schema.
+    ///
+    /// The caller is responsible for explicitly closing the returned
+    /// connection via [`close_db`] to surface any errors and avoid leaking
+    /// resources across tests.
     fn setup() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         init_db(&conn).unwrap();
         conn
     }
+
+    /// Number of connections to open and close in the stress test.
+    ///
+    /// A power-of-two value keeps the loop bounds friendly to optimizers while
+    /// still large enough to catch obvious leaks without slowing down tests.
+    const STRESS_CONN_ITERATIONS: usize = 256;
 
     /// Verify that waveforms can be persisted and retrieved from the cache.
     #[test]
@@ -223,6 +243,7 @@ mod tests {
         store_waveform(&conn, "round", &samples).unwrap();
         let loaded = load_waveform(&conn, "round").unwrap().unwrap();
         assert_eq!(loaded, samples);
+        close_db(conn).unwrap();
     }
 
     /// Loading a non-existent track should yield `None` rather than an error.
@@ -230,6 +251,7 @@ mod tests {
     fn load_waveform_cache_miss() {
         let conn = setup();
         assert!(load_waveform(&conn, "missing").unwrap().is_none());
+        close_db(conn).unwrap();
     }
 
     /// Ensure that generated waveforms are cached and retrieved on subsequent calls.
@@ -245,6 +267,7 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM waveform_samples", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
+        close_db(conn).unwrap();
     }
 
     /// Cached waveform should be returned even if no audio samples are supplied.
@@ -256,6 +279,7 @@ mod tests {
         // Provide empty audio to ensure cached result is used
         let wf2 = get_or_generate_waveform(&conn, "song", &[]).unwrap();
         assert_eq!(wf1, wf2);
+        close_db(conn).unwrap();
     }
 
     /// Verifies that zero-sized windows are rejected to avoid division by zero.
@@ -272,6 +296,7 @@ mod tests {
         let conn = setup();
         let err = get_or_generate_waveform(&conn, "bad id", &[0.0f32; 10]).unwrap_err();
         assert!(matches!(err, PlaybackError::InvalidTrackId));
+        close_db(conn).unwrap();
     }
 
     /// Round-trip conversion between waveform vectors and their byte encoding.
@@ -282,6 +307,16 @@ mod tests {
         let decoded = bytes_to_waveform(&bytes).unwrap();
         assert_eq!(samples, decoded);
     }
+
+    /// Repeatedly open and close in-memory databases to detect leaks or lingering
+    /// statements that prevent proper teardown.
+    #[test]
+    fn stress_open_close_connections() {
+        for _ in 0..STRESS_CONN_ITERATIONS {
+            let conn = Connection::open_in_memory().unwrap();
+            init_db(&conn).unwrap();
+            close_db(conn).unwrap();
+        }
 
     /// Empty track identifiers must be rejected to prevent ambiguous cache keys.
     #[test]
