@@ -25,6 +25,10 @@
 //! SIMD backends are also activated automatically when compiling with the
 //! appropriate `target-feature` flags (e.g., `-C target-feature=+avx2`).
 //!
+//! Default features are `std`, `simd`, and `wasm`. Combining multiple
+//! architecture-specific features is supported; the resolution order is
+//! defined by [`SIMD_BACKEND_PRIORITY`].
+//!
 //! ## Performance
 //!
 //! - **Stack-only APIs**: No heap allocation, suitable for MCUs with limited RAM
@@ -41,8 +45,10 @@
 //! | AArch64  | NEON        | `aarch64` feature or `-C target-feature=+neon` |
 //! | WebAssembly | SIMD128   | `wasm` feature or `-C target-feature=+simd128` |
 //! | Generic  | Scalar      | Default fallback |
-
-//! Feature selection precedence: `x86_64` (AVX2) → `sse` → scalar fallback.
+//!
+//! SIMD backend precedence is defined by the [`SIMD_BACKEND_PRIORITY`]
+//! constant. Earlier entries in the list take priority when multiple
+//! architecture features are enabled simultaneously.
 //!
 //! ## Examples
 //!
@@ -67,6 +73,35 @@
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
+/// Enumeration of SIMD backends supported by the crate.
+///
+/// This type exists solely to document and make explicit the precedence of
+/// architecture-specific optimizations. Consumers may inspect it to make
+/// decisions consistent with `kofft`'s own internal selection.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum SimdBackend {
+    /// x86_64 with AVX2/FMA instructions enabled.
+    X86Avx2,
+    /// x86_64 with only SSE2 instructions available.
+    X86Sse2,
+    /// 64-bit ARM with NEON SIMD instructions.
+    Aarch64Neon,
+    /// WebAssembly SIMD128 backend.
+    WasmSimd,
+    /// Scalar fallback when no SIMD backend is active.
+    Scalar,
+}
+
+/// Ordered precedence for selecting a SIMD backend when multiple
+/// architecture-specific features are enabled. Earlier entries take priority.
+pub const SIMD_BACKEND_PRIORITY: &[SimdBackend] = &[
+    SimdBackend::X86Avx2,
+    SimdBackend::X86Sse2,
+    SimdBackend::Aarch64Neon,
+    SimdBackend::WasmSimd,
+    SimdBackend::Scalar,
+];
 
 pub mod fft;
 mod fft_kernels;
@@ -126,7 +161,8 @@ pub mod hilbert;
 
 /// Short-Time Fourier Transform (STFT)
 ///
-/// Streaming and batch STFT/ISTFT utilities.
+/// Streaming and batch STFT/ISTFT utilities. Enabled when both the `wasm`
+/// and `simd` features are active.
 #[cfg(all(feature = "wasm", feature = "simd"))]
 pub mod stft;
 
