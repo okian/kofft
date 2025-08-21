@@ -4,6 +4,7 @@ import { render, fireEvent, cleanup } from "@testing-library/react";
 import { DesignProvider } from "./DesignContext";
 import { DesignToggle } from "./DesignToggle";
 import { PALETTES } from "./designs";
+import { parseDesign, parseMode } from "./DesignToggle";
 
 /**
  * Convenience helper rendering the toggle within its provider. The wrapper
@@ -68,5 +69,21 @@ describe("DesignToggle", () => {
     });
     expect(rootStyles().getPropertyValue("--color-secondary")).toBe("");
     expect(rootStyles().getPropertyValue("--color-tertiary")).toBe("");
+  });
+
+  /**
+   * The parser rejects unknown design identifiers, preventing undefined
+   * themes from reaching application state.
+   */
+  it("throws on invalid design", () => {
+    expect(() => parseDesign("invalid" as string)).toThrow(/Unknown design/);
+  });
+
+  /**
+   * The parser rejects unknown colour modes, ensuring the shell only switches
+   * between light and dark configurations.
+   */
+  it("throws on invalid mode", () => {
+    expect(() => parseMode("weird" as string)).toThrow(/Unknown mode/);
   });
 });
