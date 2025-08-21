@@ -369,19 +369,17 @@ pub struct StftStream<'a, Fft: crate::fft::FftImpl<f32>> {
 impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
     /// Create a new streaming STFT processor over `signal`.
     ///
-    /// Validates that `window` is non-empty and that `hop_size` advances by at
-    /// least one sample. Returns [`FftError::InvalidHopSize`] or
-    /// [`FftError::EmptyInput`] on invalid parameters.
-    /// Create a streaming STFT iterator over `signal`.
-    ///
-    /// Validates hop size and window length to prevent misaligned frames.
+    /// Validates that `window` is non-empty and that `hop_size` lies in the
+    /// inclusive range `[1, window.len()]`. Returns
+    /// [`FftError::InvalidHopSize`] or [`FftError::EmptyInput`] on invalid
+    /// parameters.
     pub fn new(
         signal: &'a [f32],
         window: &'a [f32],
         hop_size: usize,
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
-        if hop_size < MIN_HOP_SIZE {
+        if hop_size < MIN_HOP_SIZE || hop_size > window.len() {
             return Err(FftError::InvalidHopSize);
         }
         if window.len() < MIN_WINDOW_LEN {

@@ -239,26 +239,50 @@ fn linear_resample_skips_for_nearly_equal_rates() {
 /// Stress test with many channels to ensure output size calculations don't overflow.
 #[test]
 fn linear_resample_handles_many_channels() {
+    /// Number of interleaved audio channels to stress-test index calculations.
     const CHANNELS: usize = 64;
+    /// Frames per channel in the synthetic input buffer.
     const FRAMES: usize = 1_000;
+    /// Source sample rate in Hertz.
+    const SRC_RATE: f32 = 48_000.0;
+    /// Destination sample rate in Hertz.
+    const DST_RATE: f32 = 44_100.0;
+
     let input = vec![0.0f32; CHANNELS * FRAMES];
-    let out = linear_resample_channels(&input, 48_000.0, 44_100.0, CHANNELS).unwrap();
-    assert_eq!(out.len(), CHANNELS * FRAMES);
+    let out = linear_resample_channels(&input, SRC_RATE, DST_RATE, CHANNELS).unwrap();
+
+    // Expected total output sample count after downsampling.
+    let expected_len = CHANNELS * ((FRAMES as f32 * DST_RATE / SRC_RATE).ceil() as usize);
+    assert_eq!(out.len(), expected_len);
 }
 
 /// Stress test with a long input to exercise internal indexing.
 #[test]
 fn linear_resample_handles_long_input() {
+    /// Frames in the lengthy input buffer.
     const FRAMES: usize = 200_000;
+    /// Source sample rate in Hertz.
+    const SRC_RATE: f32 = 44_100.0;
+    /// Destination sample rate in Hertz.
+    const DST_RATE: f32 = 48_000.0;
+
     let input = vec![0.0f32; FRAMES];
-    let out = linear_resample(&input, 44_100.0, 48_000.0).unwrap();
+    let out = linear_resample(&input, SRC_RATE, DST_RATE).unwrap();
     assert!(!out.is_empty());
 }
 
 /// Extremely large destination rates should trigger overflow detection.
 #[test]
 fn linear_resample_detects_overflow() {
+    // Minimal input used to provoke overflow calculations.
     let input = vec![0.0f32, 1.0f32];
-    let err = linear_resample_channels(&input, 1.0, f32::MAX, 2).unwrap_err();
+    /// Harmless source rate in Hertz.
+    const SRC_RATE: f32 = 1.0;
+    /// Destination rate chosen to exceed `usize::MAX` when computing output length.
+    const HUGE_DST_RATE: f32 = f32::MAX;
+    /// Number of audio channels for the test vector.
+    const CHANNELS: usize = 2;
+
+    let err = linear_resample_channels(&input, SRC_RATE, HUGE_DST_RATE, CHANNELS).unwrap_err();
     assert!(matches!(err, ResampleError::OutputTooLarge));
 }

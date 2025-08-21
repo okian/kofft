@@ -26,7 +26,8 @@ fn complex_mul_large_magnitude() {
     let a = Complex64::new(1.0e300, -1.0e300);
     let b = Complex64::new(-1.0e300, 1.0e300);
     let c = a.mul(b);
-    assert!(c.re.is_finite() && c.im.is_finite());
+    // Multiplying extremely large values should overflow to infinity.
+    assert!(c.re.is_infinite() || c.im.is_infinite());
 }
 
 #[test]

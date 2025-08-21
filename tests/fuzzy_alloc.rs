@@ -29,11 +29,17 @@ static A: CountingAlloc = CountingAlloc;
 /// length outside of [`fuzzy_score`] does not introduce extra allocations.
 #[test]
 fn fuzzy_match_allocations() {
+    // Pattern used for allocation comparison.
     let pattern = "abc";
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     let len = pattern.len();
+
+    // Measure allocations for computing the score directly.
     fuzzy_score(pattern, pattern, len);
     let score_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
+
+    // Reset counter and measure allocations through fuzzy_match.
+    ALLOC_COUNT.store(0, Ordering::SeqCst);
     fuzzy_match(pattern, len, pattern);
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
