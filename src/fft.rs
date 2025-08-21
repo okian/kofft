@@ -524,15 +524,26 @@ impl<T: Float> FftPlanner<T> {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Errors emitted by FFT and related transform routines.
 pub enum FftError {
+    /// Input data was unexpectedly empty.
     EmptyInput,
+    /// Length was not a power of two in a `no_std` build.
     NonPowerOfTwoNoStd,
+    /// Provided slices or buffers had mismatched lengths.
     MismatchedLengths,
+    /// Numeric overflow occurred during a computation.
     Overflow,
+    /// Stride parameter was invalid.
     InvalidStride,
+    /// Hop size was outside the allowed range.
     InvalidHopSize,
+    /// Value fell outside the allowed range.
     InvalidValue,
+    /// Requested length would overflow internal limits.
     LengthOverflow,
+    /// Window length was below the minimum supported size.
+    WindowTooSmall,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
