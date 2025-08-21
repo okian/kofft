@@ -48,6 +48,35 @@ describe("DesignToggle", () => {
     expect(document.documentElement.getAttribute("data-mode")).toBe("dark");
   });
 
+  /** Japanese Option B should expose the red accent colour in all modes. */
+  it.each(["light", "dark"] as const)(
+    "applies red accent for Option B in %s mode",
+    (mode) => {
+      const { getByTestId } = renderWithProvider();
+      fireEvent.change(getByTestId("design-select"), {
+        target: { value: "japanese-b" },
+      });
+      fireEvent.change(getByTestId("mode-select"), { target: { value: mode } });
+      const accent = rootStyles().getPropertyValue("--color-accent").trim();
+      expect(accent).toBe(PALETTES["japanese-b"][mode].accent);
+    },
+  );
+
+  /** Option A remains monochrome and must not adopt the red accent. */
+  it.each(["light", "dark"] as const)(
+    "keeps Option A monochrome in %s mode",
+    (mode) => {
+      const { getByTestId } = renderWithProvider();
+      fireEvent.change(getByTestId("design-select"), {
+        target: { value: "japanese-a" },
+      });
+      fireEvent.change(getByTestId("mode-select"), { target: { value: mode } });
+      const accent = rootStyles().getPropertyValue("--color-accent").trim();
+      expect(accent).toBe(PALETTES["japanese-a"][mode].accent);
+      expect(accent).not.toBe(PALETTES["japanese-b"][mode].accent);
+    },
+  );
+
   /**
    * Switching away from Bauhaus should remove secondary and tertiary colour
    * variables so that minimalist designs remain free of unused values.

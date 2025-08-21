@@ -5,6 +5,9 @@ import type { Design, Mode } from "./designs";
 /** Consistent spacing for the toggle container. */
 const CONTROL_SPACING = "0.5rem" as const;
 
+/** CSS variable exposing the theme's primary accent colour. */
+const ACCENT_VAR = "var(--color-accent)" as const;
+
 /**
  * Validate a candidate design string against the supported set.
  * Using an explicit `switch` provides compile-time exhaustiveness
@@ -79,13 +82,20 @@ export function DesignToggle() {
   };
 
   return (
-    <div style={{ padding: CONTROL_SPACING, display: "flex", gap: CONTROL_SPACING }}>
+    <div
+      style={{
+        padding: CONTROL_SPACING,
+        display: "flex",
+        gap: CONTROL_SPACING,
+      }}
+    >
       <label>
         Design:
         <select
           value={design}
           onChange={handleDesignChange}
           data-testid="design-select"
+          style={{ color: ACCENT_VAR, borderColor: ACCENT_VAR }}
         >
           <option value="japanese-a">Japanese A</option>
           <option value="japanese-b">Japanese B</option>
@@ -98,6 +108,7 @@ export function DesignToggle() {
           value={mode}
           onChange={handleModeChange}
           data-testid="mode-select"
+          style={{ color: ACCENT_VAR, borderColor: ACCENT_VAR }}
         >
           <option value="light">Light</option>
           <option value="dark">Dark</option>
