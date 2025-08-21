@@ -30,11 +30,13 @@ static A: CountingAlloc = CountingAlloc;
 fn fuzzy_match_allocations() {
     let pattern = "abc";
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_score(pattern, "abc", pattern.len());
+    let pat_len = pattern.len();
+    fuzzy_score(pattern, "abc", pat_len);
     let score_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_match(pattern, pattern.len(), "abc");
+    fuzzy_match(pattern, pat_len, "abc");
+
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     assert_eq!(

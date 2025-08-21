@@ -793,8 +793,8 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
-    // Only the complex type, FFT strategy enum, and scalar FFT implementation
-    // are required for tests.
+    // Only the complex type, scalar FFT and strategy enum are required for tests.
+
     use crate::fft::{Complex32, FftStrategy, ScalarFftImpl};
 
     #[test]
