@@ -15,6 +15,7 @@ import { fuzzyMatch, fuzzyScore } from "@/shared/utils/fuzzy";
 import { usePlaylistSearchStore } from "@/shared/stores/playlistSearchStore";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
 import { THEME_COLORS } from "@/shared/theme";
+import { getPanelClasses } from "@/shared/layout";
 
 interface PlaylistPanelProps {
   tracks: AudioTrack[];
@@ -389,6 +390,7 @@ export function PlaylistPanel({
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const trackRefs = useRef<(HTMLDivElement | null)[]>([]);
   const { loadAudioFiles } = useAudioFile();
+  const theme = useSettingsStore((s) => s.theme);
 
   const handlePanelDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes("Files")) {
@@ -659,7 +661,7 @@ export function PlaylistPanel({
 
   return (
     <div
-      className="h-full flex flex-col"
+      className={getPanelClasses(theme)}
       data-testid="playlist-panel"
       onDragOver={handlePanelDragOver}
       onDrop={handlePanelDrop}

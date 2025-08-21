@@ -1,3 +1,3 @@
-export { Footer } from '../components/layout/Footer';
+export { Footer, getFooterClasses } from '../components/layout/Footer';
 
 
