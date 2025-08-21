@@ -2,9 +2,6 @@ import React, { useState } from "react";
 import {
   X,
   Palette,
-  Sliders,
-  Monitor,
-  Zap,
   Key,
   Image,
   Check,
@@ -18,6 +15,8 @@ import {
   Eye,
   Settings,
   Play,
+  Circle,
+  Grid,
 } from "lucide-react";
 import {
   SpectrogramSettings,
@@ -35,6 +34,48 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { LUTSettingsPanel } from "@/features/settings/LUTSettingsPanel";
 import { getPanelClasses } from "@/shared/layout";
 
+/** Standard icon dimension ensuring consistent sizing across controls. */
+const ICON_SIZE = 16;
+
+/**
+ * Catalog of supported design themes. Each entry pairs an identifier with a
+ * human-readable label and representative icon. Defined outside the component
+ * to avoid re-allocation on every render.
+ */
+const DESIGN_THEMES: { value: Theme; label: string; icon: React.ReactNode }[] =
+  [
+    {
+      value: "japanese-a-light",
+      label: "Japanese A Light",
+      icon: <Circle size={ICON_SIZE} />,
+    },
+    {
+      value: "japanese-a-dark",
+      label: "Japanese A Dark",
+      icon: <Circle size={ICON_SIZE} />,
+    },
+    {
+      value: "japanese-b-light",
+      label: "Japanese B Light",
+      icon: <Circle size={ICON_SIZE} />,
+    },
+    {
+      value: "japanese-b-dark",
+      label: "Japanese B Dark",
+      icon: <Circle size={ICON_SIZE} />,
+    },
+    {
+      value: "bauhaus-light",
+      label: "Bauhaus Light",
+      icon: <Grid size={ICON_SIZE} />,
+    },
+    {
+      value: "bauhaus-dark",
+      label: "Bauhaus Dark",
+      icon: <Grid size={ICON_SIZE} />,
+    },
+  ];
+
 interface SettingsPanelProps {
   settings: SpectrogramSettings;
   isOpen: boolean;
@@ -49,7 +90,17 @@ interface CollapsibleSectionProps {
   defaultOpen?: boolean;
 }
 
-function CollapsibleSection({ title, icon, children, defaultOpen = true }: CollapsibleSectionProps) {
+/**
+ * Reusable wrapper providing a toggleable section with a header. Abstracted
+ * to keep the main panel implementation concise while ensuring consistent
+ * styling and behaviour.
+ */
+function CollapsibleSection({
+  title,
+  icon,
+  children,
+  defaultOpen = true,
+}: CollapsibleSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
@@ -62,13 +113,21 @@ function CollapsibleSection({ title, icon, children, defaultOpen = true }: Colla
           {icon}
           <span className="text-sm font-medium text-neutral-100">{title}</span>
         </div>
-        {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        {isOpen ? (
+          <ChevronDown size={ICON_SIZE} />
+        ) : (
+          <ChevronRight size={ICON_SIZE} />
+        )}
       </button>
       {isOpen && <div className="p-3 pt-0 space-y-3">{children}</div>}
     </div>
   );
 }
 
+/**
+ * Renders the main settings panel for the spectrogram view. Exposes numerous
+ * configuration controls and persists user selections via callbacks.
+ */
 export function SettingsPanel({
   settings,
   isOpen,
@@ -83,17 +142,6 @@ export function SettingsPanel({
   >("general");
 
   if (!isOpen) return null;
-
-  const themes: { value: Theme; label: string; icon: React.ReactNode }[] = [
-    { value: "dark", label: "Dark", icon: <Palette size={16} /> },
-    { value: "light", label: "Light", icon: <Monitor size={16} /> },
-    { value: "neon", label: "Neon", icon: <Zap size={16} /> },
-    {
-      value: "high-contrast",
-      label: "High Contrast",
-      icon: <Sliders size={16} />,
-    },
-  ];
 
   const amplitudeScales: { value: AmplitudeScale; label: string }[] = [
     { value: "linear", label: "Linear" },
@@ -136,8 +184,8 @@ export function SettingsPanel({
     setValidatingKeys((prev) => ({ ...prev, [service]: true }));
 
     try {
-      const isValid = await import("@/shared/stores/settingsStore").then((module) =>
-        module.useSettingsStore.getState().validateAPIKey(service),
+      const isValid = await import("@/shared/stores/settingsStore").then(
+        (module) => module.useSettingsStore.getState().validateAPIKey(service),
       );
 
       if (isValid) {
@@ -162,18 +210,20 @@ export function SettingsPanel({
     const status = settings.apiKeyStatus[service];
 
     if (validatingKeys[service]) {
-      return <Loader2 size={16} className="animate-spin text-blue-500" />;
+      return (
+        <Loader2 size={ICON_SIZE} className="animate-spin text-blue-500" />
+      );
     }
 
     if (status.valid) {
-      return <Check size={16} className="text-green-500" />;
+      return <Check size={ICON_SIZE} className="text-green-500" />;
     }
 
     if (settings.apiKeys[service]) {
-      return <AlertCircle size={16} className="text-red-500" />;
+      return <AlertCircle size={ICON_SIZE} className="text-red-500" />;
     }
 
-    return <AlertCircle size={16} className="text-gray-400" />;
+    return <AlertCircle size={ICON_SIZE} className="text-gray-400" />;
   };
 
   const getAPIKeyStatusText = (service: "acoustid" | "musicbrainz") => {
@@ -239,7 +289,7 @@ export function SettingsPanel({
                 : "text-neutral-400 hover:text-neutral-200",
             )}
           >
-            <Image size={16} className="inline mr-2" />
+            <Image size={ICON_SIZE} className="inline mr-2" />
             Artwork
           </button>
           <button
@@ -251,7 +301,7 @@ export function SettingsPanel({
                 : "text-neutral-400 hover:text-neutral-200",
             )}
           >
-            <Key size={16} className="inline mr-2" />
+            <Key size={ICON_SIZE} className="inline mr-2" />
             API Keys
           </button>
           <button
@@ -263,7 +313,7 @@ export function SettingsPanel({
                 : "text-neutral-400 hover:text-neutral-200",
             )}
           >
-            <BarChart size={16} className="inline mr-2" />
+            <BarChart size={ICON_SIZE} className="inline mr-2" />
             Statistics
           </button>
           <button
@@ -275,7 +325,7 @@ export function SettingsPanel({
                 : "text-neutral-400 hover:text-neutral-200",
             )}
           >
-            <Database size={16} className="inline mr-2" />
+            <Database size={ICON_SIZE} className="inline mr-2" />
             Database
           </button>
           <button
@@ -287,7 +337,7 @@ export function SettingsPanel({
                 : "text-neutral-400 hover:text-neutral-200",
             )}
           >
-            <Palette size={16} className="inline mr-2" />
+            <Palette size={ICON_SIZE} className="inline mr-2" />
             Color Maps
           </button>
         </div>
@@ -297,9 +347,12 @@ export function SettingsPanel({
           {activeTab === "general" && (
             <div className="space-y-4">
               {/* Theme Selection */}
-              <CollapsibleSection title="Appearance" icon={<Palette size={16} />}>
+              <CollapsibleSection
+                title="Appearance"
+                icon={<Palette size={ICON_SIZE} />}
+              >
                 <div className="grid grid-cols-2 gap-2">
-                  {themes.map((theme) => (
+                  {DESIGN_THEMES.map((theme) => (
                     <button
                       key={theme.value}
                       onClick={() => onSettingsChange({ theme: theme.value })}
@@ -319,11 +372,16 @@ export function SettingsPanel({
               </CollapsibleSection>
 
               {/* Seekbar Settings */}
-              <CollapsibleSection title="Seekbar" icon={<Play size={16} />}>
+              <CollapsibleSection
+                title="Seekbar"
+                icon={<Play size={ICON_SIZE} />}
+              >
                 <div className="space-y-3">
                   {/* Colors */}
                   <div>
-                    <span className="block text-xs text-neutral-400 mb-2">Colors</span>
+                    <span className="block text-xs text-neutral-400 mb-2">
+                      Colors
+                    </span>
                     <div className="flex items-center gap-3">
                       <label className="flex items-center gap-2 text-xs text-neutral-300">
                         Played
@@ -331,7 +389,9 @@ export function SettingsPanel({
                           type="color"
                           value={playedColour}
                           onChange={(e) =>
-                            onSettingsChange({ seekPlayedColor: e.target.value })
+                            onSettingsChange({
+                              seekPlayedColor: e.target.value,
+                            })
                           }
                           className="w-6 h-6 p-0 border-none bg-transparent cursor-pointer rounded"
                         />
@@ -342,7 +402,9 @@ export function SettingsPanel({
                           type="color"
                           value={unplayedColour}
                           onChange={(e) =>
-                            onSettingsChange({ seekUnplayedColor: e.target.value })
+                            onSettingsChange({
+                              seekUnplayedColor: e.target.value,
+                            })
                           }
                           className="w-6 h-6 p-0 border-none bg-transparent cursor-pointer rounded"
                         />
@@ -353,7 +415,9 @@ export function SettingsPanel({
                           type="color"
                           value={playheadColour}
                           onChange={(e) =>
-                            onSettingsChange({ seekPlayheadColor: e.target.value })
+                            onSettingsChange({
+                              seekPlayheadColor: e.target.value,
+                            })
                           }
                           className="w-6 h-6 p-0 border-none bg-transparent cursor-pointer rounded"
                         />
@@ -375,11 +439,16 @@ export function SettingsPanel({
 
                   {/* Visualisation */}
                   <div>
-                    <span className="block text-xs text-neutral-400 mb-2">Visualisation</span>
+                    <span className="block text-xs text-neutral-400 mb-2">
+                      Visualisation
+                    </span>
                     <div className="grid grid-cols-1 gap-2">
                       {[
                         { value: "live", label: "Live Audio" },
-                        { value: "frequency", label: "Animated Frequency Bars" },
+                        {
+                          value: "frequency",
+                          label: "Animated Frequency Bars",
+                        },
                         { value: "waveform", label: "Fixed Waveform" },
                       ].map((m) => (
                         <label
@@ -407,7 +476,9 @@ export function SettingsPanel({
                   {/* Controls */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <span className="block text-xs text-neutral-400 mb-1">Significance</span>
+                      <span className="block text-xs text-neutral-400 mb-1">
+                        Significance
+                      </span>
                       <input
                         type="range"
                         min={0}
@@ -421,10 +492,14 @@ export function SettingsPanel({
                         }
                         className="w-full"
                       />
-                      <span className="text-xs text-neutral-500">{settings.seekbarSignificance}</span>
+                      <span className="text-xs text-neutral-500">
+                        {settings.seekbarSignificance}
+                      </span>
                     </div>
                     <div>
-                      <span className="block text-xs text-neutral-400 mb-1">Amplitude Scale</span>
+                      <span className="block text-xs text-neutral-400 mb-1">
+                        Amplitude Scale
+                      </span>
                       <input
                         type="range"
                         min={0.1}
@@ -438,7 +513,9 @@ export function SettingsPanel({
                         }
                         className="w-full"
                       />
-                      <span className="text-xs text-neutral-500">{settings.seekbarAmplitudeScale}</span>
+                      <span className="text-xs text-neutral-500">
+                        {settings.seekbarAmplitudeScale}
+                      </span>
                     </div>
                   </div>
 
@@ -459,11 +536,16 @@ export function SettingsPanel({
               </CollapsibleSection>
 
               {/* Spectrogram Settings */}
-              <CollapsibleSection title="Spectrogram" icon={<BarChart size={16} />}>
+              <CollapsibleSection
+                title="Spectrogram"
+                icon={<BarChart size={ICON_SIZE} />}
+              >
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <span className="block text-xs text-neutral-400 mb-2">Amplitude Scale</span>
+                      <span className="block text-xs text-neutral-400 mb-2">
+                        Amplitude Scale
+                      </span>
                       <div className="space-y-1">
                         {amplitudeScales.map((scale) => (
                           <label
@@ -477,7 +559,8 @@ export function SettingsPanel({
                               checked={settings.amplitudeScale === scale.value}
                               onChange={(e) =>
                                 onSettingsChange({
-                                  amplitudeScale: e.target.value as AmplitudeScale,
+                                  amplitudeScale: e.target
+                                    .value as AmplitudeScale,
                                 })
                               }
                               className="text-accent-blue"
@@ -488,7 +571,9 @@ export function SettingsPanel({
                       </div>
                     </div>
                     <div>
-                      <span className="block text-xs text-neutral-400 mb-2">Frequency Scale</span>
+                      <span className="block text-xs text-neutral-400 mb-2">
+                        Frequency Scale
+                      </span>
                       <div className="space-y-1">
                         {frequencyScales.map((scale) => (
                           <label
@@ -502,7 +587,8 @@ export function SettingsPanel({
                               checked={settings.frequencyScale === scale.value}
                               onChange={(e) =>
                                 onSettingsChange({
-                                  frequencyScale: e.target.value as FrequencyScale,
+                                  frequencyScale: e.target
+                                    .value as FrequencyScale,
                                 })
                               }
                               className="text-accent-blue"
@@ -516,7 +602,9 @@ export function SettingsPanel({
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <span className="block text-xs text-neutral-400 mb-2">Resolution</span>
+                      <span className="block text-xs text-neutral-400 mb-2">
+                        Resolution
+                      </span>
                       <div className="space-y-1">
                         {resolutions.map((resolution) => (
                           <label
@@ -541,7 +629,9 @@ export function SettingsPanel({
                       </div>
                     </div>
                     <div>
-                      <span className="block text-xs text-neutral-400 mb-2">Refresh Rate</span>
+                      <span className="block text-xs text-neutral-400 mb-2">
+                        Refresh Rate
+                      </span>
                       <div className="space-y-1">
                         {refreshRates.map((rate) => (
                           <label
@@ -555,7 +645,9 @@ export function SettingsPanel({
                               checked={settings.refreshRate === rate.value}
                               onChange={(e) =>
                                 onSettingsChange({
-                                  refreshRate: parseInt(e.target.value) as RefreshRate,
+                                  refreshRate: parseInt(
+                                    e.target.value,
+                                  ) as RefreshRate,
                                 })
                               }
                               className="text-accent-blue"
@@ -570,7 +662,10 @@ export function SettingsPanel({
               </CollapsibleSection>
 
               {/* UI Settings */}
-              <CollapsibleSection title="Interface" icon={<Eye size={16} />}>
+              <CollapsibleSection
+                title="Interface"
+                icon={<Eye size={ICON_SIZE} />}
+              >
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
                     <input
@@ -598,7 +693,9 @@ export function SettingsPanel({
                     />
                     <div>
                       <span>Toast Notifications</span>
-                      <p className="text-xs text-neutral-500">Show success and error notifications</p>
+                      <p className="text-xs text-neutral-500">
+                        Show success and error notifications
+                      </p>
                     </div>
                   </label>
                 </div>
@@ -608,9 +705,13 @@ export function SettingsPanel({
 
           {activeTab === "artwork" && (
             <div className="space-y-4">
-              <CollapsibleSection title="Artwork Sources" icon={<Image size={16} />}>
+              <CollapsibleSection
+                title="Artwork Sources"
+                icon={<Image size={ICON_SIZE} />}
+              >
                 <p className="text-xs text-neutral-400 mb-3">
-                  Configure how album artwork is retrieved. Sources are tried in order of priority.
+                  Configure how album artwork is retrieved. Sources are tried in
+                  order of priority.
                 </p>
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
@@ -626,7 +727,9 @@ export function SettingsPanel({
                     />
                     <div>
                       <span>Enable External Artwork</span>
-                      <p className="text-xs text-neutral-500">Allow fetching artwork from online sources</p>
+                      <p className="text-xs text-neutral-500">
+                        Allow fetching artwork from online sources
+                      </p>
                     </div>
                   </label>
 
@@ -644,7 +747,9 @@ export function SettingsPanel({
                     />
                     <div>
                       <span>MusicBrainz Lookup</span>
-                      <p className="text-xs text-neutral-500">Search MusicBrainz database for album artwork</p>
+                      <p className="text-xs text-neutral-500">
+                        Search MusicBrainz database for album artwork
+                      </p>
                     </div>
                   </label>
 
@@ -660,7 +765,10 @@ export function SettingsPanel({
                     />
                     <div>
                       <span>AcoustID Fingerprinting</span>
-                      <p className="text-xs text-neutral-500">Use audio fingerprinting for identification (requires API key)</p>
+                      <p className="text-xs text-neutral-500">
+                        Use audio fingerprinting for identification (requires
+                        API key)
+                      </p>
                     </div>
                   </label>
 
@@ -677,7 +785,10 @@ export function SettingsPanel({
                     />
                     <div>
                       <span>Generate Placeholder Artwork</span>
-                      <p className="text-xs text-neutral-500">Create unique placeholder images when no artwork is found</p>
+                      <p className="text-xs text-neutral-500">
+                        Create unique placeholder images when no artwork is
+                        found
+                      </p>
                     </div>
                   </label>
                 </div>
@@ -687,9 +798,13 @@ export function SettingsPanel({
 
           {activeTab === "api" && (
             <div className="space-y-4">
-              <CollapsibleSection title="API Keys" icon={<Key size={16} />}>
+              <CollapsibleSection
+                title="API Keys"
+                icon={<Key size={ICON_SIZE} />}
+              >
                 <p className="text-xs text-neutral-400 mb-3">
-                  Configure API keys for external services. Keys are stored locally and never shared.
+                  Configure API keys for external services. Keys are stored
+                  locally and never shared.
                 </p>
                 <div className="space-y-3">
                   {/* AcoustID API Key */}
@@ -721,7 +836,7 @@ export function SettingsPanel({
                         className="px-3 py-2 bg-accent-blue text-white rounded text-sm hover:bg-accent-blue/80 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {validatingKeys.acoustid ? (
-                          <Loader2 size={16} className="animate-spin" />
+                          <Loader2 size={ICON_SIZE} className="animate-spin" />
                         ) : (
                           "Test"
                         )}
@@ -767,14 +882,15 @@ export function SettingsPanel({
                         className="px-3 py-2 bg-accent-blue text-white rounded text-sm hover:bg-accent-blue/80 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {validatingKeys.musicbrainz ? (
-                          <Loader2 size={16} className="animate-spin" />
+                          <Loader2 size={ICON_SIZE} className="animate-spin" />
                         ) : (
                           "Test"
                         )}
                       </button>
                     </div>
                     <p className="text-xs text-neutral-500 mt-1">
-                      MusicBrainz is free and works without an API key, but you can register for higher rate limits
+                      MusicBrainz is free and works without an API key, but you
+                      can register for higher rate limits
                     </p>
                   </div>
                 </div>
@@ -794,7 +910,9 @@ export function SettingsPanel({
           <button
             onClick={async () => {
               // Use the store's reset function
-              const { useSettingsStore } = await import("@/shared/stores/settingsStore");
+              const { useSettingsStore } = await import(
+                "@/shared/stores/settingsStore"
+              );
               useSettingsStore.getState().resetToDefaults();
               // Also update the local state
               onSettingsChange({});

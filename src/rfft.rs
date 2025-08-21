@@ -169,8 +169,17 @@ mod precomputed {
     pub const F64: &[(usize, &[Complex64])] = &[];
 }
 
-fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
-    let angle = -T::pi() / T::from_f32(m as f32);
+/// Build a table of `m` complex twiddle factors.
+///
+/// Returns an error if `m` is zero or cannot be represented as the
+/// floating-point type `T`, preventing invalid angles or excessive
+/// allocations.
+fn build_twiddle_table<T: Float>(m: usize) -> Result<alloc::vec::Vec<Complex<T>>, FftError> {
+    if m == 0 {
+        return Err(FftError::InvalidValue);
+    }
+    let m_t = T::from_usize(m).ok_or(FftError::InvalidValue)?;
+    let angle = -T::pi() / m_t;
     let (sin_step, cos_step) = angle.sin_cos();
     let w = Complex::new(cos_step, sin_step);
     let mut table = alloc::vec::Vec::with_capacity(m);
@@ -179,7 +188,7 @@ fn build_twiddle_table<T: Float>(m: usize) -> alloc::vec::Vec<Complex<T>> {
         table.push(current);
         current = current.mul(w);
     }
-    table
+    Ok(table)
 }
 
 /// Planner that caches RFFT twiddle tables by transform length.
@@ -202,7 +211,8 @@ pub struct RfftPlanner<T: RealFftNum> {
 
 impl<T: RealFftNum> Default for RfftPlanner<T> {
     fn default() -> Self {
-        Self::new()
+        // Precomputed lengths are well-defined; unwrap is safe here.
+        Self::new().expect("valid precomputed lengths")
     }
 }
 
@@ -214,7 +224,7 @@ impl<T: RealFftNum> RfftPlanner<T> {
     const PRECOMPUTED: &'static [usize] = &[2, 4, 8, 16, 32, 64, 128, 256];
 
     /// Create a new [`RfftPlanner`].
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, FftError> {
         let mut cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
         let mut pack_cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
 
@@ -222,42 +232,39 @@ impl<T: RealFftNum> RfftPlanner<T> {
         T::load_precomputed(&mut cache);
 
         for &m in Self::PRECOMPUTED {
-            cache.entry(m).or_insert_with(|| {
-                let vec = build_twiddle_table::<T>(m);
-                Arc::from(vec)
-            });
-            // The packing/unpacking step uses the same radix but we cache a
-            // separate table to keep the interface future proof in case a
-            // different generation scheme is required.
-            pack_cache.entry(m).or_insert_with(|| {
-                let vec = build_twiddle_table::<T>(m);
-                Arc::from(vec)
-            });
+            if !cache.contains_key(&m) {
+                let vec = build_twiddle_table::<T>(m)?;
+                cache.insert(m, Arc::from(vec));
+            }
+            if !pack_cache.contains_key(&m) {
+                let vec = build_twiddle_table::<T>(m)?;
+                pack_cache.insert(m, Arc::from(vec));
+            }
         }
 
-        Self {
+        Ok(Self {
             cache,
             pack_cache,
             scratch: Vec::new(),
-        }
+        })
     }
 
     /// Retrieve or build the twiddle table for length `m`.
-    pub fn get_twiddles(&mut self, m: usize) -> Arc<[Complex<T>]> {
+    pub fn get_twiddles(&mut self, m: usize) -> Result<Arc<[Complex<T>]>, FftError> {
         if !self.cache.contains_key(&m) {
-            let vec = build_twiddle_table::<T>(m);
+            let vec = build_twiddle_table::<T>(m)?;
             self.cache.insert(m, Arc::from(vec));
         }
-        Arc::clone(self.cache.get(&m).unwrap())
+        Ok(Arc::clone(self.cache.get(&m).unwrap()))
     }
 
     /// Retrieve or build the pack/unpack twiddle table for length `m`.
-    pub fn get_pack_twiddles(&mut self, m: usize) -> Arc<[Complex<T>]> {
+    pub fn get_pack_twiddles(&mut self, m: usize) -> Result<Arc<[Complex<T>]>, FftError> {
         if !self.pack_cache.contains_key(&m) {
-            let vec = build_twiddle_table::<T>(m);
+            let vec = build_twiddle_table::<T>(m)?;
             self.pack_cache.insert(m, Arc::from(vec));
         }
-        Arc::clone(self.pack_cache.get(&m).unwrap())
+        Ok(Arc::clone(self.pack_cache.get(&m).unwrap()))
     }
 
     /// Compute a real-input FFT using cached twiddle tables.
@@ -269,8 +276,8 @@ impl<T: RealFftNum> RfftPlanner<T> {
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = input.len() / 2;
-        let twiddles = self.get_twiddles(m);
-        let pack_twiddles = self.get_pack_twiddles(m);
+        let twiddles = self.get_twiddles(m)?;
+        let pack_twiddles = self.get_pack_twiddles(m)?;
         T::rfft_with_scratch_impl(
             fft,
             input,
@@ -307,8 +314,8 @@ impl<T: RealFftNum> RfftPlanner<T> {
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
         let m = output.len() / 2;
-        let twiddles = self.get_twiddles(m);
-        let pack_twiddles = self.get_pack_twiddles(m);
+        let twiddles = self.get_twiddles(m)?;
+        let pack_twiddles = self.get_pack_twiddles(m)?;
         T::irfft_with_scratch_impl(
             fft,
             input,
@@ -364,7 +371,7 @@ pub fn rfft_packed<T: RealFftNum, F: FftImpl<T>>(
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
     let half = T::from_f32(0.5);
-    let twiddles = planner.get_twiddles(m);
+    let twiddles = planner.get_twiddles(m)?;
     for k in 1..m {
         let a = scratch[k];
         let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
@@ -402,7 +409,7 @@ pub fn irfft_packed<T: RealFftNum, F: FftImpl<T>>(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
     );
-    let twiddles = planner.get_twiddles(m);
+    let twiddles = planner.get_twiddles(m)?;
     for k in 1..m {
         let a = input[k];
         let b = Complex::new(input[m - k].re, -input[m - k].im);
@@ -783,7 +790,7 @@ pub trait RealFftImpl<T: RealFftNum>: FftImpl<T> {
         output: &mut [Complex<T>],
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let mut planner = RfftPlanner::new();
+        let mut planner = RfftPlanner::new()?;
         planner.rfft_with_scratch(self, input, output, scratch)
     }
 
@@ -812,7 +819,7 @@ pub trait RealFftImpl<T: RealFftNum>: FftImpl<T> {
         output: &mut [T],
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let mut planner = RfftPlanner::new();
+        let mut planner = RfftPlanner::new()?;
         planner.irfft_with_scratch(self, input, output, scratch)
     }
 
@@ -933,5 +940,29 @@ mod tests {
         for (a, b) in orig.iter().zip(out.iter()) {
             assert!((a - b).abs() < 1e-10);
         }
+    }
+}
+
+#[cfg(test)]
+mod twiddle_table_tests {
+    use super::*;
+    use crate::fft::Complex32;
+
+    #[test]
+    fn rejects_zero_length() {
+        assert!(build_twiddle_table::<f32>(0).is_err());
+    }
+
+    #[test]
+    fn rejects_unrepresentable_length() {
+        assert!(build_twiddle_table::<f32>(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn builds_large_table() {
+        const M: usize = 1024;
+        let table = build_twiddle_table::<f32>(M).unwrap();
+        assert_eq!(table.len(), M);
+        assert_eq!(table[0], Complex32::new(1.0, 0.0));
     }
 }

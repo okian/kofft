@@ -353,7 +353,7 @@ fn bench_real(c: &mut Criterion, size: usize) {
             let mut total = Duration::ZERO;
             let mut alloc_total = 0;
             let mut peak = 0;
-            let mut planner = RfftPlanner::<f32>::new();
+            let mut planner = RfftPlanner::<f32>::new().unwrap();
             for _ in 0..iters {
                 input.copy_from_slice(&input_template);
                 reset_alloc();
