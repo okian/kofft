@@ -151,7 +151,8 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 ///
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
-pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchForwardOutput, WaveletError> {
+#[allow(clippy::type_complexity)]
+pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<(Vec<Vec<f32>>, Vec<Vec<f32>>), WaveletError> {
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
@@ -230,6 +231,7 @@ where
 ///
 /// # Errors
 /// Propagates any error produced by [`multi_level_forward`].
+#[allow(clippy::type_complexity)]
 pub fn multi_level_forward_batch<F>(
     inputs: &[Vec<f32>],
     levels: usize,
