@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { describe, it, expect } from "vitest";
 import { render, waitFor } from "@testing-library/react";
-import { DesignProvider, useDesign } from "./DesignContext";
+import { DesignProvider, useDesign, applyPalette } from "./DesignContext";
 import { PALETTES, Design, Mode } from "./designs";
 
 /**
@@ -88,5 +88,12 @@ describe("DesignProvider", () => {
       expect(styles.getPropertyValue(VAR_SECONDARY)).toBe("");
       expect(styles.getPropertyValue(VAR_TERTIARY)).toBe("");
     });
+  });
+
+  it("throws on invalid palette", () => {
+    expect(() => applyPalette(undefined as unknown as any)).toThrow(
+      /valid palette/,
+    );
+    expect(() => applyPalette({} as any)).toThrow(/valid palette/);
   });
 });

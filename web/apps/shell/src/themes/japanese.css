@@ -6,29 +6,29 @@
 */
 
 /* Common properties for Japanese designs. */
-:root[data-design='japanese-a'],
-:root[data-design='japanese-b'] {
-  --anim-duration: 300ms;
-  font-family: 'Noto Sans', sans-serif;
+:root[data-design="japanese-a"],
+:root[data-design="japanese-b"] {
+  font-family: "Noto Sans", sans-serif;
 }
 
 /* Light mode styles for Japanese designs. */
-:root[data-design='japanese-a'][data-mode='light'],
-:root[data-design='japanese-b'][data-mode='light'] {
+:root[data-design="japanese-a"][data-mode="light"],
+:root[data-design="japanese-b"][data-mode="light"] {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
 
 /* Dark mode styles for Japanese designs. */
-:root[data-design='japanese-a'][data-mode='dark'],
-:root[data-design='japanese-b'][data-mode='dark'] {
+:root[data-design="japanese-a"][data-mode="dark"],
+:root[data-design="japanese-b"][data-mode="dark"] {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
 
 /* Transition behaviour for minimalist Japanese designs. */
-:root[data-design='japanese-a'] *,
-:root[data-design='japanese-b'] * {
-  transition: background-color var(--anim-duration) ease-in-out,
+:root[data-design="japanese-a"] *,
+:root[data-design="japanese-b"] * {
+  transition:
+    background-color var(--anim-duration) ease-in-out,
     color var(--anim-duration) ease-in-out;
 }
