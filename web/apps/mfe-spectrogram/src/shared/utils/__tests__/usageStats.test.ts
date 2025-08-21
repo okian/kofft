@@ -6,7 +6,7 @@ import {
   getStats,
   resetStats,
   configureUsageStats,
-} from "@/utils/usageStats";
+} from "@/shared/utils/usageStats";
 
 // Use small threshold to speed up tests
 beforeEach(async () => {

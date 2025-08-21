@@ -3,7 +3,7 @@ import { AudioTrack } from '@/types'
 import { vi } from 'vitest'
 import { usePlaylistSearchStore } from '@/shared/stores/playlistSearchStore'
 
-vi.mock('@/utils/wasm', () => ({}), { virtual: true })
+vi.mock('@/shared/utils/wasm', () => ({}), { virtual: true })
 
 vi.mock('@/hooks/useAudioFile', () => ({
   useAudioFile: () => ({

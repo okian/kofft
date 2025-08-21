@@ -1,59 +1,69 @@
+//! Command-line interface for project maintenance tasks.
+
 use clap::{Parser, Subcommand};
 #[cfg(not(test))]
 use xtask::*;
 
 #[derive(Parser)]
 #[command(author, version, about = "Development tasks for kofft")]
+/// Top-level command-line arguments.
 struct Cli {
     #[command(subcommand)]
+    /// Task to execute.
     command: Commands,
 }
 
 #[derive(Subcommand)]
+/// Supported subcommands.
 enum Commands {
+    /// Build the project.
     Build,
+    /// Execute tests.
     Test,
+    /// Run Clippy lints.
     Clippy,
+    /// Format the codebase.
     Fmt,
+    /// Run formatting followed by Clippy.
     Analyze,
+    /// Run project benchmark example.
     Benchmark,
+    /// Benchmark external libraries.
     #[command(name = "bench-libs")]
     BenchLibs,
+    /// Update the benchmark README.
     #[command(name = "update-bench-readme")]
     UpdateBenchReadme,
+    /// Generate a spectrogram for manual inspection.
     Sanity {
-        /// Path to input audio file
+        /// Path to input audio file.
         input: String,
-        /// Path to output PNG file
+        /// Path to output PNG file.
         output: String,
     },
 }
 
 #[cfg(not(test))]
-fn main() -> std::io::Result<()> {
+/// Program entry point dispatching to the selected subcommand. Errors bubble up
+/// so `cargo` reports them and exits early.
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let cfg = detect_config();
 
-    let status = match cli.command {
-        Commands::Build => build_command(&cfg).status(),
-        Commands::Test => test_command(&cfg).status(),
-        Commands::Clippy => clippy_command().status(),
-        Commands::Fmt => fmt_command().status(),
+    match cli.command {
+        Commands::Build => run_command(build_command(&cfg)),
+        Commands::Test => run_command(test_command(&cfg)),
+        Commands::Clippy => run_command(clippy_command()),
+        Commands::Fmt => run_command(fmt_command()),
         Commands::Analyze => {
-            let fmt = fmt_command().status()?;
-            if !fmt.success() {
-                Ok(fmt)
-            } else {
-                clippy_command().status()
-            }
+            run_command(fmt_command())?;
+            run_command(clippy_command())
         }
-        Commands::Benchmark => benchmark_command(&cfg).status(),
-        Commands::BenchLibs => bench_libs_command(&cfg).status(),
-        Commands::UpdateBenchReadme => update_bench_readme_command(&cfg).status(),
-        Commands::Sanity { input, output } => sanity_command(&input, &output).status(),
-    }?;
-
-    std::process::exit(status.code().unwrap_or(1));
+        Commands::Benchmark => run_command(benchmark_command(&cfg)),
+        Commands::BenchLibs => run_command(bench_libs_command(&cfg)),
+        Commands::UpdateBenchReadme => run_command(update_bench_readme_command(&cfg)),
+        Commands::Sanity { input, output } => run_command(sanity_command(&input, &output)?),
+    }
 }
 
 #[cfg(test)]

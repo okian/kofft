@@ -1,3 +1,4 @@
+// Test intent: verifies small kernels behavior including edge cases.
 use kofft::fft::{fft16, fft8, Complex32, ScalarFftImpl};
 
 fn dft(input: &[Complex32]) -> Vec<Complex32> {

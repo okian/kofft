@@ -1,3 +1,4 @@
+// Test intent: verifies parallel stockham behavior including edge cases.
 #![cfg(feature = "parallel")]
 
 use kofft::fft::{set_parallel_fft_threshold, Complex32, ScalarFftImpl};

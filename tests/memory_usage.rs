@@ -1,3 +1,4 @@
+// Test intent: verifies memory usage behavior including edge cases.
 use kofft::fft::{Complex32, ScalarFftImpl};
 use kofft::stft::IstftStream;
 

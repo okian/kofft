@@ -1,3 +1,4 @@
+// Test intent: verifies rfft arch parity behavior including edge cases.
 #![cfg(any(
     all(feature = "x86_64", target_arch = "x86_64"),
     all(feature = "aarch64", target_arch = "aarch64")

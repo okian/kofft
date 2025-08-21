@@ -1,3 +1,4 @@
+// Test intent: verifies static twiddles behavior including edge cases.
 use kofft::fft::FftPlanner;
 
 #[cfg(feature = "precomputed-twiddles")]

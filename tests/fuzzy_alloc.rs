@@ -1,3 +1,4 @@
+// Test intent: verifies fuzzy alloc behavior including edge cases.
 use kofft::fuzzy::{fuzzy_match, fuzzy_score};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,12 +29,12 @@ static A: CountingAlloc = CountingAlloc;
 /// length outside of [`fuzzy_score`] does not introduce extra allocations.
 #[test]
 fn fuzzy_match_allocations() {
+    let pattern = "abc";
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_score("abc", "abc", "abc".len());
+    let len = pattern.len();
+    fuzzy_score(pattern, pattern, len);
     let score_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
-
-    ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_match("abc", "abc".len(), "abc");
+    fuzzy_match(pattern, len, pattern);
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     assert_eq!(

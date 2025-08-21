@@ -1,3 +1,4 @@
+// Test intent: verifies stockham parity behavior including edge cases.
 use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 
 #[test]

@@ -7,13 +7,16 @@ use crate::fft::FftImpl;
 use crate::fft::{Complex32, FftError, ScalarFftImpl};
 use alloc::vec::Vec;
 
-/// Scaling factor applied to positive frequency components when constructing
-/// the analytic signal. Doubling these components removes negative frequencies
-/// after the inverse transform.
+/// Multiplier applied to each positive-frequency bin.
+///
+/// Doubling these components suppresses the mirrored negative-frequency
+/// content after the inverse transform, yielding the analytic signal.
 const POS_FREQ_SCALE: f32 = 2.0;
 
-/// Starting index of positive frequency components in the FFT output. Index 0
-/// holds the DC component, so iteration begins at 1.
+/// Index of the first positive-frequency bin in the FFT output.
+///
+/// The element at index `0` holds the DC term and is therefore excluded from
+/// scaling.
 const POS_FREQ_START: usize = 1;
 
 /// Compute the analytic signal (Hilbert transform) of a real input using an
@@ -32,33 +35,32 @@ pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
     if !input.len().is_power_of_two() {
         return Err(FftError::NonPowerOfTwoNoStd);
     }
+    if input.iter().any(|v| v.is_nan()) {
+        // NaNs would contaminate the spectrum; reject early to fail fast.
+        return Err(FftError::InvalidValue);
+    }
     let n = input.len();
+
     // Preallocate without zero-initialization to avoid needless memory
     // overhead, then push each real sample as a complex value.
     let mut freq: Vec<Complex32> = Vec::with_capacity(n);
     for &x in input {
         freq.push(Complex32::new(x, 0.0));
     }
+
     let fft = ScalarFftImpl::<f32>::default();
     fft.fft(&mut freq)?;
-    if n.is_multiple_of(2) {
-        for f in freq[POS_FREQ_START..n / 2].iter_mut() {
-            f.re *= POS_FREQ_SCALE;
-            f.im *= POS_FREQ_SCALE;
-        }
-        for f in freq[n / 2 + POS_FREQ_START..].iter_mut() {
-            *f = Complex32::zero();
-        }
-    } else {
-        for f in freq[POS_FREQ_START..(n / 2 + POS_FREQ_START)].iter_mut() {
-            f.re *= POS_FREQ_SCALE;
-            f.im *= POS_FREQ_SCALE;
-        }
-        let start = n.div_ceil(2);
-        for f in freq[start..].iter_mut() {
-            *f = Complex32::zero();
-        }
+
+    let half = n / 2;
+    let end_double = if n % 2 == 0 { half } else { half + 1 };
+    for f in freq[POS_FREQ_START..end_double].iter_mut() {
+        f.re *= POS_FREQ_SCALE;
+        f.im *= POS_FREQ_SCALE;
     }
+    for f in freq[(half + 1)..].iter_mut() {
+        *f = Complex32::zero();
+    }
+
     fft.ifft(&mut freq)?;
     Ok(freq)
 }
@@ -76,7 +78,7 @@ mod tests {
     fn hilbert_single_sample() {
         let x = [42.0];
         let analytic = hilbert_analytic(&x).unwrap();
-        assert_eq!(analytic, vec![Complex32::new(42.0, 0.0)]);
+        assert_eq!(analytic, alloc::vec![Complex32::new(42.0, 0.0)]);
     }
 
     /// Even-length inputs should preserve the real part and produce the expected

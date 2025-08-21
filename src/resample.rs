@@ -24,9 +24,9 @@ const MIN_CHANNELS: usize = 1;
 pub enum ResampleError {
     /// The input slice was empty.
     EmptyInput,
-    /// The source sample rate was non-positive.
+    /// The source sample rate was non-positive or non-finite.
     InvalidSrcRate,
-    /// The destination sample rate was non-positive.
+    /// The destination sample rate was non-positive or non-finite.
     InvalidDstRate,
     /// The channel count was zero.
     InvalidChannels,
@@ -39,10 +39,10 @@ impl fmt::Display for ResampleError {
         match self {
             ResampleError::EmptyInput => write!(f, "input slice is empty"),
             ResampleError::InvalidSrcRate => {
-                write!(f, "source sample rate must be positive")
+                write!(f, "source sample rate must be finite and positive")
             }
             ResampleError::InvalidDstRate => {
-                write!(f, "destination sample rate must be positive")
+                write!(f, "destination sample rate must be finite and positive")
             }
             ResampleError::InvalidChannels => {
                 write!(f, "channel count must be at least {}", MIN_CHANNELS)
@@ -99,10 +99,10 @@ pub fn linear_resample_channels(
     dst_rate: f32,
     channels: usize,
 ) -> Result<Vec<f32>, ResampleError> {
-    if src_rate <= 0.0 {
+    if !src_rate.is_finite() || src_rate <= 0.0 {
         return Err(ResampleError::InvalidSrcRate);
     }
-    if dst_rate <= 0.0 {
+    if !dst_rate.is_finite() || dst_rate <= 0.0 {
         return Err(ResampleError::InvalidDstRate);
     }
     if input.is_empty() {

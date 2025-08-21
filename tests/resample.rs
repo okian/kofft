@@ -6,6 +6,17 @@ use std::time::Instant;
 /// This intentionally slow implementation helps verify that the linear
 /// interpolator performs at least as well in terms of error while providing a
 /// simple reference for boundary behaviour.
+
+
+/// Source rate used for extreme upsampling tests.
+const EXTREME_LOW_RATE: f32 = 1.0;
+/// Destination rate used for extreme upsampling tests.
+const EXTREME_HIGH_RATE: f32 = 1_000.0;
+/// Example invalid rate representing a non-finite value.
+const NAN_RATE: f32 = f32::NAN;
+/// Example invalid rate representing an infinite value.
+const INF_RATE: f32 = f32::INFINITY;
+
 fn naive_nearest(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
     let ratio = src_rate / dst_rate;
     let out_len = (input.len() as f32 / ratio).ceil() as usize;
@@ -175,4 +186,43 @@ fn linear_resample_wasm_feature_path() {
     let input = vec![0.0, 1.0];
     let output = linear_resample(&input, 1.0, 2.0).unwrap();
     assert_eq!(output.len(), 4);
+/// Ensures resampler fails fast when given non-finite rates.
+#[test]
+fn linear_resample_errors_on_non_finite_rates() {
+    let input = vec![0.0, 1.0];
+    assert_eq!(
+        linear_resample(&input, NAN_RATE, 1.0).unwrap_err(),
+        ResampleError::InvalidSrcRate
+    );
+    assert_eq!(
+        linear_resample(&input, 1.0, NAN_RATE).unwrap_err(),
+        ResampleError::InvalidDstRate
+    );
+    assert_eq!(
+        linear_resample(&input, INF_RATE, 1.0).unwrap_err(),
+        ResampleError::InvalidSrcRate
+    );
+    assert_eq!(
+        linear_resample(&input, 1.0, INF_RATE).unwrap_err(),
+        ResampleError::InvalidDstRate
+    );
+}
+
+/// Upsamples by a large factor and checks result length and finiteness.
+#[test]
+fn linear_resample_extreme_upsample() {
+    let input = vec![1.0, -1.0];
+    let expected_len = (input.len() as f32 * EXTREME_HIGH_RATE / EXTREME_LOW_RATE).ceil() as usize;
+    let output = linear_resample(&input, EXTREME_LOW_RATE, EXTREME_HIGH_RATE).unwrap();
+    assert_eq!(output.len(), expected_len);
+    assert!(output.iter().all(|v| v.is_finite()));
+}
+
+/// Downsamples dramatically and checks that the result is finite and non-empty.
+#[test]
+fn linear_resample_extreme_downsample() {
+    let input: Vec<f32> = vec![1.0; 1_000];
+    let output = linear_resample(&input, EXTREME_HIGH_RATE, EXTREME_LOW_RATE).unwrap();
+    assert!(!output.is_empty());
+    assert!(output.iter().all(|v| v.is_finite()));
 }

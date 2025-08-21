@@ -1,3 +1,4 @@
+// Test intent: verifies split64 behavior including edge cases.
 use kofft::fft::{fft_split, ifft_split, Complex64, FftImpl, ScalarFftImpl};
 
 #[test]

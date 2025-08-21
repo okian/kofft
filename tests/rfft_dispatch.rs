@@ -1,3 +1,4 @@
+// Test intent: verifies rfft dispatch behavior including edge cases.
 use kofft::fft::{Complex32, Complex64, ScalarFftImpl};
 use kofft::rfft::RfftPlanner;
 
