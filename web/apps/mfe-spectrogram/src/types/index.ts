@@ -203,6 +203,8 @@ export interface UIState {
   isFullscreen: boolean;
   isMobile: boolean;
   isTablet: boolean;
+  /** Last fatal error surfaced to the user interface. */
+  error: string | null;
 }
 
 // Audio State types

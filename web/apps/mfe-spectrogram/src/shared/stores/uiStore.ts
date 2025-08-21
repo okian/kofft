@@ -11,6 +11,8 @@ interface UIStore extends UIState {
   setFullscreen: (fullscreen: boolean) => void
   setMobile: (mobile: boolean) => void
   setTablet: (tablet: boolean) => void
+  /** Store a fatal error message to surface to the user. */
+  setError: (message: string | null) => void
   toggleMetadataPanel: () => void
   togglePlaylistPanel: () => void
   toggleSettingsPanel: () => void
@@ -27,6 +29,7 @@ const initialState: UIState = {
   isFullscreen: false,
   isMobile: false,
   isTablet: false,
+  error: null, // Last error message shown to the user
 }
 
 export const useUIStore = create<UIStore>()(
@@ -40,6 +43,7 @@ export const useUIStore = create<UIStore>()(
     setFullscreen: (fullscreen) => set({ isFullscreen: fullscreen }),
     setMobile: (mobile) => set({ isMobile: mobile }),
     setTablet: (tablet) => set({ isTablet: tablet }),
+    setError: (message) => set({ error: message }),
 
     toggleMetadataPanel: () => {
       const { metadataPanelOpen } = get()
