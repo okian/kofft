@@ -2,6 +2,19 @@ import React, { forwardRef, useEffect, useRef, useImperativeHandle, useCallback 
 import { useSettingsStore } from '@/shared/stores/settingsStore'
 import type { Theme } from '@/shared/types'
 
+/**
+ * Default maximum canvas dimension in pixels used when the device does not
+ * expose its WebGL limits. This conservative value prevents allocating
+ * excessively large buffers on constrained devices.
+ */
+export const FALLBACK_MAX_CANVAS_SIZE = 4096
+
+/**
+ * Duration in seconds that the spectrogram keeps in its scrolling history.
+ * This replaces previously inlined magic numbers to clarify intent.
+ */
+const TIME_WINDOW_SECONDS = 15
+
 interface SpectrogramCanvasProps {
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void
   onMouseLeave?: () => void
@@ -27,12 +40,16 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
     const bufferRef = useRef<WebGLBuffer | null>(null)
     const animationFrameRef = useRef<number | null>(null)
     const webglSupportedRef = useRef(false)
+    // Tracks the maximum supported canvas dimension. Defaults to a safe value
+    // until a WebGL context reveals the precise device limit.
+    const maxTextureSizeRef = useRef<number>(FALLBACK_MAX_CANVAS_SIZE)
     
     const { theme, amplitudeScale, refreshRate } = useSettingsStore()
 
     // Spectrogram data storage
     const spectrogramDataRef = useRef<Uint8Array[]>([])
-    const maxFramesRef = useRef(15 * refreshRate) // 15 second time window
+    // Maximum number of frames maintained to cover TIME_WINDOW_SECONDS.
+    const maxFramesRef = useRef(TIME_WINDOW_SECONDS * refreshRate)
     const currentFrameRef = useRef(0)
 
     // Color maps for different themes
@@ -144,6 +161,9 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
 
       glRef.current = gl
       webglSupportedRef.current = true
+      // Record the device's maximum supported texture size to avoid exceeding
+      // hardware limits during future resizes.
+      maxTextureSizeRef.current = gl.getParameter(gl.MAX_TEXTURE_SIZE) || FALLBACK_MAX_CANVAS_SIZE
 
       // Create shaders
       const vertexShaderSource = `
@@ -273,6 +293,12 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
     }, [checkWebGLSupport])
 
     // Resize canvas
+    /**
+     * Resizes the backing canvas buffer to match its on-screen dimensions while
+     * respecting hardware-imposed limits. The function fails fast on invalid
+     * metrics and clamps oversized requests to the maximum supported texture
+     * size to avoid costly allocations or WebGL errors.
+     */
     const resizeCanvas = useCallback(() => {
       const canvas = canvasRef.current
       if (!canvas) return
@@ -280,8 +306,23 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       const rect = canvas.getBoundingClientRect()
       const pixelRatio = window.devicePixelRatio || 1
 
-      canvas.width = rect.width * pixelRatio
-      canvas.height = rect.height * pixelRatio
+      let targetWidth = rect.width * pixelRatio
+      let targetHeight = rect.height * pixelRatio
+
+      if (!isFinite(targetWidth) || !isFinite(targetHeight) || targetWidth <= 0 || targetHeight <= 0) {
+        console.warn('SpectrogramCanvas: invalid canvas size computed during resize')
+        return
+      }
+
+      const maxSize = maxTextureSizeRef.current
+      if (targetWidth > maxSize || targetHeight > maxSize) {
+        console.warn(`SpectrogramCanvas: clamping canvas to device limit ${maxSize}`)
+        targetWidth = Math.min(targetWidth, maxSize)
+        targetHeight = Math.min(targetHeight, maxSize)
+      }
+
+      canvas.width = targetWidth
+      canvas.height = targetHeight
       canvas.style.width = rect.width + 'px'
       canvas.style.height = rect.height + 'px'
 
@@ -406,6 +447,44 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       }
     }, [initWebGL, resizeCanvas, animate])
 
+    /**
+     * Reacts to WebGL context loss events by halting rendering and attempts to
+     * reinitialise the pipeline once the context is restored. This guards
+     * against driver resets and resource exhaustion on unstable devices.
+     */
+    useEffect(() => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const handleContextLost = (event: Event) => {
+        event.preventDefault()
+        if (animationFrameRef.current !== null) {
+          cancelAnimationFrame(animationFrameRef.current)
+          animationFrameRef.current = null
+        }
+        webglSupportedRef.current = false
+      }
+
+      const handleContextRestored = () => {
+        if (initWebGL()) {
+          resizeCanvas()
+        }
+          animate()
+        } else {
+          // Fallback: just start animation loop for non-WebGL environments
+          animate()
+        }
+      }
+
+      canvas.addEventListener('webglcontextlost', handleContextLost as EventListener)
+      canvas.addEventListener('webglcontextrestored', handleContextRestored as EventListener)
+
+      return () => {
+        canvas.removeEventListener('webglcontextlost', handleContextLost as EventListener)
+        canvas.removeEventListener('webglcontextrestored', handleContextRestored as EventListener)
+      }
+    }, [initWebGL, resizeCanvas, animate])
+
     // Handle window resize
     useEffect(() => {
       const handleResize = () => {
@@ -418,7 +497,7 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
 
     // Update max frames when refresh rate changes
     useEffect(() => {
-      maxFramesRef.current = 15 * refreshRate // 15 second time window
+      maxFramesRef.current = TIME_WINDOW_SECONDS * refreshRate
       
       // Trim data if needed
       if (spectrogramDataRef.current.length > maxFramesRef.current) {

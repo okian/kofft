@@ -1,10 +1,13 @@
-#![cfg(feature = "parallel")]
-
+#[cfg(feature = "parallel")]
 use criterion::{criterion_group, criterion_main, Criterion};
+#[cfg(feature = "parallel")]
 use kofft::fft::{Complex32, ScalarFftImpl};
+#[cfg(feature = "parallel")]
 use kofft::stft::{parallel, stft};
+#[cfg(feature = "parallel")]
 use kofft::window::hann;
 
+#[cfg(feature = "parallel")]
 fn benchmark_stft_parallel(c: &mut Criterion) {
     let signal = vec![0.1f32; 4096];
     let window = hann(256);
@@ -27,5 +30,10 @@ fn benchmark_stft_parallel(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "parallel")]
 criterion_group!(benches, benchmark_stft_parallel);
+#[cfg(feature = "parallel")]
 criterion_main!(benches);
+
+#[cfg(not(feature = "parallel"))]
+fn main() {}

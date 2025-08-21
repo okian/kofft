@@ -26,6 +26,23 @@ pub const MIN_LEN: usize = STRIDE;
 /// Maximum number of cached twiddle tables to retain in the planner.
 pub const MAX_CACHE_ENTRIES: usize = 64;
 
+/// Byte alignment required for safe SIMD loads and stores.
+///
+/// A single 64-byte constant covers the most demanding alignment across
+/// supported instruction sets. AVX-512 mandates 64-byte alignment, while
+/// earlier extensions such as AVX and SSE require 32 and 16 bytes
+/// respectively. Choosing 64 bytes therefore satisfies all current SIMD
+/// backends and simplifies configuration.
+pub const SIMD_ALIGN: usize = 64;
+
+/// Determine whether a slice's starting pointer satisfies [`SIMD_ALIGN`] alignment.
+///
+/// Empty slices are considered aligned because no memory access occurs.
+#[inline]
+fn is_aligned<T>(slice: &[T]) -> bool {
+    slice.is_empty() || slice.as_ptr().align_offset(SIMD_ALIGN) == 0
+}
+
 /// Trait providing specialized real FFT implementations for concrete
 /// floating-point types.
 #[doc(hidden)]
@@ -609,6 +626,120 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     Ok(())
 }
 
+/// Scalar fallback implementation for a 32-bit real-input FFT.
+///
+/// This mirrors [`rfft_direct`] but accepts an FFT closure so it can be used
+/// when SIMD prerequisites such as [`SIMD_ALIGN`] alignment are not met.
+fn rfft_direct_f32_scalar<F>(
+    mut fft: F,
+    input: &mut [f32],
+    output: &mut [Complex32],
+    scratch: &mut [Complex32],
+    twiddles: &[Complex32],
+    _pack_twiddles: &[Complex32],
+) -> Result<(), FftError>
+where
+    F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
+{
+    let n = input.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / STRIDE;
+    if output.len() != m + 1 || scratch.len() < m {
+        return Err(FftError::MismatchedLengths);
+    }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return rfft_direct_f32_scalar(fft, input, output, scratch, twiddles, _pack_twiddles);
+    }
+    for i in 0..m {
+        output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
+    }
+    fft(&mut output[..m])?;
+    scratch[..m].copy_from_slice(&output[..m]);
+    let y0 = scratch[0];
+    output[0] = Complex32::new(y0.re + y0.im, 0.0);
+    output[m] = Complex32::new(y0.re - y0.im, 0.0);
+    let half = HALF;
+    for k in 1..m {
+        let a = scratch[k];
+        let b = Complex32::new(scratch[m - k].re, -scratch[m - k].im);
+        let sum_re = a.re + b.re;
+        let sum_im = a.im + b.im;
+        let diff_re = a.re - b.re;
+        let diff_im = a.im - b.im;
+        let w = twiddles[k];
+        let t = Complex32::new(
+            diff_re * w.re - diff_im * w.im,
+            diff_re * w.im + diff_im * w.re,
+        );
+        output[k] = Complex32::new((sum_re + t.im) * half, (sum_im - t.re) * half);
+    }
+    Ok(())
+}
+
+/// Scalar fallback implementation for a 32-bit inverse real-input FFT.
+///
+/// Used when SIMD alignment checks fail in [`irfft_direct_f32_avx`] or
+/// [`irfft_direct_f32_neon`]. Accepts an IFFT closure identical to
+/// [`irfft_direct`].
+fn irfft_direct_f32_scalar<F>(
+    mut ifft: F,
+    input: &mut [Complex32],
+    output: &mut [f32],
+    scratch: &mut [Complex32],
+    twiddles: &[Complex32],
+    _pack_twiddles: &[Complex32],
+) -> Result<(), FftError>
+where
+    F: FnMut(&mut [Complex32]) -> Result<(), FftError>,
+{
+    let n = output.len();
+    if n == 0 {
+        return Err(FftError::EmptyInput);
+    }
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+        return Err(FftError::InvalidValue);
+    }
+    let m = n / STRIDE;
+    if input.len() != m + 1 || scratch.len() < m {
+        return Err(FftError::MismatchedLengths);
+    }
+    let half = HALF;
+    scratch[0] = Complex32::new(
+        (input[0].re + input[m].re) * half,
+        (input[0].re - input[m].re) * half,
+    );
+    for k in 1..m {
+        let a = input[k];
+        let b = Complex32::new(input[m - k].re, -input[m - k].im);
+        let sum_re = a.re + b.re;
+        let sum_im = a.im + b.im;
+        let diff_re = a.re - b.re;
+        let diff_im = a.im - b.im;
+        let w = Complex32::new(twiddles[k].re, -twiddles[k].im);
+        let t = Complex32::new(
+            diff_re * w.re - diff_im * w.im,
+            diff_re * w.im + diff_im * w.re,
+        );
+        scratch[k] = Complex32::new((sum_re - t.im) * half, (sum_im + t.re) * half);
+    }
+    ifft(&mut scratch[..m])?;
+    for i in 0..m {
+        output[STRIDE * i] = scratch[i].re;
+        output[STRIDE * i + 1] = scratch[i].im;
+    }
+    Ok(())
+}
+
 #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
 use core::arch::x86_64::*;
 
@@ -636,6 +767,14 @@ where
     let m = n / STRIDE;
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
+    }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return rfft_direct_f32_scalar(fft, input, output, scratch, twiddles, _pack_twiddles);
     }
     for i in 0..m {
         output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
@@ -700,6 +839,14 @@ where
     let m = n / STRIDE;
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
+    }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return irfft_direct_f32_scalar(ifft, input, output, scratch, twiddles, _pack_twiddles);
     }
     let half = _mm_set1_ps(HALF);
     let a0 = _mm_set_ss(input[0].re + input[m].re);
@@ -771,6 +918,14 @@ where
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return rfft_direct_f32_scalar(fft, input, output, scratch, twiddles, _pack_twiddles);
+    }
     for i in 0..m {
         output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
     }
@@ -834,6 +989,14 @@ where
     let m = n / STRIDE;
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
+    }
+    if !(is_aligned(input)
+        && is_aligned(output)
+        && is_aligned(scratch)
+        && is_aligned(twiddles)
+        && is_aligned(_pack_twiddles))
+    {
+        return irfft_direct_f32_scalar(ifft, input, output, scratch, twiddles, _pack_twiddles);
     }
     let half = vdupq_n_f32(HALF);
     let a0 = vdupq_n_f32(input[0].re + input[m].re);

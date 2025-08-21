@@ -51,10 +51,20 @@ pub fn flatten_2d<T: Float>(
     if rows == EMPTY_DIMENSION {
         return Ok((Vec::new(), EMPTY_DIMENSION, EMPTY_DIMENSION));
     }
-    let cols = data[0].len();
-    if data.iter().any(|row| row.len() != cols) {
-        return Err(FftError::MismatchedLengths);
+    // Determine column count by inspecting each row, ensuring consistency
+    // before allocating output storage. Early returns prevent partial
+    // flattening of ragged matrices.
+    let mut cols = None;
+    for row in &data {
+        match cols {
+            Some(expected) if row.len() != expected => {
+                return Err(FftError::MismatchedLengths);
+            }
+            None => cols = Some(row.len()),
+            _ => {}
+        }
     }
+    let cols = cols.unwrap_or(EMPTY_DIMENSION);
     let total = checked_capacity_2d(rows, cols)?;
     let mut flat = Vec::with_capacity(total);
     // `append` moves each row into the flattened buffer in one shot, avoiding
@@ -79,22 +89,30 @@ pub fn flatten_3d<T: Float>(
             EMPTY_DIMENSION,
         ));
     }
-    let rows = data[0].len();
-    let cols = if rows > EMPTY_DIMENSION {
-        data[0][0].len()
-    } else {
-        EMPTY_DIMENSION
-    };
+    // Track row and column counts across all planes, aborting on the first
+    // inconsistency so malformed inputs never reach the flattening stage.
+    let mut rows = None;
+    let mut cols = None;
     for plane in &data {
-        if plane.len() != rows {
-            return Err(FftError::MismatchedLengths);
+        match rows {
+            Some(expected) if plane.len() != expected => {
+                return Err(FftError::MismatchedLengths);
+            }
+            None => rows = Some(plane.len()),
+            _ => {}
         }
         for row in plane {
-            if row.len() != cols {
-                return Err(FftError::MismatchedLengths);
+            match cols {
+                Some(expected) if row.len() != expected => {
+                    return Err(FftError::MismatchedLengths);
+                }
+                None => cols = Some(row.len()),
+                _ => {}
             }
         }
     }
+    let rows = rows.unwrap_or(EMPTY_DIMENSION);
+    let cols = cols.unwrap_or(EMPTY_DIMENSION);
     let total = checked_capacity_3d(depth, rows, cols)?;
     let mut flat = Vec::with_capacity(total);
     for plane in data {
@@ -131,12 +149,9 @@ pub fn fft2d_inplace<T: Float>(
     }
     // FFT on rows
     for r in 0..rows {
-        let start = r
-            .checked_mul(cols)
-            .and_then(|v| v.checked_add(cols))
-            .ok_or(FftError::LengthOverflow)?
-            - cols;
-        fft.fft(&mut data[start..start + cols])?;
+        let start = checked_capacity_2d(r, cols)?;
+        let end = start.checked_add(cols).ok_or(FftError::LengthOverflow)?;
+        fft.fft(&mut data[start..end])?;
     }
     // FFT on columns using strided transform
     for c in 0..cols {
@@ -147,8 +162,11 @@ pub fn fft2d_inplace<T: Float>(
 
 /// Scratch buffers for [`fft3d_inplace`].
 pub struct Fft3dScratch<'a, T: Float> {
+    /// Temporary storage for transforms along the depth (z) axis.
     pub tube: &'a mut [Complex<T>],
+    /// Temporary storage for transforms along the row (y) axis.
     pub row: &'a mut [Complex<T>],
+    /// Temporary storage for transforms along the column (x) axis.
     pub col: &'a mut [Complex<T>],
 }
 
@@ -165,8 +183,8 @@ pub fn fft3d_inplace<T: Float>(
     fft: &ScalarFftImpl<T>,
     scratch: &mut Fft3dScratch<'_, T>,
 ) -> Result<(), FftError> {
-    let rowcols = rows.checked_mul(cols).ok_or(FftError::Overflow)?;
-    let len = depth.checked_mul(rowcols).ok_or(FftError::Overflow)?;
+    let plane = checked_capacity_2d(rows, cols)?;
+    let len = checked_capacity_3d(depth, rows, cols)?;
     if len != data.len() {
         return Err(FftError::MismatchedLengths);
     }
@@ -179,25 +197,61 @@ pub fn fft3d_inplace<T: Float>(
     // FFT on depth (z axis)
     for r in 0..rows {
         for c in 0..cols {
-            let start = r * cols + c;
-            fft.fft_strided(&mut data[start..], rowcols, scratch.tube)?;
+            let start = checked_capacity_2d(r, cols)?
+                .checked_add(c)
+                .ok_or(FftError::LengthOverflow)?;
+            fft.fft_strided(&mut data[start..], plane, scratch.tube)?;
         }
     }
     // FFT on rows (y axis)
     for d in 0..depth {
         for c in 0..cols {
-            let start = d * rowcols + c;
+            let start = checked_capacity_3d(d, rows, cols)?
+                .checked_add(c)
+                .ok_or(FftError::LengthOverflow)?;
             fft.fft_strided(&mut data[start..], cols, scratch.row)?;
         }
     }
     // FFT on columns (x axis)
     for d in 0..depth {
         for r in 0..rows {
-            let start = d * rowcols + r * cols;
-            fft.fft(&mut data[start..start + cols])?;
+            let start = checked_capacity_3d(d, rows, cols)?
+                .checked_add(checked_capacity_2d(r, cols)?)
+                .ok_or(FftError::LengthOverflow)?;
+            let end = start.checked_add(cols).ok_or(FftError::LengthOverflow)?;
+            fft.fft(&mut data[start..end])?;
         }
     }
     Ok(())
+}
+
+/// Tests for overflow detection utilities used by the ND FFT routines.
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+
+    /// Minimal non-zero dimension used to trigger overflow scenarios.
+    const TWO: usize = 2;
+
+    /// `checked_capacity_2d` must signal overflow when the product exceeds
+    /// `usize::MAX`.
+    #[test]
+    fn checked_capacity_2d_overflow() {
+        assert_eq!(
+            checked_capacity_2d(usize::MAX, TWO),
+            Err(FftError::LengthOverflow)
+        );
+    }
+
+    /// `checked_capacity_3d` must signal overflow when any intermediate
+    /// multiplication exceeds `usize::MAX`.
+    #[test]
+    fn checked_capacity_3d_overflow() {
+        assert_eq!(
+            checked_capacity_3d(usize::MAX, TWO, TWO),
+            Err(FftError::LengthOverflow)
+        );
+    }
 }
 
 #[cfg(all(feature = "internal-tests", test))]

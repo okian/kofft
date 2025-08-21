@@ -67,6 +67,11 @@ const NANOS_PER_SECOND: usize = 1_000_000_000;
 /// Minimum per-core work allowed after calibration to avoid extremely small
 /// tasks that would degrade performance.
 const MIN_CALIBRATED_WORK: usize = 4096;
+#[cfg(feature = "parallel")]
+/// Minimum number of threads permitted for parallel FFT execution. Using a
+/// constant avoids hidden "magic" values and ensures callers never request
+/// zero threads, which would deadlock the Rayon thread pool.
+const MIN_PARALLEL_THREADS: usize = 1;
 
 /// Override for the parallel FFT threshold.
 ///
@@ -145,11 +150,15 @@ fn env_parallel_fft_block_size() -> usize {
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
-/// Read the `KOFFT_PAR_FFT_THREADS` environment variable with strict parsing.
+/// Read the `KOFFT_PAR_FFT_THREADS` environment variable and clamp the result
+/// to the available logical cores. Oversubscription hurts performance and can
+/// exhaust system resources, so the value is bounded to the host's CPU count
+/// and never allowed below [`MIN_PARALLEL_THREADS`].
 fn env_parallel_fft_threads() -> usize {
     *ENV_THREADS.get_or_init(|| {
-        let default = num_cpus::get().max(1);
-        parse_env_usize("KOFFT_PAR_FFT_THREADS", default)
+        let logical = num_cpus::get().max(MIN_PARALLEL_THREADS);
+        let requested = parse_env_usize("KOFFT_PAR_FFT_THREADS", logical);
+        requested.clamp(MIN_PARALLEL_THREADS, logical)
     })
 }
 
@@ -172,6 +181,29 @@ fn calibrated_per_core_work() -> usize {
 }
 
 #[cfg(all(feature = "parallel", feature = "std"))]
+/// Expose the calibrated per-core work estimate for tests.
+///
+/// This value reflects measured memory throughput and is bounded below by
+/// [`MIN_CALIBRATED_WORK`].
+#[doc(hidden)]
+pub fn __test_calibrated_per_core_work() -> usize {
+    calibrated_per_core_work()
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Expose the per-core work value sourced from `KOFFT_PAR_FFT_PER_CORE_WORK` for
+/// tests. When the variable is unset, the default heuristic is returned.
+#[doc(hidden)]
+pub fn __test_env_parallel_fft_per_core_work() -> usize {
+    env_parallel_fft_per_core_work()
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Expose [`MIN_CALIBRATED_WORK`] for test assertions.
+#[doc(hidden)]
+pub const __TEST_MIN_CALIBRATED_WORK: usize = MIN_CALIBRATED_WORK;
+
+#[cfg(all(feature = "parallel", feature = "std"))]
 fn parallel_fft_threshold() -> usize {
     *PARALLEL_FFT_THRESHOLD.get_or_init(|| {
         let thr = env_parallel_fft_threshold();
@@ -191,8 +223,11 @@ fn parallel_fft_threshold() -> usize {
     })
 }
 
-#[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
-/// Expose the computed parallel FFT threshold for integration tests.
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Expose the computed parallel FFT threshold for tests.
+///
+/// This function is not part of the stable API and may change at any time.
+#[doc(hidden)]
 pub fn __test_parallel_fft_threshold() -> usize {
     parallel_fft_threshold()
 }
@@ -229,9 +264,20 @@ pub fn set_parallel_fft_per_core_work(points: usize) {
 
 #[cfg(feature = "parallel")]
 /// Override the number of threads used for parallel FFTs. `0` uses the default
-/// heuristic or environment variable.
+/// heuristic or environment variable. Values above the logical-core count are
+/// reduced to avoid oversubscription, while any non-zero value below
+/// [`MIN_PARALLEL_THREADS`] is elevated to that minimum.
 pub fn set_parallel_fft_threads(threads: usize) {
-    PARALLEL_FFT_THREAD_OVERRIDE.store(threads, Ordering::Relaxed);
+    #[cfg(feature = "std")]
+    let logical = num_cpus::get().max(MIN_PARALLEL_THREADS);
+    #[cfg(not(feature = "std"))]
+    let logical = MIN_PARALLEL_THREADS;
+    let capped = if threads == 0 {
+        0
+    } else {
+        threads.clamp(MIN_PARALLEL_THREADS, logical)
+    };
+    PARALLEL_FFT_THREAD_OVERRIDE.store(capped, Ordering::Relaxed);
 }
 
 #[cfg(feature = "parallel")]
@@ -242,11 +288,21 @@ pub fn set_parallel_fft_block_size(size: usize) {
 }
 
 #[cfg(feature = "parallel")]
-/// Return the number of threads to use for parallel FFT execution.
+/// Determine the effective thread count for FFT operations.
+///
+/// The override set via [`set_parallel_fft_threads`] takes precedence, but is
+/// clamped to the host's logical-core count and never allowed below
+/// [`MIN_PARALLEL_THREADS`]. Absent an override, the value comes from the
+/// `KOFFT_PAR_FFT_THREADS` environment variable or defaults to the logical-core
+/// count when the variable is unset.
 fn parallel_fft_threads() -> usize {
+    #[cfg(feature = "std")]
+    let logical = num_cpus::get().max(MIN_PARALLEL_THREADS);
+    #[cfg(not(feature = "std"))]
+    let logical = MIN_PARALLEL_THREADS;
     let override_thr = PARALLEL_FFT_THREAD_OVERRIDE.load(Ordering::Relaxed);
     if override_thr != 0 {
-        return override_thr;
+        return override_thr.clamp(MIN_PARALLEL_THREADS, logical);
     }
     #[cfg(feature = "std")]
     {
@@ -254,7 +310,7 @@ fn parallel_fft_threads() -> usize {
     }
     #[cfg(not(feature = "std"))]
     {
-        1
+        logical
     }
 }
 
@@ -284,7 +340,7 @@ fn parallel_fft_block_size() -> usize {
 pub(crate) fn rayon_pool() -> &'static ThreadPool {
     PARALLEL_POOL.get_or_init(|| {
         ThreadPoolBuilder::new()
-            .num_threads(parallel_fft_threads().max(1))
+            .num_threads(parallel_fft_threads())
             .build()
             .expect("failed to build thread pool")
     })
@@ -369,8 +425,11 @@ fn parallel_pool() -> &'static ThreadPool {
     })
 }
 
-#[cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
+#[cfg(all(feature = "parallel", feature = "std"))]
 /// Expose the current thread count of the internal thread pool for tests.
+///
+/// This function is not part of the stable API and may change at any time.
+#[doc(hidden)]
 pub fn __test_parallel_pool_thread_count() -> usize {
     parallel_pool().current_num_threads()
 }
@@ -524,15 +583,26 @@ impl<T: Float> FftPlanner<T> {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Errors emitted by FFT and related transform routines.
 pub enum FftError {
+    /// Input data was unexpectedly empty.
     EmptyInput,
+    /// Length was not a power of two in a `no_std` build.
     NonPowerOfTwoNoStd,
+    /// Provided slices or buffers had mismatched lengths.
     MismatchedLengths,
+    /// Numeric overflow occurred during a computation.
     Overflow,
+    /// Stride parameter was invalid.
     InvalidStride,
+    /// Hop size was outside the allowed range.
     InvalidHopSize,
+    /// Value fell outside the allowed range.
     InvalidValue,
+    /// Requested length would overflow internal limits.
     LengthOverflow,
+    /// Window length was below the minimum supported size.
+    WindowTooSmall,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

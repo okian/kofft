@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { DesignProvider } from "./DesignContext";
 import { DesignToggle } from "./DesignToggle";
 import { DesignLayout } from "./DesignLayout";
+import "./ui/animation-durations.css"; // sets --anim-duration
 
 /** Text displayed in the header for all themes. */
 const HEADER_TEXT = "Kofft" as const;

@@ -119,4 +119,48 @@ describe("useMicrophone", () => {
       "Failed to enumerate input devices",
     );
   });
+
+  it("handles microphone permission denial", async () => {
+    const notAllowedError = Object.assign(new Error("denied"), {
+      name: "NotAllowedError",
+    });
+    (global as any).navigator = {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockRejectedValue(notAllowedError),
+        enumerateDevices: vi.fn().mockResolvedValue([]),
+      },
+    };
+
+    const { result } = renderHook(() => useMicrophone());
+    const ok = await result.current.startMicrophone();
+    expect(ok).toBe(false);
+    expect(toastError).toHaveBeenCalledWith(
+      "Microphone permission denied. Please allow microphone access.",
+    );
+    expect(result.current.error).toBe("denied");
+  });
+
+  it("stops previous stream when switching input devices", async () => {
+    const trackStop1 = vi.fn();
+    const stream1: any = { getTracks: () => [{ stop: trackStop1 }] };
+    const stream2: any = { getTracks: () => [{ stop: vi.fn() }] };
+    (global as any).navigator = {
+      mediaDevices: {
+        getUserMedia: vi
+          .fn()
+          .mockResolvedValueOnce(stream1)
+          .mockResolvedValueOnce(stream2),
+        enumerateDevices: vi.fn().mockResolvedValue([]),
+      },
+    };
+
+    const { result } = renderHook(() => useMicrophone());
+    await act(async () => {
+      await result.current.startMicrophone();
+    });
+    await act(async () => {
+      await result.current.switchInputDevice("device-2");
+    });
+    expect(trackStop1).toHaveBeenCalled();
+  });
 });

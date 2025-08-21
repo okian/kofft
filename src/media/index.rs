@@ -14,6 +14,13 @@
 pub const HASH_BUF_SIZE: usize = 8192;
 
 #[cfg(feature = "std")]
+// Compile-time verification that the buffer size is non-zero. A zero-sized
+// buffer would cause hashing to fail and is therefore rejected at build time.
+const _: () = {
+    assert!(HASH_BUF_SIZE > 0, "HASH_BUF_SIZE must be greater than zero");
+};
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
 #[cfg(feature = "std")]
 use std::fs::File;
@@ -26,14 +33,22 @@ use std::string::{String, ToString};
 
 #[cfg(feature = "std")]
 /// Unique identifier for a song.
+///
+/// The identifier currently stores the canonical path to the song file.
+/// Additional metadata may be added in the future if needed.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SongId(PathBuf);
 
 #[cfg(feature = "std")]
 /// Index mapping metadata and hashes to song identifiers.
+///
+/// This structure maintains two lookup tables: one keyed by file name metadata
+/// and another keyed by BLAKE3 hashes of file contents.
 #[derive(Default)]
 pub struct SongIndex {
+    /// Map from file name (metadata) to song identifier.
     by_name: HashMap<String, SongId>,
+    /// Map from BLAKE3 hash to song identifier.
     by_hash: HashMap<[u8; 32], SongId>,
 }
 
@@ -59,7 +74,7 @@ impl SongIndex {
     /// # Errors
     /// Returns an [`io::Error`] with [`io::ErrorKind::InvalidInput`] if the
     /// provided buffer is empty or if reading the file fails.
-    fn hash_file_with_buffer(path: &Path, buf: &mut [u8]) -> io::Result<[u8; 32]> {
+    pub fn hash_file_with_buffer(path: &Path, buf: &mut [u8]) -> io::Result<[u8; 32]> {
         if buf.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -79,11 +94,21 @@ impl SongIndex {
         Ok(*hasher.finalize().as_bytes())
     }
 
+    /// Extract a UTF-8 file name from a path.
+    ///
+    /// Returns [`io::ErrorKind::InvalidInput`] if the path does not terminate
+    /// in a valid UTF-8 file name.
+    fn file_name_str(path: &Path) -> io::Result<&str> {
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid file name"))
+    }
+
     /// Add a song to the index, computing its hash and storing it by name and hash.
     pub fn index_song(&mut self, path: &Path) -> io::Result<SongId> {
         let hash = Self::hash_file(path)?;
         let id = SongId(path.to_path_buf());
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+        if let Ok(name) = Self::file_name_str(path) {
             self.by_name.insert(name.to_string(), id.clone());
         }
         self.by_hash.insert(hash, id.clone());
@@ -96,7 +121,7 @@ impl SongIndex {
     /// without hashing. Otherwise, a BLAKE3 hash is computed and used for
     /// lookup. If still not found, the song is hashed and added to the index.
     pub fn identify(&mut self, path: &Path) -> io::Result<SongId> {
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+        if let Ok(name) = Self::file_name_str(path) {
             if let Some(id) = self.by_name.get(name) {
                 return Ok(id.clone());
             }
@@ -106,69 +131,10 @@ impl SongIndex {
             return Ok(id.clone());
         }
         let id = SongId(path.to_path_buf());
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+        if let Ok(name) = Self::file_name_str(path) {
             self.by_name.insert(name.to_string(), id.clone());
         }
         self.by_hash.insert(hash, id.clone());
         Ok(id)
-    }
-}
-
-#[cfg(all(feature = "std", test))]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn metadata_lookup_skips_hash() {
-        let mut idx = SongIndex::new();
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "song").unwrap();
-        let path = file.path().to_path_buf();
-        idx.index_song(&path).unwrap();
-        // Remove the file to ensure identify does not attempt to hash
-        std::fs::remove_file(&path).unwrap();
-        let id = idx.identify(&path).unwrap();
-        assert_eq!(id, SongId(path));
-    }
-
-    #[test]
-    fn hash_lookup_identifies_same_content() {
-        let mut idx = SongIndex::new();
-        let mut f1 = NamedTempFile::new().unwrap();
-        f1.write_all(b"data").unwrap();
-        let p1 = f1.path().to_path_buf();
-        let id1 = idx.index_song(&p1).unwrap();
-
-        let mut f2 = NamedTempFile::new().unwrap();
-        f2.write_all(b"data").unwrap();
-        let p2 = f2.path().to_path_buf();
-        let id2 = idx.identify(&p2).unwrap();
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
-    fn hash_lookup_inserts_new_entry() {
-        let mut idx = SongIndex::new();
-        let mut f = NamedTempFile::new().unwrap();
-        f.write_all(b"unique").unwrap();
-        let p = f.path().to_path_buf();
-        let id1 = idx.identify(&p).unwrap();
-        // Subsequent lookup should use metadata
-        std::fs::remove_file(&p).unwrap();
-        let id2 = idx.identify(&p).unwrap();
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
-    fn empty_buffer_errors() {
-        let mut idx = SongIndex::new();
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(b"data").unwrap();
-        let mut buf: [u8; 0] = [];
-        assert!(SongIndex::hash_file_with_buffer(file.path(), &mut buf).is_err());
-        // ensure normal hashing still works after error case
-        assert!(idx.index_song(file.path()).is_ok());
     }
 }

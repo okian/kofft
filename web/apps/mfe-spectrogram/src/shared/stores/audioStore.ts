@@ -17,6 +17,18 @@ export const AUDIO_PERSISTENCE_KEY = "audio-preferences";
 // the domain assumptions explicit and avoids scattering magic numbers.
 const MIN_AUDIO_TIME = 0;
 
+// Volume bounds expressed explicitly to avoid magic numbers and to make
+// intent clear wherever volume values are clamped.
+const MIN_VOLUME = 0;
+const MAX_VOLUME = 1;
+
+// Sentinel value used for indexes when no valid track is selected. Keeping
+// this in one place avoids sprinkling `-1` throughout the codebase.
+const NO_TRACK_INDEX = -1;
+
+// Initial value for the shuffle history pointer indicating an empty history.
+const NO_HISTORY_INDEX = -1;
+
 // Allowed loop mode values for runtime validation. A plain object is
 // cheaper than an array+includes and provides O(1) lookups.
 const VALID_LOOP_MODES: Record<LoopMode, true> = {
@@ -109,13 +121,13 @@ const initialState: AudioState = {
   isPlaying: false,
   isPaused: false,
   isStopped: true,
-  currentTime: 0,
-  duration: 0,
-  volume: 1,
+  currentTime: MIN_AUDIO_TIME,
+  duration: MIN_AUDIO_TIME,
+  volume: MAX_VOLUME,
   isMuted: false,
   currentTrack: null,
   playlist: [],
-  currentTrackIndex: -1,
+  currentTrackIndex: NO_TRACK_INDEX,
   isLive: false,
   isMicrophoneActive: false,
   inputDevice: null,
@@ -126,73 +138,96 @@ const initialState: AudioState = {
 
 export const useAudioStore = create<AudioStore>()(
   subscribeWithSelector((set, get) => {
+    // Encapsulate state updates so that each action applies its changes in a
+    // single Zustand transaction. This prevents other updates from interleaving
+    // mid-calculation and keeps derived fields consistent.
+    const update = (fn: (state: AudioState) => Partial<AudioState>): void => {
+      set((state) => fn(state));
+    };
+
+    // Sequence of track indexes that have been played while shuffle is active.
+    // Maintained to allow deterministic back/forward navigation in shuffle mode.
     let shuffleHistory: number[] = [];
-    let historyIndex = -1;
+    // Pointer into the shuffleHistory array. A value of NO_HISTORY_INDEX means
+    // that no shuffle playback has occurred yet.
+    let historyIndex = NO_HISTORY_INDEX;
     return {
       ...initialState,
 
       setPlaying: (playing) =>
-        set({ isPlaying: playing, isPaused: !playing, isStopped: false }),
-      setPaused: (paused) => set({ isPaused: paused, isPlaying: !paused }),
+        update(() => ({
+          isPlaying: playing,
+          isPaused: !playing,
+          isStopped: false,
+        })),
+      setPaused: (paused) =>
+        update(() => ({ isPaused: paused, isPlaying: !paused })),
       setStopped: (stopped) =>
-        set({ isStopped: stopped, isPlaying: false, isPaused: false }),
+        update(() => ({ isStopped: stopped, isPlaying: false, isPaused: false })),
       setCurrentTime: (time) => {
         // Guard against non-finite input; failing fast keeps the store
         // in a consistent state and surfaces programming errors early.
         if (!Number.isFinite(time)) {
           throw new Error("setCurrentTime requires a finite number");
         }
-        const { currentTime, duration } = get();
-        // Clamp provided time to the valid playback window.
-        const clamped = Math.max(MIN_AUDIO_TIME, Math.min(time, duration));
-        // Avoid redundant state updates that would trigger unnecessary
-        // re-renders and subscriber notifications.
-        if (clamped !== currentTime) {
-          set({ currentTime: clamped });
-        }
+        update((state) => {
+          // Clamp provided time to the valid playback window.
+          const clamped = Math.max(
+            MIN_AUDIO_TIME,
+            Math.min(time, state.duration),
+          );
+          // Avoid redundant state updates that would trigger unnecessary
+          // re-renders and subscriber notifications.
+          return clamped !== state.currentTime
+            ? { currentTime: clamped }
+            : {};
+        });
       },
-      setDuration: (duration) => set({ duration: Math.max(0, duration) }),
-      setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
-      setMuted: (muted) => set({ isMuted: muted }),
-      setCurrentTrack: (track) => set({ currentTrack: track }),
-      setPlaylist: (tracks) => set({ playlist: tracks }),
+      setDuration: (duration) =>
+        update(() => ({ duration: Math.max(MIN_AUDIO_TIME, duration) })),
+      setVolume: (volume) =>
+        update(() => ({
+          volume: Math.max(MIN_VOLUME, Math.min(MAX_VOLUME, volume)),
+        })),
+      setMuted: (muted) => update(() => ({ isMuted: muted })),
+      setCurrentTrack: (track) => update(() => ({ currentTrack: track })),
+      setPlaylist: (tracks) => update(() => ({ playlist: tracks })),
 
-      addToPlaylist: (track) => {
-        const { playlist } = get();
-        set({ playlist: [...playlist, track] });
-      },
+      addToPlaylist: (track) =>
+        update((state) => ({ playlist: [...state.playlist, track] })),
 
-      updateTrack: (id, updates) => {
-        const { playlist, currentTrack } = get();
-        const index = playlist.findIndex((t) => t.id === id);
-        if (index === -1) return;
-        const updatedTrack = { ...playlist[index], ...updates };
-        const newPlaylist = [...playlist];
-        newPlaylist[index] = updatedTrack;
-        const newState: Partial<AudioState> & { playlist: AudioTrack[] } = {
-          playlist: newPlaylist,
-        };
-        if (currentTrack && currentTrack.id === id) {
-          newState.currentTrack = updatedTrack;
-        }
-        set(newState);
-      },
+      updateTrack: (id, updates) =>
+        update((state) => {
+          const index = state.playlist.findIndex((t) => t.id === id);
+          if (index === NO_TRACK_INDEX) return {};
+          const updatedTrack = { ...state.playlist[index], ...updates };
+          const newPlaylist = [...state.playlist];
+          newPlaylist[index] = updatedTrack;
+          return {
+            playlist: newPlaylist,
+            ...(state.currentTrack && state.currentTrack.id === id
+              ? { currentTrack: updatedTrack }
+              : {}),
+          };
+        }),
 
       removeFromPlaylist: (index) => {
-        const { playlist, currentTrackIndex } = get();
-        const trackToRemove = playlist[index];
-        const newPlaylist = playlist.filter((_, i) => i !== index);
-        let newCurrentIndex = currentTrackIndex;
+        let trackToRemove: AudioTrack | undefined;
+        update((state) => {
+          trackToRemove = state.playlist[index];
+          const newPlaylist = state.playlist.filter((_, i) => i !== index);
+          let newCurrentIndex = state.currentTrackIndex;
 
-        if (index <= currentTrackIndex && currentTrackIndex > 0) {
-          newCurrentIndex = currentTrackIndex - 1;
-        }
+          if (index <= state.currentTrackIndex && state.currentTrackIndex > 0) {
+            newCurrentIndex = state.currentTrackIndex - 1;
+          }
 
-        set({
-          playlist: newPlaylist,
-          currentTrackIndex: newCurrentIndex,
-          currentTrack:
-            newCurrentIndex >= 0 ? newPlaylist[newCurrentIndex] : null,
+          return {
+            playlist: newPlaylist,
+            currentTrackIndex: newCurrentIndex,
+            currentTrack:
+              newCurrentIndex >= 0 ? newPlaylist[newCurrentIndex] : null,
+          };
         });
 
         if (trackToRemove) {
@@ -200,47 +235,52 @@ export const useAudioStore = create<AudioStore>()(
         }
       },
 
-      reorderPlaylist: (fromIndex, toIndex) => {
-        const { playlist } = get();
-        const newPlaylist = [...playlist];
-        const [movedTrack] = newPlaylist.splice(fromIndex, 1);
-        newPlaylist.splice(toIndex, 0, movedTrack);
+      reorderPlaylist: (fromIndex, toIndex) =>
+        update((state) => {
+          const newPlaylist = [...state.playlist];
+          const [movedTrack] = newPlaylist.splice(fromIndex, 1);
+          newPlaylist.splice(toIndex, 0, movedTrack);
 
-        let newCurrentIndex = get().currentTrackIndex;
-        if (fromIndex === newCurrentIndex) {
-          newCurrentIndex = toIndex;
-        } else if (fromIndex < newCurrentIndex && toIndex >= newCurrentIndex) {
-          newCurrentIndex--;
-        } else if (fromIndex > newCurrentIndex && toIndex <= newCurrentIndex) {
-          newCurrentIndex++;
-        }
+          let newCurrentIndex = state.currentTrackIndex;
+          if (fromIndex === newCurrentIndex) {
+            newCurrentIndex = toIndex;
+          } else if (fromIndex < newCurrentIndex && toIndex >= newCurrentIndex) {
+            newCurrentIndex--;
+          } else if (fromIndex > newCurrentIndex && toIndex <= newCurrentIndex) {
+            newCurrentIndex++;
+          }
 
-        set({
-          playlist: newPlaylist,
-          currentTrackIndex: newCurrentIndex,
-          currentTrack:
-            newCurrentIndex >= 0 ? newPlaylist[newCurrentIndex] : null,
-        });
-      },
+          return {
+            playlist: newPlaylist,
+            currentTrackIndex: newCurrentIndex,
+            currentTrack:
+              newCurrentIndex >= 0 ? newPlaylist[newCurrentIndex] : null,
+          };
+        }),
 
-      setCurrentTrackIndex: (index) => {
-        const { playlist } = get();
-        const track =
-          index >= 0 && index < playlist.length ? playlist[index] : null;
-        set({ currentTrackIndex: index, currentTrack: track });
-      },
+      setCurrentTrackIndex: (index) =>
+        update((state) => {
+          const track =
+            index >= 0 && index < state.playlist.length
+              ? state.playlist[index]
+              : null;
+          return { currentTrackIndex: index, currentTrack: track };
+        }),
 
-      setLive: (live) => set({ isLive: live }),
-      setMicrophoneActive: (active) => set({ isMicrophoneActive: active }),
-      setInputDevice: (device) => set({ inputDevice: device }),
+      setLive: (live) => update(() => ({ isLive: live })),
+      setMicrophoneActive: (active) =>
+        update(() => ({ isMicrophoneActive: active })),
+      setInputDevice: (device) => update(() => ({ inputDevice: device })),
       setShuffle: (shuffle) => {
         if (typeof shuffle !== "boolean") {
           throw new Error("shuffle must be a boolean");
         }
-        const current = get().currentTrackIndex;
-        shuffleHistory = shuffle && current >= 0 ? [current] : [];
-        historyIndex = shuffleHistory.length - 1;
-        set({ shuffle });
+        update((state) => {
+          const current = state.currentTrackIndex;
+          shuffleHistory = shuffle && current >= 0 ? [current] : [];
+          historyIndex = shuffleHistory.length - 1;
+          return { shuffle };
+        });
         // Persist alongside current loopMode to maintain coherence
         persistPreferences({ shuffle, loopMode: get().loopMode });
       },
@@ -248,115 +288,128 @@ export const useAudioStore = create<AudioStore>()(
         if (!(mode in VALID_LOOP_MODES)) {
           throw new Error(`Invalid loop mode: ${mode}`);
         }
-        set({ loopMode: mode });
+        update(() => ({ loopMode: mode }));
         // Persist alongside current shuffle state
         persistPreferences({ shuffle: get().shuffle, loopMode: mode });
       },
 
       nextTrack: async () => {
-        const { playlist, currentTrackIndex, shuffle } = get();
-        if (playlist.length === 0) return;
+        let nextTrack: AudioTrack | undefined;
+        update((state) => {
+          const { playlist, currentTrackIndex, shuffle } = state;
+          if (playlist.length === 0) return {};
 
-        let nextIndex = 0;
-        if (shuffle) {
-          if (historyIndex < shuffleHistory.length - 1) {
-            historyIndex++;
-            nextIndex = shuffleHistory[historyIndex];
-          } else {
-            const available = playlist
-              .map((_, i) => i)
-              .filter(
-                (i) => i !== currentTrackIndex && !shuffleHistory.includes(i),
-              );
-            if (available.length === 0) {
-              shuffleHistory =
-                currentTrackIndex >= 0 ? [currentTrackIndex] : [];
-              const rest = playlist
-                .map((_, i) => i)
-                .filter((i) => i !== currentTrackIndex);
-              nextIndex = rest[Math.floor(Math.random() * rest.length)];
-              shuffleHistory.push(nextIndex);
-              historyIndex = shuffleHistory.length - 1;
+          let nextIndex = 0;
+          if (shuffle) {
+            if (historyIndex < shuffleHistory.length - 1) {
+              historyIndex++;
+              nextIndex = shuffleHistory[historyIndex];
             } else {
-              nextIndex =
-                available[Math.floor(Math.random() * available.length)];
-              shuffleHistory.push(nextIndex);
-              historyIndex = shuffleHistory.length - 1;
+              const available = playlist
+                .map((_, i) => i)
+                .filter(
+                  (i) => i !== currentTrackIndex && !shuffleHistory.includes(i),
+                );
+              if (available.length === 0) {
+                shuffleHistory =
+                  currentTrackIndex >= 0 ? [currentTrackIndex] : [];
+                const rest = playlist
+                  .map((_, i) => i)
+                  .filter((i) => i !== currentTrackIndex);
+                nextIndex = rest[Math.floor(Math.random() * rest.length)];
+                shuffleHistory.push(nextIndex);
+                historyIndex = shuffleHistory.length - 1;
+              } else {
+                nextIndex =
+                  available[Math.floor(Math.random() * available.length)];
+                shuffleHistory.push(nextIndex);
+                historyIndex = shuffleHistory.length - 1;
+              }
             }
+          } else {
+            nextIndex = (currentTrackIndex + 1) % playlist.length;
           }
-        } else {
-          nextIndex = (currentTrackIndex + 1) % playlist.length;
-        }
-        const nextTrack = playlist[nextIndex];
-        if (nextTrack) {
-          set({
+          nextTrack = playlist[nextIndex];
+          if (!nextTrack) return {};
+          return {
             currentTrackIndex: nextIndex,
             currentTrack: nextTrack,
             isPlaying: true,
             isPaused: false,
             isStopped: false,
-            currentTime: 0,
-          });
+            currentTime: MIN_AUDIO_TIME,
+          };
+        });
+        if (nextTrack) {
           await audioPlayer.playTrack(nextTrack);
         }
       },
       previousTrack: async () => {
-        const { playlist, currentTrackIndex, shuffle } = get();
-        if (playlist.length === 0) return;
+        let prevTrack: AudioTrack | undefined;
+        update((state) => {
+          const { playlist, currentTrackIndex, shuffle } = state;
+          if (playlist.length === 0) return {};
 
-        let prevIndex = 0;
-        if (shuffle) {
-          if (historyIndex > 0) {
-            historyIndex--;
-            prevIndex = shuffleHistory[historyIndex];
+          let prevIndex = 0;
+          if (shuffle) {
+            if (historyIndex > 0) {
+              historyIndex--;
+              prevIndex = shuffleHistory[historyIndex];
+            } else {
+              const available = playlist
+                .map((_, i) => i)
+                .filter((i) => i !== currentTrackIndex);
+              prevIndex = available[Math.floor(Math.random() * available.length)];
+              shuffleHistory.unshift(prevIndex);
+              historyIndex = 0;
+            }
           } else {
-            const available = playlist
-              .map((_, i) => i)
-              .filter((i) => i !== currentTrackIndex);
-            prevIndex = available[Math.floor(Math.random() * available.length)];
-            shuffleHistory.unshift(prevIndex);
-            historyIndex = 0;
+            prevIndex =
+              currentTrackIndex <= 0
+                ? playlist.length - 1
+                : currentTrackIndex - 1;
           }
-        } else {
-          prevIndex =
-            currentTrackIndex <= 0
-              ? playlist.length - 1
-              : currentTrackIndex - 1;
-        }
-        const prevTrack = playlist[prevIndex];
-        if (prevTrack) {
-          set({
+          prevTrack = playlist[prevIndex];
+          if (!prevTrack) return {};
+          return {
             currentTrackIndex: prevIndex,
             currentTrack: prevTrack,
             isPlaying: true,
             isPaused: false,
             isStopped: false,
-            currentTime: 0,
-          });
+            currentTime: MIN_AUDIO_TIME,
+          };
+        });
+        if (prevTrack) {
           await audioPlayer.playTrack(prevTrack);
         }
       },
       playTrack: async (index) => {
-        const { playlist, shuffle } = get();
-        if (index < 0 || index >= playlist.length) return;
+        let track: AudioTrack | undefined;
+        update((state) => {
+          const { playlist, shuffle } = state;
+          if (index < 0 || index >= playlist.length) return {};
 
-        const track = playlist[index];
-        if (shuffle) {
-          shuffleHistory = [
-            ...shuffleHistory.slice(0, historyIndex + 1),
-            index,
-          ];
-          historyIndex = shuffleHistory.length - 1;
-        }
-        set({
-          currentTrackIndex: index,
-          currentTrack: track,
-          isPlaying: true,
-          isPaused: false,
-          isStopped: false,
-          currentTime: 0,
+          track = playlist[index];
+          if (shuffle) {
+            shuffleHistory = [
+              ...shuffleHistory.slice(0, historyIndex + 1),
+              index,
+            ];
+            historyIndex = shuffleHistory.length - 1;
+          }
+          return {
+            currentTrackIndex: index,
+            currentTrack: track,
+            isPlaying: true,
+            isPaused: false,
+            isStopped: false,
+            currentTime: MIN_AUDIO_TIME,
+          };
         });
-        await audioPlayer.playTrack(track);
+        if (track) {
+          await audioPlayer.playTrack(track);
+        }
       },
 
       stopPlayback: () => {
@@ -380,11 +433,19 @@ export const useAudioStore = create<AudioStore>()(
       },
 
       seekTo: (time) => {
-        audioPlayer.seekTo(time);
+        if (!Number.isFinite(time)) {
+          throw new Error("seekTo requires a finite number");
+        }
+        audioPlayer.seekTo(Math.max(MIN_AUDIO_TIME, time));
       },
 
       updateVolume: (volume) => {
-        audioPlayer.setVolume(volume);
+        if (!Number.isFinite(volume)) {
+          throw new Error("updateVolume requires a finite number");
+        }
+        audioPlayer.setVolume(
+          Math.max(MIN_VOLUME, Math.min(MAX_VOLUME, volume)),
+        );
       },
     };
   }),

@@ -38,21 +38,46 @@ const VAR_TERTIARY = "--color-tertiary" as const;
 
 /**
  * Apply a palette to the document root.
- * Secondary and tertiary colours are explicitly removed when absent to
- * prevent stale values from previous designs leaking into the current theme.
+ * Fails fast when invoked with malformed palettes and removes optional
+ * colours when absent. Explicit removal prevents stale values from previous
+ * designs from leaking into the current theme.
+/** Error thrown when palette validation fails. */
+const ERR_INVALID_PALETTE =
+  "applyPalette requires a valid palette with background, text, and accent properties" as const;
+
+/**
+ * Apply a palette to the document root.
+ * Validates required fields and types, failing fast to avoid writing
+ * undefined CSS values. Optional colours are explicitly removed when absent
+ * to prevent stale values from leaking between designs.
  */
-function applyPalette(palette: Palette): void {
+export function applyPalette(palette: unknown): void {
+  const candidate = palette as Record<string, unknown> | null;
+  if (
+    candidate === null ||
+    typeof candidate !== "object" ||
+    typeof candidate.background !== "string" ||
+    typeof candidate.text !== "string" ||
+    typeof candidate.accent !== "string"
+    !palette ||
+    typeof palette !== "object" ||
+    typeof (palette as any).background !== "string" ||
+    typeof (palette as any).text !== "string" ||
+    typeof (palette as any).accent !== "string"
+  ) {
+    throw new Error(ERR_INVALID_PALETTE);
+  }
   const root = document.documentElement;
-  root.style.setProperty(VAR_BG, palette.background);
-  root.style.setProperty(VAR_TEXT, palette.text);
-  root.style.setProperty(VAR_ACCENT, palette.accent);
-  if (palette.secondary) {
-    root.style.setProperty(VAR_SECONDARY, palette.secondary);
+  root.style.setProperty(VAR_BG, candidate.background);
+  root.style.setProperty(VAR_TEXT, candidate.text);
+  root.style.setProperty(VAR_ACCENT, candidate.accent);
+  if (candidate.secondary !== undefined) {
+    root.style.setProperty(VAR_SECONDARY, String(candidate.secondary));
   } else {
     root.style.removeProperty(VAR_SECONDARY);
   }
-  if (palette.tertiary) {
-    root.style.setProperty(VAR_TERTIARY, palette.tertiary);
+  if (candidate.tertiary !== undefined) {
+    root.style.setProperty(VAR_TERTIARY, String(candidate.tertiary));
   } else {
     root.style.removeProperty(VAR_TERTIARY);
   }

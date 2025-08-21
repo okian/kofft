@@ -4,6 +4,14 @@
 //! in a SQLite database. Cached waveforms are loaded on demand during
 //! playback, falling back to on-the-fly generation when no cached data is
 //! available.
+//!
+//! # Thread Safety
+//!
+//! [`rusqlite::Connection`] is `Send` but not `Sync`; callers must ensure
+//! serialized access when sharing a connection across threads. Wrap the
+//! connection in a synchronization primitive such as [`std::sync::Mutex`] if
+//! concurrent access is required. All functions in this module assume that the
+//! provided connection is used in a thread-safe manner.
 
 use rusqlite::{params, Connection};
 use std::{error::Error, fmt, vec::Vec};
@@ -38,6 +46,11 @@ pub enum PlaybackError {
     /// A track identifier failed validation (empty, too long, or containing
     /// disallowed characters).
     InvalidTrackId,
+    /// The stored waveform blob was not a whole number of `f32` samples.
+    ///
+    /// This indicates corruption or misuse of the cache and results in a
+    /// hard error rather than silently truncating data.
+    CorruptBlob,
     /// An error bubbled up from the underlying SQLite database.
     Database(rusqlite::Error),
 }
@@ -49,6 +62,7 @@ impl fmt::Display for PlaybackError {
                 write!(f, "waveform window must be greater than zero")
             }
             PlaybackError::InvalidTrackId => write!(f, "invalid track identifier"),
+            PlaybackError::CorruptBlob => write!(f, "corrupt waveform blob"),
             PlaybackError::Database(e) => write!(f, "database error: {e}"),
         }
     }
@@ -123,14 +137,17 @@ fn store_waveform(
 
 /// Attempt to load a cached waveform snapshot.
 ///
-/// Returns `Ok(None)` when no cached waveform exists.
+/// Returns `Ok(None)` when no cached waveform exists. If a blob is retrieved
+/// but its length is not a multiple of [`BYTES_PER_SAMPLE`],
+/// [`PlaybackError::CorruptBlob`] is returned to avoid propagating corrupted
+/// data.
 fn load_waveform(conn: &Connection, track_id: &str) -> Result<Option<Vec<f32>>, PlaybackError> {
     validate_track_id(track_id)?;
     let mut stmt = conn.prepare("SELECT samples FROM waveform_samples WHERE track_id = ?1")?;
     let mut rows = stmt.query(params![track_id])?;
     if let Some(row) = rows.next()? {
         let blob: Vec<u8> = row.get(0)?;
-        Ok(Some(bytes_to_waveform(&blob)))
+        Ok(Some(bytes_to_waveform(&blob)?))
     } else {
         Ok(None)
     }
@@ -184,13 +201,16 @@ fn waveform_as_bytes(waveform: &[f32]) -> Vec<u8> {
 /// Reconstruct a waveform from its byte representation loaded from the database.
 ///
 /// The input slice length must be a multiple of [`BYTES_PER_SAMPLE`]; otherwise
-/// any trailing incomplete sample is silently discarded. The function performs
-/// no allocations other than the output vector.
-fn bytes_to_waveform(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(BYTES_PER_SAMPLE)
+/// an error is returned to avoid propagating corrupted data. The function
+/// performs no allocations other than the output vector.
+fn bytes_to_waveform(bytes: &[u8]) -> Result<Vec<f32>, PlaybackError> {
+    let chunks = bytes.chunks_exact(BYTES_PER_SAMPLE);
+    if !chunks.remainder().is_empty() {
+        return Err(PlaybackError::CorruptBlob);
+    }
+    Ok(chunks
         .map(|b| f32::from_le_bytes(b.try_into().expect("chunk size fixed")))
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -284,7 +304,7 @@ mod tests {
     fn waveform_bytes_roundtrip() {
         let samples = vec![0.0f32, 1.0, -0.5];
         let bytes = waveform_as_bytes(&samples);
-        let decoded = bytes_to_waveform(&bytes);
+        let decoded = bytes_to_waveform(&bytes).unwrap();
         assert_eq!(samples, decoded);
     }
 
@@ -297,5 +317,74 @@ mod tests {
             init_db(&conn).unwrap();
             close_db(conn).unwrap();
         }
+
+    /// Empty track identifiers must be rejected to prevent ambiguous cache keys.
+    #[test]
+    fn rejects_empty_track_id() {
+        let conn = setup();
+        let err = get_or_generate_waveform(&conn, "", &[0.0f32; 1]).unwrap_err();
+        assert!(matches!(err, PlaybackError::InvalidTrackId));
+    }
+
+    /// Overly long track identifiers must be rejected to bound memory usage.
+    #[test]
+    fn rejects_overlong_track_id() {
+        let conn = setup();
+        // One more than the allowed maximum ensures validation fails.
+        const OVERLONG: usize = MAX_TRACK_ID_LENGTH + 1;
+        let id = "a".repeat(OVERLONG);
+        let err = get_or_generate_waveform(&conn, &id, &[0.0f32; 1]).unwrap_err();
+        assert!(matches!(err, PlaybackError::InvalidTrackId));
+    }
+
+    /// Concurrent writes to the cache should succeed without creating
+    /// duplicate rows or corrupting data.
+    #[test]
+    fn concurrent_cache_writes() {
+        use std::path::PathBuf;
+        use std::sync::Arc;
+        use std::thread;
+        // Using two writers is sufficient to exercise basic concurrency without
+        // incurring significant overhead.
+        const WRITERS: usize = 2;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path: Arc<PathBuf> = Arc::new(tmp.path().to_path_buf());
+        let mut handles = Vec::new();
+        for _ in 0..WRITERS {
+            let p = path.clone();
+            handles.push(thread::spawn(move || {
+                let conn = Connection::open(&p).unwrap();
+                init_db(&conn).unwrap();
+                store_waveform(&conn, "t", &[0.1f32; 4]).unwrap();
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        let conn = Connection::open(path.as_ref()).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM waveform_samples", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    /// Database errors from rusqlite should surface as
+    /// [`PlaybackError::Database`].
+    #[test]
+    fn database_error_propagates() {
+        // Missing initialization ensures table does not exist.
+        let conn = Connection::open_in_memory().unwrap();
+        let err = store_waveform(&conn, "x", &[0.0f32; 1]).unwrap_err();
+        assert!(matches!(err, PlaybackError::Database(_)));
+    }
+
+    /// Invalid blob lengths must cause an error instead of truncating data.
+    #[test]
+    fn detects_corrupt_blob() {
+        // A buffer whose length is not divisible by `BYTES_PER_SAMPLE` simulates
+        // a truncated or corrupted database entry.
+        let bytes = vec![0u8; BYTES_PER_SAMPLE - 1];
+        let err = bytes_to_waveform(&bytes).unwrap_err();
+        assert!(matches!(err, PlaybackError::CorruptBlob));
     }
 }

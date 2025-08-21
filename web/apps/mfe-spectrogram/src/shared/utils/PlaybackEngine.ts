@@ -2,6 +2,25 @@ import type { AudioTrack } from "@/shared/types";
 import { useAudioStore } from "@/shared/stores/audioStore";
 import { createTimeUpdater, TIME_UPDATE_INTERVAL_MS } from "./timeUpdater";
 
+/**
+ * FFT size for the analyser node. Chosen as a power of two to satisfy the
+ * WebAudio API requirement and to provide a reasonable frequency resolution
+ * without allocating excessive memory.
+ */
+const ANALYSER_FFT_SIZE = 2048;
+
+/**
+ * Default gain value applied to the master gain node. A value of one preserves
+ * the original signal amplitude.
+ */
+const DEFAULT_GAIN_VALUE = 1;
+
+/** Name of the DOMException thrown when an async operation is aborted. */
+const ABORT_ERROR_NAME = "AbortError";
+
+/** Message supplied with DOMException when an async operation is aborted. */
+const ABORT_ERROR_MESSAGE = "Aborted";
+
 interface PlaybackState {
   isPlaying: boolean;
   isPaused: boolean;
@@ -14,6 +33,12 @@ interface PlaybackState {
 
 type PlaybackCallback = (state: PlaybackState) => void;
 
+/**
+ * Core audio playback controller. Manages the WebAudio graph, loading and
+ * decoding of tracks, microphone input, and time update notifications. The
+ * engine is implemented as a singleton because the WebAudio API performs best
+ * with a single shared AudioContext per page.
+ */
 class PlaybackEngine {
   private static instance: PlaybackEngine | null = null;
 
@@ -72,6 +97,10 @@ class PlaybackEngine {
     this.callbacks.forEach((cb) => cb(state));
   }
 
+  /**
+   * Lazily create the AudioContext and associated node graph. If the context
+   * is suspended, it is resumed to ensure audio can play.
+   */
   private async initContext(): Promise<AudioContext> {
     if (!this.audioContext) {
       const win = window as Window & {
@@ -81,10 +110,12 @@ class PlaybackEngine {
       this.audioContext = new Ctx();
       this.gainNode = this.audioContext.createGain();
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
+      // Configure the analyser with a reasonable FFT size and connect the
+      // graph: source -> gain -> analyser -> destination.
+      this.analyser.fftSize = ANALYSER_FFT_SIZE;
       this.gainNode.connect(this.analyser);
       this.analyser.connect(this.audioContext.destination);
-      this.gainNode.gain.value = 1;
+      this.gainNode.gain.value = DEFAULT_GAIN_VALUE;
     }
     if (this.audioContext.state === "suspended") {
       await this.audioContext.resume();
@@ -92,39 +123,56 @@ class PlaybackEngine {
     return this.audioContext;
   }
 
+  /**
+   * Public wrapper to initialise the AudioContext. Provided primarily for
+   * tests that need access without triggering other side effects.
+   */
   async initializeAudioContext(): Promise<AudioContext> {
     return this.initContext();
   }
 
+  /**
+   * Wrap an async operation with abort support. Resolves or rejects at most
+   * once and detaches the abort listener regardless of outcome to prevent
+   * memory leaks.
+   */
   private async abortable<T>(
     promise: Promise<T>,
     controller: AbortController,
   ): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
-      let finished = false;
-      const onAbort = () => {
-        if (finished) return;
-        finished = true;
-        controller.signal.onabort = null;
-        reject(new DOMException("Aborted", "AbortError"));
+      let settled = false;
+      const cleanup = () => {
+        controller.signal.removeEventListener("abort", onAbort);
       };
-      controller.signal.onabort = onAbort;
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new DOMException(ABORT_ERROR_MESSAGE, ABORT_ERROR_NAME));
+      };
+      controller.signal.addEventListener("abort", onAbort);
+
       promise
-        .then((v) => {
-          if (finished) return;
-          finished = true;
-          controller.signal.onabort = null;
-          resolve(v);
+        .then((value) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(value);
         })
         .catch((err) => {
-          if (finished) return;
-          finished = true;
-          controller.signal.onabort = null;
+          if (settled) return;
+          settled = true;
+          cleanup();
           reject(err);
         });
     });
   }
 
+  /**
+   * Load and decode a track into memory. Any previous load operation is
+   * aborted to avoid wasting work on tracks the user skipped.
+   */
   async load(track: AudioTrack): Promise<void> {
     const requestId = ++this.playRequestId;
     this.loadController?.abort();
@@ -141,7 +189,7 @@ class PlaybackEngine {
         controller,
       );
       if (controller.signal.aborted || requestId !== this.playRequestId)
-        throw new DOMException("Aborted", "AbortError");
+        throw new DOMException(ABORT_ERROR_MESSAGE, ABORT_ERROR_NAME);
       const decoded = await this.abortable(
         new Promise<AudioBuffer>((resolve, reject) =>
           context.decodeAudioData(arrayBuffer, resolve, reject),
@@ -149,14 +197,14 @@ class PlaybackEngine {
         controller,
       );
       if (controller.signal.aborted || requestId !== this.playRequestId)
-        throw new DOMException("Aborted", "AbortError");
+        throw new DOMException(ABORT_ERROR_MESSAGE, ABORT_ERROR_NAME);
       this.currentBuffer = decoded;
       this.pausedAt = 0;
       this.isPaused = false;
       this.notify();
     } catch (err) {
       const error = err as DOMException;
-      if (error.name === "AbortError") {
+      if (error.name === ABORT_ERROR_NAME) {
         // Don't throw AbortError, just return silently
         return;
       }
@@ -164,6 +212,10 @@ class PlaybackEngine {
     }
   }
 
+  /**
+   * Begin playback from the provided offset, clamping the offset to the
+   * track's duration for safety.
+   */
   play(startAt = 0): void {
     if (!this.currentBuffer || !this.audioContext) return;
 
@@ -194,6 +246,7 @@ class PlaybackEngine {
     this.timeUpdater.start();
   }
 
+  /** Pause playback and remember the current position. */
   pause(): void {
     if (this.source && this.audioContext) {
       try {
@@ -210,12 +263,14 @@ class PlaybackEngine {
     }
   }
 
+  /** Resume playback if currently paused. */
   resume(): void {
     if (this.isPaused) {
       this.play(this.pausedAt);
     }
   }
 
+  /** Fully stop playback and reset internal state. */
   stop(): void {
     this.playRequestId++;
     this.stopSource();
@@ -226,6 +281,10 @@ class PlaybackEngine {
     this.notify();
   }
 
+  /**
+   * Seek to the specified time within the current track. Input is sanitized to
+   * remain within the track's bounds.
+   */
   seek(time: number): void {
     if (!this.currentBuffer) return;
 
@@ -243,6 +302,10 @@ class PlaybackEngine {
     }
   }
 
+  /**
+   * Attach a MediaStream (microphone) to the audio graph, stopping any current
+   * playback. Returns true once the stream is connected.
+   */
   async startMicrophone(stream: MediaStream): Promise<boolean> {
     const context = await this.initContext();
     this.stopSource();
@@ -260,6 +323,7 @@ class PlaybackEngine {
     return true;
   }
 
+  /** Disconnect the active microphone stream if present. */
   stopMicrophone(): boolean {
     if (this.micSource) {
       try {
@@ -273,6 +337,7 @@ class PlaybackEngine {
     return true;
   }
 
+  /** Set the master volume, clamped to the valid [0,1] range. */
   setVolume(v: number): void {
     if (this.gainNode) {
       this.gainNode.gain.value = Math.max(0, Math.min(1, v));
@@ -280,6 +345,7 @@ class PlaybackEngine {
     }
   }
 
+  /** Toggle between muted (gain=0) and full volume. */
   toggleMute(): void {
     if (this.gainNode) {
       this.gainNode.gain.value = this.gainNode.gain.value > 0 ? 0 : 1;
@@ -287,6 +353,12 @@ class PlaybackEngine {
     }
   }
 
+  /**
+   * Handle the end of playback for the current track. Depending on playlist
+   * state and user preferences, this may advance to another track or stop
+   * playback entirely. Store updates are performed atomically to avoid
+   * intermediate inconsistent states.
+   */
   private handleEnded(): void {
     this.stopSource();
     this.isPaused = false;
@@ -297,9 +369,6 @@ class PlaybackEngine {
       playlist,
       currentTrackIndex,
       playTrack,
-      setPlaying,
-      setPaused,
-      setStopped,
       loopMode,
       shuffle,
     } = useAudioStore.getState();
@@ -307,9 +376,11 @@ class PlaybackEngine {
     const playlistLength = playlist.length;
     if (playlistLength === 0) {
       this.notify();
-      setPlaying(false);
-      setPaused(false);
-      setStopped(true);
+      useAudioStore.setState({
+        isPlaying: false,
+        isPaused: false,
+        isStopped: true,
+      });
       return;
     }
 
@@ -321,9 +392,11 @@ class PlaybackEngine {
     if (shuffle) {
       if (playlistLength <= 1 && loopMode === "off") {
         this.notify();
-        setPlaying(false);
-        setPaused(false);
-        setStopped(true);
+        useAudioStore.setState({
+          isPlaying: false,
+          isPaused: false,
+          isStopped: true,
+        });
         return;
       }
       let nextIndex = currentTrackIndex;
@@ -348,11 +421,18 @@ class PlaybackEngine {
     }
 
     this.notify();
-    setPlaying(false);
-    setPaused(false);
-    setStopped(true);
+    useAudioStore.setState({
+      isPlaying: false,
+      isPaused: false,
+      isStopped: true,
+    });
   }
 
+  /**
+   * Stop and disconnect the currently playing AudioBufferSourceNode if any.
+   * Errors from stopping or disconnecting are intentionally swallowed to avoid
+   * disrupting playback flow.
+   */
   private stopSource() {
     if (this.source) {
       try {
@@ -371,14 +451,20 @@ class PlaybackEngine {
   }
 
   // State getters
+  /** True when audio is currently playing. */
   isPlaying(): boolean {
     return !!this.source && !this.isPaused;
   }
 
+  /** True when playback is completely stopped. */
   isStopped(): boolean {
     return !this.source && !this.isPaused;
   }
 
+  /**
+   * Current playback position in seconds. While paused, returns the position
+   * at which playback was paused.
+   */
   getCurrentTime(): number {
     if (this.isPaused) return this.pausedAt;
     if (this.source && this.audioContext)
@@ -389,22 +475,30 @@ class PlaybackEngine {
     return 0;
   }
 
+  /** Duration of the currently loaded track in seconds. */
   getDuration(): number {
     return this.currentBuffer?.duration || 0;
   }
 
+  /** Current master volume level [0,1]. */
   getVolume(): number {
     return this.gainNode?.gain.value || 0;
   }
 
+  /** True if master volume is muted. */
   isMuted(): boolean {
     return this.gainNode?.gain.value === 0;
   }
 
+  /** Return the underlying AudioContext, mainly for testing purposes. */
   getAudioContext(): AudioContext | null {
     return this.audioContext;
   }
 
+  /**
+   * Snapshot the current frequency-domain data from the analyser node.
+   * Returns null if the analyser is not initialised.
+   */
   getFrequencyData(): Uint8Array | null {
     if (!this.analyser) return null;
 
@@ -415,6 +509,10 @@ class PlaybackEngine {
     return dataArray;
   }
 
+  /**
+   * Snapshot the current time-domain waveform data from the analyser node.
+   * Returns null if the analyser is not initialised.
+   */
   getTimeData(): Uint8Array | null {
     if (!this.analyser) return null;
 
@@ -425,6 +523,10 @@ class PlaybackEngine {
     return dataArray;
   }
 
+  /**
+   * Tear down the audio graph and release resources. Primarily used in tests
+   * to ensure a clean environment between cases.
+   */
   cleanup(): void {
     this.stop();
     this.stopMicrophone();

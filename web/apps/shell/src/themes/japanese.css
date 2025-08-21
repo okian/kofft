@@ -6,29 +6,42 @@
 */
 
 /* Common properties for Japanese designs. */
-:root[data-design='japanese-a'],
-:root[data-design='japanese-b'] {
-  --anim-duration: 300ms;
-  font-family: 'Noto Sans', sans-serif;
+:root[data-design="japanese-a"],
+:root[data-design="japanese-b"] {
+  font-family: "Noto Sans", sans-serif;
 }
 
 /* Light mode styles for Japanese designs. */
-:root[data-design='japanese-a'][data-mode='light'],
-:root[data-design='japanese-b'][data-mode='light'] {
+:root[data-design="japanese-a"][data-mode="light"],
+:root[data-design="japanese-b"][data-mode="light"] {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
 
 /* Dark mode styles for Japanese designs. */
-:root[data-design='japanese-a'][data-mode='dark'],
-:root[data-design='japanese-b'][data-mode='dark'] {
+:root[data-design="japanese-a"][data-mode="dark"],
+:root[data-design="japanese-b"][data-mode="dark"] {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
 
 /* Transition behaviour for minimalist Japanese designs. */
-:root[data-design='japanese-a'] *,
-:root[data-design='japanese-b'] * {
-  transition: background-color var(--anim-duration) ease-in-out,
+:root[data-design="japanese-a"] *,
+:root[data-design="japanese-b"] * {
+  /* Leverage the global animation duration for all colour changes. */
+  transition-property: background-color, color;
+  transition-duration: var(--anim-duration);
+  transition-timing-function: ease-in-out;
+}
+/*
+  Transition behaviour for minimalist Japanese designs. The rule targets the
+  shared `theme-transition` class rather than all elements to avoid expensive
+  universal selectors while still animating foreground and background colours
+  for marked components.
+*/
+:root[data-design="japanese-a"] .theme-transition,
+:root[data-design="japanese-b"] .theme-transition {
+  transition:
+    background-color var(--anim-duration) ease-in-out,
     color var(--anim-duration) ease-in-out;
 }

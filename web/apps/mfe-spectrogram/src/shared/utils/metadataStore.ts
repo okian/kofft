@@ -1,4 +1,5 @@
 import { AudioMetadata, ArtworkSource } from '@/types'
+import { useUIStore } from '@/shared/stores/uiStore'
 
 // Database configuration
 const DB_NAME = 'SpectrogramMetadataDB'
@@ -134,6 +135,91 @@ export interface TrackRecord {
   updated_at: Date
 }
 
+// ---------------------------------------------------------------------------
+// Worker message validation
+
+/**
+ * Keys permitted in metadata objects received from the worker. Defining the
+ * whitelist here avoids magic strings and makes it impossible for unexpected
+ * properties to silently slip through validation.
+ */
+export const ALLOWED_METADATA_FIELDS = [
+  'title',
+  'artist',
+  'album',
+  'year',
+  'genre',
+  'duration',
+  'sample_rate',
+  'channels',
+  'bit_depth',
+  'bitrate',
+  'format',
+  'album_art',
+  'album_art_mime'
+] as const
+
+/**
+ * Validate the shape of a metadata object produced by a worker.
+ *
+ * The function rejects any extraneous keys and performs conservative type
+ * checks for known fields. The returned object contains only the whitelisted
+ * properties, ensuring the rest of the codebase never observes untrusted
+ * structure. Errors are thrown for any deviation so callers can fail fast.
+ */
+export function validateWorkerMetadata (input: unknown): AudioMetadata {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new TypeError('Metadata message must be a plain object')
+  }
+
+  const allowed = new Set<string>(ALLOWED_METADATA_FIELDS)
+  const result: AudioMetadata = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!allowed.has(key)) {
+      throw new Error(`Unexpected field: ${key}`)
+    }
+    switch (key) {
+      case 'title':
+      case 'artist':
+      case 'album':
+      case 'genre':
+      case 'album_art_mime':
+        if (typeof value !== 'undefined' && typeof value !== 'string') {
+          throw new TypeError(`Invalid type for ${key}`)
+        }
+        ;(result as any)[key] = value
+        break
+      case 'format':
+        if (typeof value !== 'undefined' && typeof value !== 'string') {
+          throw new TypeError('Invalid type for format')
+        }
+        result.format = value as string | undefined
+        break
+      case 'year':
+      case 'duration':
+      case 'sample_rate':
+      case 'channels':
+      case 'bit_depth':
+      case 'bitrate':
+        if (typeof value !== 'undefined' && typeof value !== 'number') {
+          throw new TypeError(`Invalid type for ${key}`)
+        }
+        ;(result as any)[key] = value
+        break
+      case 'album_art':
+        if (typeof value !== 'undefined' && !(value instanceof Uint8Array)) {
+          throw new TypeError('Invalid type for album_art')
+        }
+        result.album_art = value as Uint8Array | undefined
+        break
+      default:
+        // We exhaustively check allowed keys; this clause is unreachable.
+        break
+    }
+  }
+  return result
+}
+
 // Utility to compute SHA-256 hash
 async function computeHash(data: ArrayBuffer): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
@@ -225,6 +311,21 @@ class MetadataStore {
     metadata: AudioMetadata,
     arrayBuffer: ArrayBuffer
   ): Promise<{ metadataId: number; albumArtId?: number }> {
+    let validated: AudioMetadata
+    try {
+      // Validate and sanitise the worker-supplied metadata before touching the
+      // database or allocating hashes. This ensures malformed messages fail fast
+      // and users receive immediate feedback via the UI store.
+      validated = validateWorkerMetadata(metadata)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid metadata'
+      useUIStore.getState().setError(message)
+      throw err
+    }
+
+    // From this point forward we can safely rely on the metadata shape.
+    metadata = validated
+
     const db = await this.init()
     const hash = await computeHash(arrayBuffer)
     const now = new Date()
@@ -345,6 +446,8 @@ class MetadataStore {
 
         transaction.onerror = () => {
           console.error('❌ Failed to store metadata:', transaction.error)
+          const message = transaction.error ? String(transaction.error) : 'Failed to store metadata'
+          useUIStore.getState().setError(message)
           reject(transaction.error)
         }
       }
