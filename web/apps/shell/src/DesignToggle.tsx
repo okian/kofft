@@ -1,9 +1,20 @@
 import React from "react";
 import { useDesign } from "./DesignContext";
 import type { Design, Mode } from "./designs";
+import { LAYOUT_GAP_REM, GRID_GAP_REM } from "./ui/Spacing";
 
-/** Consistent spacing for the toggle container. */
-const CONTROL_SPACING = "0.5rem" as const;
+/**
+ * Padding applied around the toggle controls using the shared layout spacing
+ * constant. Converting to `rem` at the call site avoids repeated string
+ * concatenation and keeps the numeric source of truth in `Spacing.ts`.
+ */
+const CONTROL_PADDING = `${LAYOUT_GAP_REM}rem` as const;
+
+/**
+ * Gap between control elements leveraging the grid spacing constant to ensure
+ * consistent rhythm with other UI components.
+ */
+const CONTROL_GAP = `${GRID_GAP_REM}rem` as const;
 
 /** CSS variable exposing the theme's primary accent colour. */
 const ACCENT_VAR = "var(--color-accent)" as const;
@@ -84,9 +95,10 @@ export function DesignToggle() {
   return (
     <div
       style={{
-        padding: CONTROL_SPACING,
+        /** Apply shared spacing constants for consistent layout rhythm. */
+        padding: CONTROL_PADDING,
         display: "flex",
-        gap: CONTROL_SPACING,
+        gap: CONTROL_GAP,
       }}
     >
       <label>
