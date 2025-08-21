@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { optimisticMetadataStore } from '@/utils/optimisticMetadataStore'
-import { metadataVerificationWorker } from '@/utils/metadataVerificationWorker'
-import { metadataTelemetry } from '@/utils/metadataTelemetry'
-import { cn } from '@/utils/cn'
+import { optimisticMetadataStore } from '@/shared/utils/optimisticMetadataStore'
+import { metadataVerificationWorker } from '@/shared/utils/metadataVerificationWorker'
+import { metadataTelemetry } from '@/shared/utils/metadataTelemetry'
+import { cn } from '@/shared/utils/cn'
 
 interface OptimisticMetadataPanelProps {
   isOpen: boolean

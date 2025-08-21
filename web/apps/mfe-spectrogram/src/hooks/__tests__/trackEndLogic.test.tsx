@@ -3,7 +3,7 @@ import { render } from '@testing-library/react'
 import React from 'react'
 import { useAudioFile } from '../useAudioFile'
 import { useAudioStore } from '@/shared/stores/audioStore'
-import { audioPlayer } from '@/utils/audioPlayer'
+import { audioPlayer } from '@/shared/utils/audioPlayer'
 
 function Register() {
   useAudioFile()
