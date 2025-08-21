@@ -270,7 +270,7 @@ describe("PlaybackEngine", () => {
 
   // Rapid consecutive load calls should abort previous operations and only
   // resolve the last one.
-    it("handles rapid successive load calls", async () => {
+    it("handles rapid consecutive load calls", async () => {
       // Delay long enough to ensure the first load is still pending when the
       // subsequent ones start.
       const LONG_DELAY_MS = 50;
