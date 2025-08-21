@@ -66,7 +66,8 @@ interface SettingsStore extends SpectrogramSettings {
 
 /** Default settings used when no user overrides are present. */
 const defaultSettings: SpectrogramSettings = {
-  theme: "dark",
+  // Conservative monochrome theme avoids overly bright colours by default.
+  theme: "japanese-a-light",
   amplitudeScale: "db",
   frequencyScale: "logarithmic",
   resolution: "medium",
@@ -135,20 +136,31 @@ function sanitiseSettings(input: any): SpectrogramSettings {
     result.theme = input.theme as Theme;
 
   // Spectrogram settings
-  if (typeof input.amplitudeScale === "string" && ["linear", "logarithmic", "db"].includes(input.amplitudeScale))
+  if (
+    typeof input.amplitudeScale === "string" &&
+    ["linear", "logarithmic", "db"].includes(input.amplitudeScale)
+  )
     result.amplitudeScale = input.amplitudeScale as AmplitudeScale;
 
-  if (typeof input.frequencyScale === "string" && ["linear", "logarithmic"].includes(input.frequencyScale))
+  if (
+    typeof input.frequencyScale === "string" &&
+    ["linear", "logarithmic"].includes(input.frequencyScale)
+  )
     result.frequencyScale = input.frequencyScale as FrequencyScale;
 
-  if (typeof input.resolution === "string" && ["low", "medium", "high"].includes(input.resolution))
+  if (
+    typeof input.resolution === "string" &&
+    ["low", "medium", "high"].includes(input.resolution)
+  )
     result.resolution = input.resolution as Resolution;
 
-  if (typeof input.refreshRate === "number" && [30, 60].includes(input.refreshRate))
+  if (
+    typeof input.refreshRate === "number" &&
+    [30, 60].includes(input.refreshRate)
+  )
     result.refreshRate = input.refreshRate as RefreshRate;
 
-  if (typeof input.colormap === "string")
-    result.colormap = input.colormap;
+  if (typeof input.colormap === "string") result.colormap = input.colormap;
 
   if (typeof input.showLegend === "boolean")
     result.showLegend = input.showLegend;
@@ -189,20 +201,36 @@ function sanitiseSettings(input: any): SpectrogramSettings {
   // API Keys
   if (typeof input.apiKeys === "object" && input.apiKeys) {
     result.apiKeys = {
-      acoustid: typeof input.apiKeys.acoustid === "string" ? input.apiKeys.acoustid : "",
-      musicbrainz: typeof input.apiKeys.musicbrainz === "string" ? input.apiKeys.musicbrainz : "",
+      acoustid:
+        typeof input.apiKeys.acoustid === "string"
+          ? input.apiKeys.acoustid
+          : "",
+      musicbrainz:
+        typeof input.apiKeys.musicbrainz === "string"
+          ? input.apiKeys.musicbrainz
+          : "",
     };
   }
 
   if (typeof input.apiKeyStatus === "object" && input.apiKeyStatus) {
     result.apiKeyStatus = {
-      acoustid: { 
-        valid: typeof input.apiKeyStatus.acoustid?.valid === "boolean" ? input.apiKeyStatus.acoustid.valid : false,
-        lastChecked: input.apiKeyStatus.acoustid?.lastChecked ? new Date(input.apiKeyStatus.acoustid.lastChecked) : undefined,
+      acoustid: {
+        valid:
+          typeof input.apiKeyStatus.acoustid?.valid === "boolean"
+            ? input.apiKeyStatus.acoustid.valid
+            : false,
+        lastChecked: input.apiKeyStatus.acoustid?.lastChecked
+          ? new Date(input.apiKeyStatus.acoustid.lastChecked)
+          : undefined,
       },
-      musicbrainz: { 
-        valid: typeof input.apiKeyStatus.musicbrainz?.valid === "boolean" ? input.apiKeyStatus.musicbrainz.valid : false,
-        lastChecked: input.apiKeyStatus.musicbrainz?.lastChecked ? new Date(input.apiKeyStatus.musicbrainz.lastChecked) : undefined,
+      musicbrainz: {
+        valid:
+          typeof input.apiKeyStatus.musicbrainz?.valid === "boolean"
+            ? input.apiKeyStatus.musicbrainz.valid
+            : false,
+        lastChecked: input.apiKeyStatus.musicbrainz?.lastChecked
+          ? new Date(input.apiKeyStatus.musicbrainz.lastChecked)
+          : undefined,
       },
     };
   }
@@ -221,18 +249,23 @@ function sanitiseSettings(input: any): SpectrogramSettings {
     result.enablePlaceholderArtwork = input.enablePlaceholderArtwork;
 
   // LUT settings
-  if (typeof input.lutMode === "string" && ["builtin", "custom", "file"].includes(input.lutMode))
+  if (
+    typeof input.lutMode === "string" &&
+    ["builtin", "custom", "file"].includes(input.lutMode)
+  )
     result.lutMode = input.lutMode as LUTMode;
 
   if (input.currentLUT && typeof input.currentLUT === "object")
     result.currentLUT = input.currentLUT as LUT;
 
   if (Array.isArray(input.customLUTs))
-    result.customLUTs = input.customLUTs.filter(lut => 
-      lut && typeof lut === "object" && 
-      typeof lut.id === "string" && 
-      typeof lut.name === "string" &&
-      Array.isArray(lut.entries)
+    result.customLUTs = input.customLUTs.filter(
+      (lut) =>
+        lut &&
+        typeof lut === "object" &&
+        typeof lut.id === "string" &&
+        typeof lut.name === "string" &&
+        Array.isArray(lut.entries),
     ) as LUT[];
 
   return result;
@@ -243,10 +276,13 @@ export const useSettingsStore = create<SettingsStore>()(
     ...defaultSettings,
 
     setTheme: (theme) => set((state) => ({ ...state, theme })),
-    setAmplitudeScale: (amplitudeScale) => set((state) => ({ ...state, amplitudeScale })),
-    setFrequencyScale: (frequencyScale) => set((state) => ({ ...state, frequencyScale })),
+    setAmplitudeScale: (amplitudeScale) =>
+      set((state) => ({ ...state, amplitudeScale })),
+    setFrequencyScale: (frequencyScale) =>
+      set((state) => ({ ...state, frequencyScale })),
     setResolution: (resolution) => set((state) => ({ ...state, resolution })),
-    setRefreshRate: (refreshRate) => set((state) => ({ ...state, refreshRate })),
+    setRefreshRate: (refreshRate) =>
+      set((state) => ({ ...state, refreshRate })),
     setColormap: (colormap) => set((state) => ({ ...state, colormap })),
     setShowLegend: (showLegend) => set((state) => ({ ...state, showLegend })),
     setEnableToastNotifications: (enableToastNotifications) =>
@@ -258,10 +294,16 @@ export const useSettingsStore = create<SettingsStore>()(
       set((state) => ({ ...state, seekUnplayedColor: sanitiseColor(color) })),
     setSeekPlayheadColor: (color) =>
       set((state) => ({ ...state, seekPlayheadColor: sanitiseColor(color) })),
-    setShowSeekbarPlayhead: (show) => set((state) => ({ ...state, showSeekbarPlayhead: show })),
+    setShowSeekbarPlayhead: (show) =>
+      set((state) => ({ ...state, showSeekbarPlayhead: show })),
     // Reset both colours back to theme-driven defaults in one cheap update.
     resetSeekbarColors: () =>
-      set((state) => ({ ...state, seekPlayedColor: "", seekUnplayedColor: "", seekPlayheadColor: "" })),
+      set((state) => ({
+        ...state,
+        seekPlayedColor: "",
+        seekUnplayedColor: "",
+        seekPlayheadColor: "",
+      })),
 
     // Seek bar configuration setters with basic validation to fail fast on
     // invalid input. Each setter clamps or verifies inputs instead of silently
@@ -406,32 +448,37 @@ export const useSettingsStore = create<SettingsStore>()(
     // Artwork settings actions
     setEnableExternalArtwork: (enable) =>
       set((state) => ({ ...state, enableExternalArtwork: enable })),
-    setEnableAcoustID: (enable) => set((state) => ({ ...state, enableAcoustID: enable })),
-    setEnableMusicBrainz: (enable) => set((state) => ({ ...state, enableMusicBrainz: enable })),
+    setEnableAcoustID: (enable) =>
+      set((state) => ({ ...state, enableAcoustID: enable })),
+    setEnableMusicBrainz: (enable) =>
+      set((state) => ({ ...state, enableMusicBrainz: enable })),
     setEnablePlaceholderArtwork: (enable) =>
       set((state) => ({ ...state, enablePlaceholderArtwork: enable })),
 
     // LUT actions
     setLUTMode: (mode) => set((state) => ({ ...state, lutMode: mode })),
-    
+
     setCurrentLUT: (lut) => set((state) => ({ ...state, currentLUT: lut })),
-    
-    addCustomLUT: (lut) => set((state) => ({
-      ...state,
-      customLUTs: [...state.customLUTs, lut]
-    })),
-    
-    removeCustomLUT: (id) => set((state) => ({
-      ...state,
-      customLUTs: state.customLUTs.filter(l => l.id !== id)
-    })),
-    
-    updateCustomLUT: (id, updates) => set((state) => ({
-      ...state,
-      customLUTs: state.customLUTs.map(l => 
-        l.id === id ? { ...l, ...updates } : l
-      )
-    })),
+
+    addCustomLUT: (lut) =>
+      set((state) => ({
+        ...state,
+        customLUTs: [...state.customLUTs, lut],
+      })),
+
+    removeCustomLUT: (id) =>
+      set((state) => ({
+        ...state,
+        customLUTs: state.customLUTs.filter((l) => l.id !== id),
+      })),
+
+    updateCustomLUT: (id, updates) =>
+      set((state) => ({
+        ...state,
+        customLUTs: state.customLUTs.map((l) =>
+          l.id === id ? { ...l, ...updates } : l,
+        ),
+      })),
   })),
 );
 

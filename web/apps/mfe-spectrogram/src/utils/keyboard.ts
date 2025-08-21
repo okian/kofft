@@ -1,31 +1,31 @@
-import { KeyboardShortcuts } from '@/types'
+import { KeyboardShortcuts } from "@/types";
 
 /**
  * LocalStorage key for persisting user-defined keyboard shortcuts.
  */
-export const SHORTCUTS_STORAGE_KEY = 'spectrogram-shortcuts'
+export const SHORTCUTS_STORAGE_KEY = "spectrogram-shortcuts";
 
 /**
  * Default key bindings for the spectrogram application.
  * Each property maps an action to the key combination that triggers it.
  */
 export const DEFAULT_SHORTCUTS: KeyboardShortcuts = {
-  playPause: ' ',
-  seekBackward: 'ArrowLeft',
-  seekForward: 'ArrowRight',
-  rewind: 'j',
-  fastForward: 'l',
-  previousTrack: 'Control+ArrowLeft',
-  nextTrack: 'Control+ArrowRight',
-  toggleMetadata: 'i',
-  togglePlaylist: 'p',
-  openSettings: 's',
-  snapshot: 'Control+Shift+s',
-  volumeUp: 'ArrowUp',
-  volumeDown: 'ArrowDown',
-  mute: 'm',
-  help: '?',
-}
+  playPause: " ",
+  seekBackward: "ArrowLeft",
+  seekForward: "ArrowRight",
+  rewind: "j",
+  fastForward: "l",
+  previousTrack: "Control+ArrowLeft",
+  nextTrack: "Control+ArrowRight",
+  toggleMetadata: "i",
+  togglePlaylist: "p",
+  openSettings: "s",
+  snapshot: "Control+Shift+s",
+  volumeUp: "ArrowUp",
+  volumeDown: "ArrowDown",
+  mute: "m",
+  help: "?",
+};
 
 /**
  * Breaks a combination string like "Control+S" into normalized key names.
@@ -36,11 +36,11 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcuts = {
 export function parseKeyCombo(combo: string): string[] {
   return combo
     .toLowerCase()
-    .split('+')
-    .map(key => {
-      const trimmed = key.trim()
-      return trimmed === 'cmd' || trimmed === 'command' ? 'meta' : trimmed
-    })
+    .split("+")
+    .map((key) => {
+      const trimmed = key.trim();
+      return trimmed === "cmd" || trimmed === "command" ? "meta" : trimmed;
+    });
 }
 
 /**
@@ -49,21 +49,24 @@ export function parseKeyCombo(combo: string): string[] {
  * @param event Keyboard event to inspect.
  * @param combo Key combination such as "Control+S".
  */
-export function isKeyComboPressed(event: KeyboardEvent, combo: string): boolean {
-  const keys = parseKeyCombo(combo)
-  const pressedKeys = new Set<string>()
+export function isKeyComboPressed(
+  event: KeyboardEvent,
+  combo: string,
+): boolean {
+  const keys = parseKeyCombo(combo);
+  const pressedKeys = new Set<string>();
 
   // Add modifier keys
-  if (event.ctrlKey) pressedKeys.add('control')
-  if (event.metaKey) pressedKeys.add('meta')
-  if (event.shiftKey) pressedKeys.add('shift')
-  if (event.altKey) pressedKeys.add('alt')
+  if (event.ctrlKey) pressedKeys.add("control");
+  if (event.metaKey) pressedKeys.add("meta");
+  if (event.shiftKey) pressedKeys.add("shift");
+  if (event.altKey) pressedKeys.add("alt");
 
   // Add the main key
-  pressedKeys.add(event.key.toLowerCase())
+  pressedKeys.add(event.key.toLowerCase());
 
   // Check if all required keys are pressed
-  return keys.every(key => pressedKeys.has(key))
+  return keys.every((key) => pressedKeys.has(key));
 }
 
 /**
@@ -74,7 +77,7 @@ export function isKeyComboPressed(event: KeyboardEvent, combo: string): boolean 
  */
 export function createKeyboardHandler(
   shortcuts: KeyboardShortcuts,
-  handlers: Record<string, () => void>
+  handlers: Record<string, () => void>,
 ) {
   return (event: KeyboardEvent) => {
     // Don't handle shortcuts when typing in input fields
@@ -83,20 +86,20 @@ export function createKeyboardHandler(
       event.target instanceof HTMLTextAreaElement ||
       event.target instanceof HTMLSelectElement
     ) {
-      return
+      return;
     }
 
     // Check each shortcut
     Object.entries(shortcuts).forEach(([action, combo]) => {
       if (isKeyComboPressed(event, combo)) {
-        event.preventDefault()
-        const handler = handlers[action]
+        event.preventDefault();
+        const handler = handlers[action];
         if (handler) {
-          handler()
+          handler();
         }
       }
-    })
-  }
+    });
+  };
 }
 
 /**
@@ -104,25 +107,25 @@ export function createKeyboardHandler(
  * @param combo Combination string to format.
  */
 export function getShortcutDisplay(combo: string): string {
-  return combo
-    .split('+')
-    .map(key => key.charAt(0).toUpperCase() + key.slice(1))
-  // Map normalized key names to display names
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  // Map normalized key names to user-friendly labels. Platform detection keeps
+  // meta/alt naming intuitive across macOS and other systems.
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPod|iPhone|iPad/.test(navigator.platform);
   const keyDisplayMap: Record<string, string> = {
-    meta: isMac ? 'Cmd' : 'Meta',
-    control: 'Ctrl',
-    shift: 'Shift',
-    alt: isMac ? 'Option' : 'Alt',
-    // Add more mappings as needed
+    meta: isMac ? "Cmd" : "Meta",
+    control: "Ctrl",
+    shift: "Shift",
+    alt: isMac ? "Option" : "Alt",
+    // Additional mappings can be added here as needed.
   };
   return combo
-    .split('+')
-    .map(key => {
+    .split("+")
+    .map((key) => {
       const lower = key.trim().toLowerCase();
-      return keyDisplayMap[lower] || (key.charAt(0).toUpperCase() + key.slice(1));
+      return keyDisplayMap[lower] || key.charAt(0).toUpperCase() + key.slice(1);
     })
-    .join(' + ');
+    .join(" + ");
 }
 
 /**
@@ -132,9 +135,9 @@ export function getShortcutDisplay(combo: string): string {
  */
 export function saveShortcuts(shortcuts: KeyboardShortcuts): void {
   try {
-    localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(shortcuts))
+    localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(shortcuts));
   } catch (error) {
-    console.error('Failed to save shortcuts', error)
+    console.error("Failed to save shortcuts", error);
   }
 }
 
@@ -145,12 +148,12 @@ export function saveShortcuts(shortcuts: KeyboardShortcuts): void {
  */
 export function loadShortcuts(): KeyboardShortcuts {
   try {
-    const stored = localStorage.getItem(SHORTCUTS_STORAGE_KEY)
+    const stored = localStorage.getItem(SHORTCUTS_STORAGE_KEY);
     if (stored) {
-      return { ...DEFAULT_SHORTCUTS, ...JSON.parse(stored) }
+      return { ...DEFAULT_SHORTCUTS, ...JSON.parse(stored) };
     }
   } catch (error) {
-    console.error('Failed to load shortcuts', error)
+    console.error("Failed to load shortcuts", error);
   }
-  return DEFAULT_SHORTCUTS
+  return DEFAULT_SHORTCUTS;
 }

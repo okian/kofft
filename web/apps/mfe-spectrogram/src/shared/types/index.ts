@@ -120,7 +120,23 @@ export interface AudioTrack {
 }
 
 export interface SpectrogramSettings {
-  theme: "dark" | "light" | "neon" | "high-contrast";
+  /**
+   * Name of the active UI colour theme.
+   * Expanded to cover experimental palettes including Japanese-inspired
+   * monochrome and red-accented variants, plus Bauhaus primary colours.
+   * Using a string union ensures only supported themes persist in settings.
+   */
+  theme:
+    | "dark"
+    | "light"
+    | "neon"
+    | "high-contrast"
+    | "japanese-a-light"
+    | "japanese-a-dark"
+    | "japanese-b-light"
+    | "japanese-b-dark"
+    | "bauhaus-light"
+    | "bauhaus-dark";
   amplitudeScale: "linear" | "logarithmic" | "db";
   frequencyScale: "linear" | "logarithmic";
   resolution: "low" | "medium" | "high";
@@ -322,7 +338,21 @@ export interface SettingsPanelProps {
 }
 
 // Utility types
-export type Theme = "dark" | "light" | "neon" | "high-contrast";
+/**
+ * Enumerates all supported theme identifiers. These drive look-and-feel
+ * selection across the application and gate persisted values.
+ */
+export type Theme =
+  | "dark"
+  | "light"
+  | "neon"
+  | "high-contrast"
+  | "japanese-a-light"
+  | "japanese-a-dark"
+  | "japanese-b-light"
+  | "japanese-b-dark"
+  | "bauhaus-light"
+  | "bauhaus-dark";
 export type AmplitudeScale = "linear" | "logarithmic" | "db";
 export type FrequencyScale = "linear" | "logarithmic";
 export type Resolution = "low" | "medium" | "high";
@@ -330,19 +360,19 @@ export type RefreshRate = 30 | 60;
 
 // LUT (Look-Up Table) types
 export interface LUTEntry {
-  position: number // 0.0 to 1.0
-  color: [number, number, number, number] // RGBA values
+  position: number; // 0.0 to 1.0
+  color: [number, number, number, number]; // RGBA values
 }
 
 export interface LUT {
-  id: string
-  name: string
-  description?: string
-  entries: LUTEntry[]
-  interpolation: 'linear' | 'cubic' | 'step'
+  id: string;
+  name: string;
+  description?: string;
+  entries: LUTEntry[];
+  interpolation: "linear" | "cubic" | "step";
 }
 
-export type LUTMode = 'builtin' | 'custom' | 'file'
+export type LUTMode = "builtin" | "custom" | "file";
 
 // WASM types
 export interface WASMModule {

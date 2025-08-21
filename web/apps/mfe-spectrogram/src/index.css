@@ -11,8 +11,9 @@
   be further overridden via settings.
 */
 :root {
-  --accent-color: #3b82f6;
-  --primary-color: #6b7280;
+  /* Default colours mirror the japanese-a-light theme: black on white. */
+  --accent-color: #000000;
+  --primary-color: #000000;
   /* Seekbar theme variables */
   --seek-played: var(--accent-color);
   --seek-unplayed: var(--primary-color);
@@ -43,6 +44,40 @@
 .theme-high-contrast {
   --accent-color: #ffffff;
   --primary-color: #000000;
+}
+
+/* Minimal black/white theme inspired by traditional Japanese design */
+.theme-japanese-a-light {
+  --accent-color: #000000;
+  --primary-color: #000000;
+}
+
+/* Dark inversion of the monochrome Japanese palette */
+.theme-japanese-a-dark {
+  --accent-color: #ffffff;
+  --primary-color: #ffffff;
+}
+
+/* Japanese flag motif: red sun with black or white text */
+.theme-japanese-b-light {
+  --accent-color: #e60026;
+  --primary-color: #000000;
+}
+
+.theme-japanese-b-dark {
+  --accent-color: #e60026;
+  --primary-color: #ffffff;
+}
+
+/* Bauhaus primary colour blocks */
+.theme-bauhaus-light {
+  --accent-color: #ff0000;
+  --primary-color: #0000ff;
+}
+
+.theme-bauhaus-dark {
+  --accent-color: #ff0000;
+  --primary-color: #ffff00;
 }
 
 /* Custom scrollbar styles */

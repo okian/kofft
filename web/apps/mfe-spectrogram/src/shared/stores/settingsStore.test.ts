@@ -41,6 +41,22 @@ describe("settingsStore seekbar configuration", () => {
     expect(useSettingsStore.getState().seekPlayedColor).toBe("");
   });
 
+  it("uses a safe default theme and sanitises loaded theme", () => {
+    // Default theme should be the conservative japanese-a-light palette.
+    expect(useSettingsStore.getState().theme).toBe("japanese-a-light");
+    // Invalid theme strings should revert to the default.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "invalid" }));
+    useSettingsStore.getState().loadFromStorage();
+    expect(useSettingsStore.getState().theme).toBe("japanese-a-light");
+    // Supported themes should persist correctly.
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ theme: "bauhaus-dark" }),
+    );
+    useSettingsStore.getState().loadFromStorage();
+    expect(useSettingsStore.getState().theme).toBe("bauhaus-dark");
+  });
+
   it("sanitises loaded settings", () => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -55,7 +71,8 @@ describe("settingsStore seekbar configuration", () => {
     const state = useSettingsStore.getState();
     expect(state.seekbarMode).toBe("waveform");
     expect(state.seekbarSignificance).toBe(1);
-    expect(state.seekbarAmplitudeScale).toBe(1);
+    // Invalid amplitude scale falls back to default (8) rather than 1.
+    expect(state.seekbarAmplitudeScale).toBe(8);
     expect(state.seekPlayedColor).toBe("");
   });
 });
