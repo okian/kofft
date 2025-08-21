@@ -5,14 +5,35 @@ import { useAudioFile } from '../shared/hooks/useAudioFile'
 import { useMicrophone } from '../shared/hooks/useMicrophone'
 import { useScreenSize } from '../shared/hooks/useScreenSize'
 import { useKeyboardShortcuts } from '../shared/hooks/useKeyboardShortcuts'
+import { useSettingsStore } from '../shared/stores/settingsStore'
 import { FileAudio, Mic, MicOff, Settings, Camera, Info, List } from 'lucide-react'
 import { cn } from '../shared/utils/cn'
+import { SPACING, TYPOGRAPHY, GRID } from '../shared/layout'
+import type { Theme } from '../shared/types'
+
+/**
+ * Builds the header's class string from layout tokens. Centralising this logic
+ * guarantees every theme shares the same structural rules and keeps tests
+ * straightforward.
+ */
+export function getHeaderClasses(theme: Theme, isMobile: boolean): string {
+  return cn(
+    'bg-neutral-900 border-b border-neutral-800',
+    'flex items-center justify-between',
+    SPACING[theme],
+    TYPOGRAPHY[theme],
+    GRID[theme],
+    'transition-colors duration-300',
+    isMobile ? 'h-14' : 'h-12',
+  )
+}
 
 export const Header: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { metadataPanelOpen, playlistPanelOpen, setMetadataPanelOpen, setPlaylistPanelOpen, setSettingsPanelOpen } = useUIStore()
   const { isMicrophoneActive } = useAudioStore()
   const { isMobile, isTablet } = useScreenSize()
+  const theme = useSettingsStore((s) => s.theme)
   const audioFile = useAudioFile()
   const microphone = useMicrophone()
 
@@ -49,7 +70,7 @@ export const Header: React.FC = () => {
   }, [isMobile, isTablet])
 
   return (
-    <header className={cn('bg-neutral-900 border-b border-neutral-800','flex items-center justify-between px-4','transition-colors duration-300', isMobile ? 'h-14' : 'h-12')}>
+    <header className={getHeaderClasses(theme, isMobile)}>
       <div className="flex items-center min-w-0 flex-1">
         <h1 className={cn('font-semibold text-neutral-100 truncate', isMobile ? 'text-base' : 'text-lg')}>Spectrogram</h1>
       </div>
@@ -93,5 +114,3 @@ export const Header: React.FC = () => {
     </header>
   )
 }
-
-

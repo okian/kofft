@@ -3,6 +3,8 @@ import { AudioTrack } from '@/shared/types'
 import { formatDuration, formatFileSize } from '@/shared/utils/audio'
 import { useUIStore } from '@/shared/stores/uiStore'
 import { usePlaylistSearchStore } from '@/shared/stores/playlistSearchStore'
+import { useSettingsStore } from '@/shared/stores/settingsStore'
+import { getPanelClasses } from '@/shared/layout'
 
 // Helper function to format sample rate in kHz
 const formatSampleRate = (sampleRate: number): string => {
@@ -20,6 +22,7 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
 
   const { setPlaylistPanelOpen } = useUIStore()
   const { setSearchQuery } = usePlaylistSearchStore()
+  const theme = useSettingsStore((s) => s.theme)
 
   const handleMetadataSearch = (value: string) => {
     setSearchQuery(value)
@@ -33,7 +36,7 @@ export function MetadataPanel({ track, isOpen, onClose }: MetadataPanelProps) {
   )
   
   return (
-    <div className="h-full flex flex-col" data-testid="metadata-panel">
+    <div className={getPanelClasses(theme)} data-testid="metadata-panel">
       {/* Header */}
       <div className="flex items-center justify-between py-0.5 px-1 border-b border-neutral-800">
         <h3 className="text-sm font-medium text-neutral-100">Track Info</h3>

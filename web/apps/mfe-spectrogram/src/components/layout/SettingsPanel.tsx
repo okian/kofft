@@ -33,6 +33,7 @@ import { conditionalToast, directToast } from "@/utils/toast";
 import { MetadataStorePanel } from "./MetadataStorePanel";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { LUTSettingsPanel } from "@/features/settings/LUTSettingsPanel";
+import { getPanelClasses } from "@/shared/layout";
 
 interface SettingsPanelProps {
   settings: SpectrogramSettings;
@@ -203,8 +204,8 @@ export function SettingsPanel({
     >
       <div
         className={cn(
+          getPanelClasses(settings.theme),
           "panel w-full max-w-4xl max-h-[90vh]",
-          "flex flex-col",
           "animate-scale-in",
         )}
       >
