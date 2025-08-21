@@ -1,3 +1,4 @@
+// Test intent: verifies features enabled behavior including edge cases.
 #![cfg(all(feature = "simd", feature = "wasm"))]
 
 #[test]

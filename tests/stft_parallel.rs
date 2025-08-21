@@ -1,3 +1,4 @@
+// Test intent: verifies stft parallel behavior including edge cases.
 #![cfg(feature = "parallel")]
 
 use std::sync::{

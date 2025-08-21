@@ -5,7 +5,7 @@
 //! [`crate::fft`]. It also exposes stack-only helpers analogous to
 //! [`crate::fft::fft_inplace_stack`] for embedded/`no_std` environments.
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 
 use hashbrown::HashMap;
 
@@ -13,6 +13,18 @@ use core::mem::MaybeUninit;
 
 use crate::fft::{fft_inplace_stack, ifft_inplace_stack, Complex, Complex32, FftError, FftImpl};
 use crate::num::Float;
+
+/// Number of real samples that make up a complex pair.
+pub const STRIDE: usize = 2;
+
+/// Scalar used for halving values during post-processing.
+pub const HALF: f32 = 0.5;
+
+/// Smallest supported transform length.
+pub const MIN_LEN: usize = STRIDE;
+
+/// Maximum number of cached twiddle tables to retain in the planner.
+pub const MAX_CACHE_ENTRIES: usize = 64;
 
 /// Trait providing specialized real FFT implementations for concrete
 /// floating-point types.
@@ -199,12 +211,18 @@ fn build_twiddle_table<T: Float>(m: usize) -> Result<alloc::vec::Vec<Complex<T>>
 /// of the input and output buffers.  These additional "pack" twiddles are
 /// conceptually identical to the ones used by the [`realfft`] crate and
 /// allow the kernels below to operate directly on the packed buffer without
-/// recomputing trigonometric values on every invocation.
+/// recomputing trigonometric values on every invocation. Cached tables are
+/// evicted in least-recently-used order when more than [`MAX_CACHE_ENTRIES`]
+/// are retained to prevent unbounded memory growth.
 pub struct RfftPlanner<T: RealFftNum> {
     /// Post-processing twiddle factors used after the complex FFT.
     cache: HashMap<usize, Arc<[Complex<T>]>>,
+    /// LRU order for the post-processing twiddle cache.
+    cache_order: VecDeque<usize>,
     /// Twiddles used when packing/unpacking the real-even/odd layout.
     pack_cache: HashMap<usize, Arc<[Complex<T>]>>,
+    /// LRU order for the pack/unpack twiddle cache.
+    pack_cache_order: VecDeque<usize>,
     /// Reusable scratch buffer.
     scratch: Vec<Complex<T>>,
 }
@@ -227,24 +245,35 @@ impl<T: RealFftNum> RfftPlanner<T> {
     pub fn new() -> Result<Self, FftError> {
         let mut cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
         let mut pack_cache: HashMap<usize, Arc<[Complex<T>]>> = HashMap::new();
+        let mut cache_order = VecDeque::new();
+        let mut pack_cache_order = VecDeque::new();
 
         #[cfg(feature = "compile-time-rfft")]
-        T::load_precomputed(&mut cache);
+        {
+            T::load_precomputed(&mut cache);
+            for &k in cache.keys() {
+                cache_order.push_back(k);
+            }
+        }
 
         for &m in Self::PRECOMPUTED {
             if !cache.contains_key(&m) {
                 let vec = build_twiddle_table::<T>(m)?;
                 cache.insert(m, Arc::from(vec));
+                cache_order.push_back(m);
             }
             if !pack_cache.contains_key(&m) {
                 let vec = build_twiddle_table::<T>(m)?;
                 pack_cache.insert(m, Arc::from(vec));
+                pack_cache_order.push_back(m);
             }
         }
 
         Ok(Self {
             cache,
+            cache_order,
             pack_cache,
+            pack_cache_order,
             scratch: Vec::new(),
         })
     }
@@ -253,8 +282,15 @@ impl<T: RealFftNum> RfftPlanner<T> {
     pub fn get_twiddles(&mut self, m: usize) -> Result<Arc<[Complex<T>]>, FftError> {
         if !self.cache.contains_key(&m) {
             let vec = build_twiddle_table::<T>(m)?;
+            if self.cache.len() == MAX_CACHE_ENTRIES {
+                if let Some(old) = self.cache_order.pop_front() {
+                    self.cache.remove(&old);
+                }
+            }
             self.cache.insert(m, Arc::from(vec));
         }
+        self.cache_order.retain(|&x| x != m);
+        self.cache_order.push_back(m);
         Ok(Arc::clone(self.cache.get(&m).unwrap()))
     }
 
@@ -262,9 +298,28 @@ impl<T: RealFftNum> RfftPlanner<T> {
     pub fn get_pack_twiddles(&mut self, m: usize) -> Result<Arc<[Complex<T>]>, FftError> {
         if !self.pack_cache.contains_key(&m) {
             let vec = build_twiddle_table::<T>(m)?;
+            if self.pack_cache.len() == MAX_CACHE_ENTRIES {
+                if let Some(old) = self.pack_cache_order.pop_front() {
+                    self.pack_cache.remove(&old);
+                }
+            }
             self.pack_cache.insert(m, Arc::from(vec));
         }
+        self.pack_cache_order.retain(|&x| x != m);
+        self.pack_cache_order.push_back(m);
         Ok(Arc::clone(self.pack_cache.get(&m).unwrap()))
+    }
+
+    /// Number of entries currently stored in the twiddle cache.
+    #[cfg(any(test, feature = "internal-tests"))]
+    pub fn cache_len(&self) -> usize {
+        self.cache.len()
+    }
+
+    /// Number of entries currently stored in the pack/unpack twiddle cache.
+    #[cfg(any(test, feature = "internal-tests"))]
+    pub fn pack_cache_len(&self) -> usize {
+        self.pack_cache.len()
     }
 
     /// Compute a real-input FFT using cached twiddle tables.
@@ -275,7 +330,17 @@ impl<T: RealFftNum> RfftPlanner<T> {
         output: &mut [Complex<T>],
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let m = input.len() / 2;
+        let n = input.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+            return Err(FftError::InvalidValue);
+        }
+        let m = n / STRIDE;
+        if output.len() != m + 1 || scratch.len() < m {
+            return Err(FftError::MismatchedLengths);
+        }
         let twiddles = self.get_twiddles(m)?;
         let pack_twiddles = self.get_pack_twiddles(m)?;
         T::rfft_with_scratch_impl(
@@ -295,7 +360,17 @@ impl<T: RealFftNum> RfftPlanner<T> {
         input: &mut [T],
         output: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let scratch_len = input.len() / 2;
+        let n = input.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+            return Err(FftError::InvalidValue);
+        }
+        if output.len() != n / STRIDE + 1 {
+            return Err(FftError::MismatchedLengths);
+        }
+        let scratch_len = n / STRIDE;
         let mut scratch = core::mem::take(&mut self.scratch);
         if scratch.len() < scratch_len {
             scratch.resize(scratch_len, Complex::zero());
@@ -313,7 +388,17 @@ impl<T: RealFftNum> RfftPlanner<T> {
         output: &mut [T],
         scratch: &mut [Complex<T>],
     ) -> Result<(), FftError> {
-        let m = output.len() / 2;
+        let n = output.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+            return Err(FftError::InvalidValue);
+        }
+        let m = n / STRIDE;
+        if input.len() != m + 1 || scratch.len() < m {
+            return Err(FftError::MismatchedLengths);
+        }
         let twiddles = self.get_twiddles(m)?;
         let pack_twiddles = self.get_pack_twiddles(m)?;
         T::irfft_with_scratch_impl(
@@ -333,7 +418,17 @@ impl<T: RealFftNum> RfftPlanner<T> {
         input: &mut [Complex<T>],
         output: &mut [T],
     ) -> Result<(), FftError> {
-        let scratch_len = output.len() / 2;
+        let n = output.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+            return Err(FftError::InvalidValue);
+        }
+        if input.len() != n / STRIDE + 1 {
+            return Err(FftError::MismatchedLengths);
+        }
+        let scratch_len = n / STRIDE;
         let mut scratch = core::mem::take(&mut self.scratch);
         if scratch.len() < scratch_len {
             scratch.resize(scratch_len, Complex::zero());
@@ -356,21 +451,21 @@ pub fn rfft_packed<T: RealFftNum, F: FftImpl<T>>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..m {
-        scratch[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+        scratch[i] = Complex::new(input[STRIDE * i], input[STRIDE * i + 1]);
     }
     fft.fft(&mut scratch[..m])?;
     let y0 = scratch[0];
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
-    let half = T::from_f32(0.5);
+    let half = T::from_f32(HALF);
     let twiddles = planner.get_twiddles(m)?;
     for k in 1..m {
         let a = scratch[k];
@@ -397,14 +492,14 @@ pub fn irfft_packed<T: RealFftNum, F: FftImpl<T>>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let half = T::from_f32(0.5);
+    let half = T::from_f32(HALF);
     scratch[0] = Complex::new(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
@@ -422,8 +517,8 @@ pub fn irfft_packed<T: RealFftNum, F: FftImpl<T>>(
     }
     fft.ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = scratch[i].re;
-        output[2 * i + 1] = scratch[i].im;
+        output[STRIDE * i] = scratch[i].re;
+        output[STRIDE * i + 1] = scratch[i].im;
     }
     Ok(())
 }
@@ -441,15 +536,15 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..m {
-        output[i] = Complex::new(input[2 * i], input[2 * i + 1]);
+        output[i] = Complex::new(input[STRIDE * i], input[STRIDE * i + 1]);
     }
     fft.fft(&mut output[..m])?;
     // Copy FFT results so we can perform the symmetric post-processing
@@ -457,7 +552,7 @@ fn rfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     let y0 = scratch[0];
     output[0] = Complex::new(y0.re + y0.im, T::zero());
     output[m] = Complex::new(y0.re - y0.im, T::zero());
-    let half = T::from_f32(0.5);
+    let half = T::from_f32(HALF);
     for k in 1..m {
         let a = scratch[k];
         let b = Complex::new(scratch[m - k].re, -scratch[m - k].im);
@@ -484,14 +579,14 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let half = T::from_f32(0.5);
+    let half = T::from_f32(HALF);
     scratch[0] = Complex::new(
         (input[0].re + input[m].re) * half,
         (input[0].re - input[m].re) * half,
@@ -508,8 +603,8 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
     }
     fft.ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = scratch[i].re;
-        output[2 * i + 1] = scratch[i].im;
+        output[STRIDE * i] = scratch[i].re;
+        output[STRIDE * i + 1] = scratch[i].im;
     }
     Ok(())
 }
@@ -519,6 +614,7 @@ use core::arch::x86_64::*;
 
 #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
 #[target_feature(enable = "avx")]
+/// AVX-accelerated real-input FFT kernel.
 unsafe fn rfft_direct_f32_avx<F>(
     mut fft: F,
     input: &mut [f32],
@@ -534,22 +630,22 @@ where
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..m {
-        output[i] = Complex32::new(input[2 * i], input[2 * i + 1]);
+        output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
     }
     fft(&mut output[..m])?;
     scratch[..m].copy_from_slice(&output[..m]);
     let y0 = scratch[0];
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
-    let half = _mm_set1_ps(0.5);
+    let half = _mm_set1_ps(HALF);
     for k in 1..m {
         let a = scratch[k];
         let b = Complex32::new(scratch[m - k].re, -scratch[m - k].im);
@@ -582,6 +678,7 @@ where
 
 #[cfg(all(target_arch = "x86_64", feature = "x86_64"))]
 #[target_feature(enable = "avx")]
+/// AVX-accelerated inverse real-input FFT kernel.
 unsafe fn irfft_direct_f32_avx<F>(
     mut ifft: F,
     input: &mut [Complex32],
@@ -597,14 +694,14 @@ where
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let half = _mm_set1_ps(0.5);
+    let half = _mm_set1_ps(HALF);
     let a0 = _mm_set_ss(input[0].re + input[m].re);
     let b0 = _mm_set_ss(input[0].re - input[m].re);
     scratch[0] = Complex32::new(
@@ -640,8 +737,8 @@ where
     }
     ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = scratch[i].re;
-        output[2 * i + 1] = scratch[i].im;
+        output[STRIDE * i] = scratch[i].re;
+        output[STRIDE * i + 1] = scratch[i].im;
     }
     Ok(())
 }
@@ -651,6 +748,7 @@ use core::arch::aarch64::*;
 
 #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
 #[target_feature(enable = "neon")]
+/// NEON-accelerated real-input FFT kernel.
 unsafe fn rfft_direct_f32_neon<F>(
     mut fft: F,
     input: &mut [f32],
@@ -666,22 +764,22 @@ where
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if output.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..m {
-        output[i] = Complex32::new(input[2 * i], input[2 * i + 1]);
+        output[i] = Complex32::new(input[STRIDE * i], input[STRIDE * i + 1]);
     }
     fft(&mut output[..m])?;
     scratch[..m].copy_from_slice(&output[..m]);
     let y0 = scratch[0];
     output[0] = Complex32::new(y0.re + y0.im, 0.0);
     output[m] = Complex32::new(y0.re - y0.im, 0.0);
-    let half = vdupq_n_f32(0.5);
+    let half = vdupq_n_f32(HALF);
     for k in 1..m {
         let a = scratch[k];
         let b = Complex32::new(scratch[m - k].re, -scratch[m - k].im);
@@ -714,6 +812,7 @@ where
 
 #[cfg(all(target_arch = "aarch64", feature = "aarch64"))]
 #[target_feature(enable = "neon")]
+/// NEON-accelerated inverse real-input FFT kernel.
 unsafe fn irfft_direct_f32_neon<F>(
     mut ifft: F,
     input: &mut [Complex32],
@@ -729,14 +828,14 @@ where
     if n == 0 {
         return Err(FftError::EmptyInput);
     }
-    if !n.is_multiple_of(2) {
+    if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
         return Err(FftError::InvalidValue);
     }
-    let m = n / 2;
+    let m = n / STRIDE;
     if input.len() != m + 1 || scratch.len() < m {
         return Err(FftError::MismatchedLengths);
     }
-    let half = vdupq_n_f32(0.5);
+    let half = vdupq_n_f32(HALF);
     let a0 = vdupq_n_f32(input[0].re + input[m].re);
     let b0 = vdupq_n_f32(input[0].re - input[m].re);
     scratch[0] = Complex32::new(
@@ -772,8 +871,8 @@ where
     }
     ifft(&mut scratch[..m])?;
     for i in 0..m {
-        output[2 * i] = scratch[i].re;
-        output[2 * i + 1] = scratch[i].im;
+        output[STRIDE * i] = scratch[i].re;
+        output[STRIDE * i + 1] = scratch[i].im;
     }
     Ok(())
 }
@@ -796,7 +895,17 @@ pub trait RealFftImpl<T: RealFftNum>: FftImpl<T> {
 
     /// Convenience wrapper that allocates a scratch buffer internally.
     fn rfft(&self, input: &mut [T], output: &mut [Complex<T>]) -> Result<(), FftError> {
-        let scratch_len = input.len() / 2;
+        let n = input.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+            return Err(FftError::InvalidValue);
+        }
+        if output.len() != n / STRIDE + 1 {
+            return Err(FftError::MismatchedLengths);
+        }
+        let scratch_len = n / STRIDE;
         let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
         // SAFETY: `rfft_with_scratch` initializes every element of the buffer
         // before any read occurs.
@@ -825,7 +934,17 @@ pub trait RealFftImpl<T: RealFftNum>: FftImpl<T> {
 
     /// Convenience wrapper that allocates scratch internally.
     fn irfft(&self, input: &mut [Complex<T>], output: &mut [T]) -> Result<(), FftError> {
-        let scratch_len = output.len() / 2;
+        let n = output.len();
+        if n == 0 {
+            return Err(FftError::EmptyInput);
+        }
+        if n < MIN_LEN || !n.is_multiple_of(STRIDE) {
+            return Err(FftError::InvalidValue);
+        }
+        if input.len() != n / STRIDE + 1 {
+            return Err(FftError::MismatchedLengths);
+        }
+        let scratch_len = n / STRIDE;
         let mut scratch: Vec<MaybeUninit<Complex<T>>> = Vec::with_capacity(scratch_len);
         // SAFETY: `irfft_with_scratch` initializes every element of the buffer
         // before any read occurs.
@@ -845,7 +964,8 @@ impl<T: RealFftNum, U: FftImpl<T>> RealFftImpl<T> for U {}
 
 /// Perform a real-input FFT using only stack allocation.
 ///
-/// The output buffer must have length `N/2 + 1`.
+/// The transform length `N` must be even and non-zero. The output buffer must
+/// have length `N/2 + 1`.
 pub fn rfft_stack<const N: usize, const M: usize>(
     input: &[f32; N],
     output: &mut [Complex32; M],
@@ -853,7 +973,10 @@ pub fn rfft_stack<const N: usize, const M: usize>(
     if N == 0 {
         return Err(FftError::EmptyInput);
     }
-    if M != N / 2 + 1 {
+    if N < MIN_LEN || N % STRIDE != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    if M != N / STRIDE + 1 {
         return Err(FftError::MismatchedLengths);
     }
     let mut buf = [Complex32::new(0.0, 0.0); N];
@@ -861,13 +984,14 @@ pub fn rfft_stack<const N: usize, const M: usize>(
         *b = Complex32::new(x, 0.0);
     }
     fft_inplace_stack(&mut buf)?;
-    output[..(N / 2 + 1)].copy_from_slice(&buf[..(N / 2 + 1)]);
+    output[..(N / STRIDE + 1)].copy_from_slice(&buf[..(N / STRIDE + 1)]);
     Ok(())
 }
 
 /// Perform an inverse real-input FFT using only stack allocation.
 ///
-/// The input buffer must have length `N/2 + 1`.
+/// The transform length `N` must be even and non-zero. The input buffer must
+/// have length `N/2 + 1`.
 pub fn irfft_stack<const N: usize, const M: usize>(
     input: &[Complex32; M],
     output: &mut [f32; N],
@@ -875,12 +999,15 @@ pub fn irfft_stack<const N: usize, const M: usize>(
     if N == 0 {
         return Err(FftError::EmptyInput);
     }
-    if M != N / 2 + 1 {
+    if N < MIN_LEN || N % STRIDE != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    if M != N / STRIDE + 1 {
         return Err(FftError::MismatchedLengths);
     }
     let mut buf = [Complex32::new(0.0, 0.0); N];
-    buf[..(N / 2 + 1)].copy_from_slice(&input[..(N / 2 + 1)]);
-    for k in 1..N / 2 {
+    buf[..(N / STRIDE + 1)].copy_from_slice(&input[..(N / STRIDE + 1)]);
+    for k in 1..N / STRIDE {
         buf[N - k] = Complex32::new(input[k].re, -input[k].im);
     }
     ifft_inplace_stack(&mut buf)?;
@@ -901,8 +1028,8 @@ mod tests {
         let fft = ScalarFftImpl::<f32>::default();
         let mut input = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let orig = input.clone();
-        let mut freq = vec![Complex32::new(0.0, 0.0); input.len() / 2 + 1];
-        let mut scratch = vec![Complex32::new(0.0, 0.0); input.len() / 2];
+        let mut freq = vec![Complex32::new(0.0, 0.0); input.len() / STRIDE + 1];
+        let mut scratch = vec![Complex32::new(0.0, 0.0); input.len() / STRIDE];
         fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
             .unwrap();
         let mut out = vec![0.0f32; orig.len()];
@@ -930,8 +1057,8 @@ mod tests {
         let fft = ScalarFftImpl::<f64>::default();
         let mut input = vec![1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let orig = input.clone();
-        let mut freq = vec![Complex64::new(0.0, 0.0); input.len() / 2 + 1];
-        let mut scratch = vec![Complex64::new(0.0, 0.0); input.len() / 2];
+        let mut freq = vec![Complex64::new(0.0, 0.0); input.len() / STRIDE + 1];
+        let mut scratch = vec![Complex64::new(0.0, 0.0); input.len() / STRIDE];
         fft.rfft_with_scratch(&mut input, &mut freq, &mut scratch)
             .unwrap();
         let mut out = vec![0.0f64; orig.len()];

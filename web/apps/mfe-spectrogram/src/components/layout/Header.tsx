@@ -20,7 +20,7 @@ import {
   List,
   Menu,
 } from "lucide-react";
-import { cn } from "@/utils/cn";
+import { cn } from "@/shared/utils/cn";
 
 /** Height utility applied to the header on mobile devices. */
 const HEIGHT_MOBILE = "h-14" as const;
