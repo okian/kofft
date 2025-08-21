@@ -3,6 +3,7 @@ import { useUIStore } from "@/shared/stores/uiStore";
 import { useAudioStore } from "@/shared/stores/audioStore";
 import { useAudioFile } from "@/shared/hooks/useAudioFile";
 import { conditionalToast } from "@/shared/utils/toast";
+import { takeSnapshot } from "@/shared/utils/takeSnapshot";
 
 /**
  * Number of seconds to seek when using Arrow Left/Right.
@@ -54,6 +55,11 @@ const INDEX_STEP = 1;
  */
 const EMPTY_PLAYLIST_LENGTH = 0;
 
+/** Message shown when snapshot creation succeeds. */
+const SNAPSHOT_SUCCESS_MESSAGE = "Snapshot captured";
+/** Message shown when snapshot creation fails. */
+const SNAPSHOT_ERROR_MESSAGE = "Snapshot failed";
+
 /**
  * useKeyboardShortcuts centralizes global keyboard handling for playback and UI actions.
  * It registers a keydown listener and exposes imperative helpers for programmatic control.
@@ -82,6 +88,20 @@ export const useKeyboardShortcuts = () => {
   } = useAudioStore();
 
   const audioFile = useAudioFile();
+
+  /**
+   * Perform the snapshot operation and surface user-visible feedback.
+   * Keeping this logic in one place avoids duplication between the
+   * keyboard handler and the returned imperative API.
+   */
+  const attemptSnapshot = useCallback(async () => {
+    try {
+      await takeSnapshot();
+      conditionalToast.success(SNAPSHOT_SUCCESS_MESSAGE);
+    } catch {
+      conditionalToast.error(SNAPSHOT_ERROR_MESSAGE);
+    }
+  }, []);
 
   /**
    * Toggle playback state while centralizing state checks.
@@ -262,8 +282,7 @@ export const useKeyboardShortcuts = () => {
       // Ctrl/Cmd + Shift + S - Snapshot
       if (key.toLowerCase() === "s" && (ctrlKey || metaKey) && shiftKey) {
         event.preventDefault();
-        // TODO: Implement snapshot functionality
-        conditionalToast.success("Snapshot taken!");
+        void attemptSnapshot();
         return;
       }
 
@@ -385,10 +404,9 @@ export const useKeyboardShortcuts = () => {
     togglePlaylistPanel: () => setPlaylistPanelOpen(!playlistPanelOpen),
     /** Open the settings panel. */
     openSettings: () => setSettingsPanelOpen(true),
-    /** Placeholder snapshot handler until implemented. */
+    /** Capture a spectrogram snapshot programmatically. */
     takeSnapshot: () => {
-      // TODO: Implement snapshot functionality
-      conditionalToast.success("Snapshot taken!");
+      void attemptSnapshot();
     },
   };
 };

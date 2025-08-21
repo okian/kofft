@@ -16,6 +16,13 @@ import {
   Menu,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
+import { takeSnapshot } from "@/shared/utils/takeSnapshot";
+import { conditionalToast } from "@/shared/utils/toast";
+
+/** User-facing text shown when a snapshot succeeds. */
+const SNAPSHOT_SUCCESS_MESSAGE = "Snapshot captured";
+/** User-facing text shown when a snapshot fails. */
+const SNAPSHOT_ERROR_MESSAGE = "Snapshot failed";
 
 export const Header: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,10 +66,18 @@ export const Header: React.FC = () => {
     await microphone.toggleMicrophone();
   }, [microphone]);
 
-  // Take snapshot
-  const takeSnapshot = useCallback(() => {
-    // TODO: Implement snapshot functionality
-    console.log("Snapshot feature not yet implemented");
+  /**
+   * Capture the spectrogram canvas and notify the user of the outcome.
+   * The utility returns a data URL which could be stored elsewhere if
+   * desired; here we simply trigger a download and toast the result.
+   */
+  const handleSnapshot = useCallback(async () => {
+    try {
+      await takeSnapshot();
+      conditionalToast.success(SNAPSHOT_SUCCESS_MESSAGE);
+    } catch {
+      conditionalToast.error(SNAPSHOT_ERROR_MESSAGE);
+    }
   }, []);
 
   // Keyboard shortcuts
@@ -231,7 +246,7 @@ export const Header: React.FC = () => {
         {/* Snapshot button */}
         {buttonConfig.showSnapshotButton && (
           <button
-            onClick={takeSnapshot}
+            onClick={handleSnapshot}
             className={cn(
               "p-2 rounded-lg transition-colors duration-200",
               "hover:bg-neutral-800 active:bg-neutral-700",
