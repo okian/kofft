@@ -66,6 +66,7 @@ compile_error!("stft requires `wasm` and `simd` features to be enabled");
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
+use core::mem::take;
 
 /// Compute the STFT of a real-valued signal.
 ///
@@ -330,11 +331,21 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
                 let start = frame_idx * hop_size;
                 time_buf.copy_from_slice(frame);
                 fft.ifft(time_buf)?;
+                // `acc` and `norm` are emptied by `take` at the end of the previous
+                // iteration. Resize them here to restore capacity without reallocating.
+                if acc.len() < win_len {
+                    acc.resize(win_len, 0.0);
+                    norm.resize(win_len, 0.0);
+                }
                 for i in 0..win_len {
                     acc[i] = time_buf[i].re * window[i];
                     norm[i] = window[i] * window[i];
                 }
-                Ok((start, take(acc), take(norm)))
+                // Move the accumulated data out for this frame while leaving the
+                // buffers empty for reuse in the next iteration.
+                let acc_frame = take(acc);
+                let norm_frame = take(norm);
+                Ok((start, acc_frame, norm_frame))
             },
         )
         .collect();
