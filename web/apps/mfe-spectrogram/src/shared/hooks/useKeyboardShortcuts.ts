@@ -3,6 +3,13 @@ import { useUIStore } from "@/shared/stores/uiStore";
 import { useAudioStore } from "@/shared/stores/audioStore";
 import { useAudioFile } from "@/shared/hooks/useAudioFile";
 import { conditionalToast } from "@/shared/utils/toast";
+import { useSpectrogramStore } from "@/shared/stores/spectrogramStore";
+import {
+  takeSnapshot as captureSnapshot,
+  DEFAULT_SNAPSHOT_FILENAME,
+  SNAPSHOT_SUCCESS_MESSAGE,
+  SNAPSHOT_ERROR_MESSAGE,
+} from "@/shared/utils/takeSnapshot";
 
 export const useKeyboardShortcuts = () => {
   const {
@@ -64,8 +71,7 @@ export const useKeyboardShortcuts = () => {
 
       // Spacebar or K - Play/Pause. Browsers inconsistently report the
       // space key so we defensively check both `key` and `code` variations.
-      const isSpace =
-        code === "Space" || key === " " || key === "Spacebar";
+      const isSpace = code === "Space" || key === " " || key === "Spacebar";
       const isK = key.toLowerCase() === "k" || code === "KeyK";
       if ((isSpace || isK) && !ctrlKey && !shiftKey && !metaKey) {
         event.preventDefault();
@@ -196,8 +202,13 @@ export const useKeyboardShortcuts = () => {
       // Ctrl/Cmd + Shift + S - Snapshot
       if (key.toLowerCase() === "s" && (ctrlKey || metaKey) && shiftKey) {
         event.preventDefault();
-        // TODO: Implement snapshot functionality
-        conditionalToast.success("Snapshot taken!");
+        try {
+          const canvas = useSpectrogramStore.getState().canvasRef?.getCanvas();
+          captureSnapshot({ canvas, fileName: DEFAULT_SNAPSHOT_FILENAME });
+          conditionalToast.success(SNAPSHOT_SUCCESS_MESSAGE);
+        } catch (error) {
+          conditionalToast.error(SNAPSHOT_ERROR_MESSAGE);
+        }
         return;
       }
 
@@ -302,8 +313,13 @@ export const useKeyboardShortcuts = () => {
     togglePlaylistPanel: () => setPlaylistPanelOpen(!playlistPanelOpen),
     openSettings: () => setSettingsPanelOpen(true),
     takeSnapshot: () => {
-      // TODO: Implement snapshot functionality
-      conditionalToast.success("Snapshot taken!");
+      try {
+        const canvas = useSpectrogramStore.getState().canvasRef?.getCanvas();
+        captureSnapshot({ canvas, fileName: DEFAULT_SNAPSHOT_FILENAME });
+        conditionalToast.success(SNAPSHOT_SUCCESS_MESSAGE);
+      } catch (error) {
+        conditionalToast.error(SNAPSHOT_ERROR_MESSAGE);
+      }
     },
   };
 };
