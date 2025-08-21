@@ -1,3 +1,4 @@
+// Test intent: verifies db scale behavior including edge cases.
 #![cfg(all(feature = "std", feature = "wasm", feature = "simd"))]
 
 use kofft::visual::spectrogram::db_scale;

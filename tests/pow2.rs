@@ -1,3 +1,4 @@
+// Test intent: verifies pow2 behavior including edge cases.
 use kofft::fft::{Complex32, FftImpl, ScalarFftImpl};
 
 fn dft(input: &[Complex32]) -> Vec<Complex32> {

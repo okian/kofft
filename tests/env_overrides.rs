@@ -1,3 +1,4 @@
+// Test intent: verifies env overrides behavior including edge cases.
 #![cfg(all(feature = "parallel", feature = "std", feature = "internal-tests"))]
 
 use std::process::Command;

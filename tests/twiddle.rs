@@ -1,3 +1,4 @@
+// Test intent: verifies twiddle behavior including edge cases.
 use kofft::fft::FftPlanner;
 #[cfg(feature = "precomputed-twiddles")]
 use kofft::num::{Complex32, Complex64};

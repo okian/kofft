@@ -1,3 +1,4 @@
+// Test intent: verifies fuzzy alloc behavior including edge cases.
 use kofft::fuzzy::{fuzzy_match, fuzzy_score};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};

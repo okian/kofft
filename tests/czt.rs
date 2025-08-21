@@ -1,3 +1,4 @@
+// Test intent: verifies czt behavior including edge cases.
 //! Tests for the Chirp Z-Transform implementation
 
 use kofft::czt::{czt_f32, CztError};

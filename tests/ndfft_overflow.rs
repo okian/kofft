@@ -1,3 +1,4 @@
+// Test intent: verifies ndfft overflow behavior including edge cases.
 use kofft::fft::{Complex, FftError, ScalarFftImpl};
 use kofft::ndfft::{fft2d_inplace, fft3d_inplace, Fft3dScratch};
 
