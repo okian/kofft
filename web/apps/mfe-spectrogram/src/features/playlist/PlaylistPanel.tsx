@@ -18,6 +18,16 @@ import { useSettingsStore } from "@/shared/stores/settingsStore";
 import { THEME_COLORS } from "@/shared/theme";
 import { getPanelClasses } from "@/shared/layout";
 import { useAnimationPreset } from "@/shared/animations";
+import { FixedSizeList as VirtualList, ListChildComponentProps } from "react-window";
+
+/** Height in pixels for a single playlist item used by the virtual list. */
+const PLAYLIST_ITEM_HEIGHT = 80;
+/** Delay in milliseconds before propagating search input to the store. */
+const SEARCH_THROTTLE_MS = 200;
+/** Maximum number of characters accepted in a search query. */
+const MAX_SEARCH_LENGTH = 100;
+/** Whitelist pattern guarding against dangerous search characters. */
+const SAFE_SEARCH_PATTERN = /^[\w\s-]*$/;
 
 interface PlaylistPanelProps {
   tracks: AudioTrack[];
@@ -390,11 +400,31 @@ export function PlaylistPanel({
 }: PlaylistPanelProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const trackRefs = useRef<(HTMLDivElement | null)[]>([]);
   const { loadAudioFiles } = useAudioFile();
   const theme = useSettingsStore((s) => s.theme);
   // Ensure panel entrance matches active theme's motion language.
   const animation = useAnimationPreset("slide");
+
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  /** Height of the scrollable region used for virtualization. */
+  const [listHeight, setListHeight] = useState(400);
+
+  useEffect(() => {
+    const el = listContainerRef.current;
+    if (!el) return;
+    const update = () => {
+      const h = el.clientHeight;
+      setListHeight(h > 0 ? h : 400);
+    };
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   const handlePanelDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes("Files")) {
@@ -470,6 +500,33 @@ export function PlaylistPanel({
   };
 
   const { searchQuery, setSearchQuery } = usePlaylistSearchStore();
+
+  /** Local mirror of the search box allowing throttled updates. */
+  const [searchInput, setSearchInput] = useState(searchQuery);
+
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
+
+  /**
+   * Validates and sanitizes a raw search query.
+   * Returns null if the query contains unsafe characters.
+   */
+  const sanitizeSearch = useCallback((value: string): string | null => {
+    const trimmed = value.trim().slice(0, MAX_SEARCH_LENGTH);
+    if (!SAFE_SEARCH_PATTERN.test(trimmed)) {
+      return null;
+    }
+    return trimmed;
+  }, []);
+
+  // Propagate search changes to the store only after throttling and validation.
+  useEffect(() => {
+    const sanitized = sanitizeSearch(searchInput);
+    if (sanitized === null) return;
+    const timer = window.setTimeout(() => setSearchQuery(sanitized), SEARCH_THROTTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, sanitizeSearch, setSearchQuery]);
 
   const searchIndex = useMemo(
     () =>
@@ -663,6 +720,101 @@ export function PlaylistPanel({
     </div>
   );
 
+  /** Renders a single row in the virtualized playlist. */
+  const renderRow = useCallback(
+    ({ index, style }: ListChildComponentProps) => {
+      const originalIndex = filteredIndexes[index];
+      const track = tracks[originalIndex];
+      const isDragging = dragIndex === originalIndex;
+      const isDropTarget = dropIndex === originalIndex;
+
+      return (
+        <div
+          style={style}
+          key={track.id}
+          draggable
+          data-testid="playlist-item"
+          onDragStart={(e) => handleDragStart(e, originalIndex)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(e) => handleDragOver(e, originalIndex)}
+          onDrop={(e) => handleDrop(e, originalIndex)}
+          className={cn(
+            "group flex items-center gap-3 p-2 rounded-md cursor-pointer transition-all duration-300 ease-out",
+            "hover:bg-neutral-800 hover:shadow-sm",
+            "border border-transparent hover:border-neutral-700",
+            currentTrackIndex === originalIndex &&
+              "bg-neutral-800 border-neutral-600 shadow-sm",
+            isDragging && "opacity-50 scale-95 rotate-1 z-50",
+            isDropTarget && "bg-neutral-700/30",
+          )}
+          onClick={() => onTrackSelect(originalIndex)}
+        >
+          {renderAlbumArt(track, originalIndex)}
+
+          <div className="flex-1 min-w-0">
+            <div className="mb-1">
+              <h4
+                className={cn(
+                  "text-sm font-medium truncate",
+                  currentTrackIndex === originalIndex
+                    ? "text-accent-blue"
+                    : "text-neutral-100",
+                )}
+              >
+                {track.metadata.title || track.file.name}
+              </h4>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-neutral-400 mb-0.5">
+              <span className="truncate">
+                {track.metadata.artist || "Unknown Artist"}
+              </span>
+              <span className="flex-shrink-0 ml-2 text-neutral-500">
+                {formatDuration(track.duration)}
+              </span>
+            </div>
+
+            {track.metadata.album && (
+              <p className="text-xs text-neutral-500 truncate">
+                {track.metadata.album}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTrackRemove(originalIndex);
+              }}
+              className={cn(
+                "p-1.5 rounded transition-colors",
+                "text-neutral-400 hover:text-red-400 hover:bg-red-400/10",
+              )}
+              title="Remove from playlist"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+      );
+    },
+    [
+      filteredIndexes,
+      tracks,
+      dragIndex,
+      dropIndex,
+      currentTrackIndex,
+      onTrackSelect,
+      onTrackRemove,
+      handleDragStart,
+      handleDragEnd,
+      handleDragOver,
+      handleDrop,
+      renderAlbumArt,
+    ],
+  );
+
   return (
     <AnimatePresence>
       {_isOpen && (
@@ -689,8 +841,8 @@ export function PlaylistPanel({
       <div className="p-1 border-b border-neutral-800">
         <input
           type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search..."
           list="playlist-search-suggestions"
           className="w-full px-2 py-1 bg-neutral-900 rounded-md text-sm text-neutral-100 border border-neutral-800 focus:outline-none focus:ring-1 focus:ring-accent-blue"
@@ -715,7 +867,7 @@ export function PlaylistPanel({
       </div>
 
       {/* Content - Reduced padding */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1" ref={listContainerRef}>
         {filteredTracks.length === 0 ? (
           tracks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-4">
@@ -733,89 +885,16 @@ export function PlaylistPanel({
             </div>
           )
         ) : (
-          <div className="p-1 space-y-1">
-            {filteredIndexes.map((originalIndex) => {
-              const track = tracks[originalIndex];
-              const isDragging = dragIndex === originalIndex;
-              const isDropTarget = dropIndex === originalIndex;
-
-              return (
-                <div
-                  key={track.id}
-                  ref={(el) => (trackRefs.current[originalIndex] = el)}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, originalIndex)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={(e) => handleDragOver(e, originalIndex)}
-                  onDrop={(e) => handleDrop(e, originalIndex)}
-                  className={cn(
-                    "group flex items-center gap-3 p-2 rounded-md cursor-pointer transition-all duration-300 ease-out",
-                    "hover:bg-neutral-800 hover:shadow-sm",
-                    "border border-transparent hover:border-neutral-700",
-                    currentTrackIndex === originalIndex &&
-                      "bg-neutral-800 border-neutral-600 shadow-sm",
-                    isDragging && "opacity-50 scale-95 rotate-1 z-50",
-                    isDropTarget && "bg-neutral-700/30",
-                  )}
-                  onClick={() => onTrackSelect(originalIndex)}
-                >
-                  {/* Album Art - Bigger and clickable */}
-                  {renderAlbumArt(track, originalIndex)}
-
-                  {/* Track info - More space now */}
-                  <div className="flex-1 min-w-0">
-                    {/* Title - Most important */}
-                    <div className="mb-1">
-                      <h4
-                        className={cn(
-                          "text-sm font-medium truncate",
-                          currentTrackIndex === originalIndex
-                            ? "text-accent-blue"
-                            : "text-neutral-100",
-                        )}
-                      >
-                        {track.metadata.title || track.file.name}
-                      </h4>
-                    </div>
-
-                    {/* Artist and Duration - Second most important */}
-                    <div className="flex items-center justify-between text-xs text-neutral-400 mb-0.5">
-                      <span className="truncate">
-                        {track.metadata.artist || "Unknown Artist"}
-                      </span>
-                      <span className="flex-shrink-0 ml-2 text-neutral-500">
-                        {formatDuration(track.duration)}
-                      </span>
-                    </div>
-
-                    {/* Album - Third most important, only if available */}
-                    {track.metadata.album && (
-                      <p className="text-xs text-neutral-500 truncate">
-                        {track.metadata.album}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Actions - Only visible on hover, no space when hidden */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTrackRemove(originalIndex);
-                      }}
-                      className={cn(
-                        "p-1.5 rounded transition-colors",
-                        "text-neutral-400 hover:text-red-400 hover:bg-red-400/10",
-                      )}
-                      title="Remove from playlist"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <VirtualList
+            height={listHeight}
+            width="100%"
+            itemCount={filteredIndexes.length}
+            itemSize={PLAYLIST_ITEM_HEIGHT}
+            overscanCount={5}
+            className="scrollbar-thin"
+          >
+            {renderRow}
+          </VirtualList>
         )}
       </div>
 
