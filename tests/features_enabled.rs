@@ -1,5 +1,5 @@
 // Test intent: verifies features enabled behavior including edge cases.
-#![cfg(all(feature = "simd", feature = "wasm"))]
+#![cfg(all(feature = "simd", feature = "wasm", feature = "waveform-cache"))] // only relevant when all runtime features are present
 
 #[test]
 fn required_features_enabled() {
