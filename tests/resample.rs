@@ -1,6 +1,12 @@
-// Test intent: verifies resample behavior including edge cases.
-use kofft::resample::{linear_resample, ResampleError};
+use kofft::resample::{linear_resample, linear_resample_channels, ResampleError};
 use std::time::Instant;
+
+/// Naive nearest-neighbour resampler used to establish a correctness baseline.
+///
+/// This intentionally slow implementation helps verify that the linear
+/// interpolator performs at least as well in terms of error while providing a
+/// simple reference for boundary behaviour.
+
 
 /// Source rate used for extreme upsampling tests.
 const EXTREME_LOW_RATE: f32 = 1.0;
@@ -22,6 +28,10 @@ fn naive_nearest(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
     out
 }
 
+/// Compute the mean squared error between two vectors.
+///
+/// This helper keeps the tests focused on the resampling behaviour instead of
+/// error-computation details.
 fn mse(a: &[f32], b: &[f32]) -> f32 {
     let len = a.len().min(b.len());
     let mut err = 0.0;
@@ -32,6 +42,7 @@ fn mse(a: &[f32], b: &[f32]) -> f32 {
     err / len as f32
 }
 
+/// Validate that linear interpolation is more accurate than nearest neighbour.
 #[test]
 fn linear_has_lower_error_than_nearest() {
     let src_rate = 44_100.0;
@@ -55,6 +66,7 @@ fn linear_has_lower_error_than_nearest() {
     assert!(err_linear < err_nearest);
 }
 
+/// Ensure the last input sample propagates to the output during upsampling.
 #[test]
 fn linear_resample_handles_trailing_sample() {
     let input = vec![0.0, 1.0, 0.0];
@@ -62,6 +74,7 @@ fn linear_resample_handles_trailing_sample() {
     assert_eq!(output.last().copied(), input.last().copied());
 }
 
+/// Rough performance check to catch egregious slowdowns.
 #[test]
 fn benchmark_linear_resampler() {
     let src_rate = 44_100.0;
@@ -88,6 +101,7 @@ fn benchmark_linear_resampler() {
     );
 }
 
+/// Reject zero-valued sample rates.
 #[test]
 fn linear_resample_errors_on_zero_rates() {
     let input = vec![0.0, 1.0, 0.0];
@@ -101,6 +115,7 @@ fn linear_resample_errors_on_zero_rates() {
     );
 }
 
+/// Reject negative sample rates.
 #[test]
 fn linear_resample_errors_on_negative_rates() {
     let input = vec![0.0, 1.0, 0.0];
@@ -114,6 +129,7 @@ fn linear_resample_errors_on_negative_rates() {
     );
 }
 
+/// Reject empty input slices.
 #[test]
 fn linear_resample_errors_on_empty_input() {
     let input: Vec<f32> = Vec::new();
@@ -123,6 +139,53 @@ fn linear_resample_errors_on_empty_input() {
     );
 }
 
+/// Downsample and ensure boundaries are preserved.
+#[test]
+fn linear_resample_downsamples_and_preserves_bounds() {
+    const SRC_RATE: f32 = 48_000.0;
+    const DST_RATE: f32 = 16_000.0;
+    let input: Vec<f32> = (0..(SRC_RATE as usize)).map(|i| i as f32).collect();
+    let output = linear_resample(&input, SRC_RATE, DST_RATE).unwrap();
+    assert_eq!(output.first().copied(), input.first().copied());
+    let last_in = input.last().copied().unwrap();
+    let last_out = output.last().copied().unwrap();
+    assert!(last_out <= last_in && (last_in - last_out) < (SRC_RATE / DST_RATE));
+}
+
+/// Validate channel count handling by resampling two interleaved channels.
+#[test]
+fn linear_resample_channels_up_and_down() {
+    const SRC_RATE: f32 = 2.0;
+    const DST_RATE: f32 = 4.0;
+    const CHANNELS: usize = 2;
+    let input: Vec<f32> = vec![0.0, 1.0, 2.0, 3.0];
+    let up = linear_resample_channels(&input, SRC_RATE, DST_RATE, CHANNELS).unwrap();
+    assert_eq!(up.len(), 8);
+    let down = linear_resample_channels(&up, DST_RATE, SRC_RATE, CHANNELS).unwrap();
+    assert_eq!(down, input);
+}
+
+/// Ensure invalid channel counts fail fast.
+#[test]
+fn linear_resample_errors_on_invalid_channels() {
+    let input = vec![0.0, 1.0, 0.0, 1.0];
+    assert_eq!(
+        linear_resample_channels(&input, 1.0, 2.0, 0).unwrap_err(),
+        ResampleError::InvalidChannels
+    );
+    assert_eq!(
+        linear_resample_channels(&input[..3], 1.0, 2.0, 2).unwrap_err(),
+        ResampleError::MisalignedChannels
+    );
+}
+
+/// Ensure the resampler works when the `wasm` feature is enabled.
+#[cfg(feature = "wasm")]
+#[test]
+fn linear_resample_wasm_feature_path() {
+    let input = vec![0.0, 1.0];
+    let output = linear_resample(&input, 1.0, 2.0).unwrap();
+    assert_eq!(output.len(), 4);
 /// Ensures resampler fails fast when given non-finite rates.
 #[test]
 fn linear_resample_errors_on_non_finite_rates() {
