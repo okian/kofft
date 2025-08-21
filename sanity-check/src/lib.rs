@@ -23,6 +23,16 @@ pub enum PngDepth {
     Sixteen,
 }
 
+/// Minimum valid sample rate in Hz to accept audio input.
+const MIN_SAMPLE_RATE: u32 = 1;
+/// Minimum channel count required for decoding.
+const MIN_CHANNELS: usize = 1;
+
+/// Read an audio file into a mono sample buffer and return its sample rate.
+///
+/// Supports WAV via a fast path and delegates other formats to `symphonia`.
+/// Returns an error if decoding fails or if the audio format parameters are
+/// invalid.
 pub fn read_audio(path: &Path) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     if path
         .extension()
@@ -53,10 +63,22 @@ pub fn read_audio(path: &Path) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     let sample_rate = params
         .sample_rate
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unknown sample rate"))?;
+    if sample_rate < MIN_SAMPLE_RATE {
+        return Err(Box::new(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "sample rate must be positive",
+        )));
+    }
     let channels = params
         .channels
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unknown channel count"))?
         .count();
+    if channels < MIN_CHANNELS {
+        return Err(Box::new(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "channel count must be positive",
+        )));
+    }
 
     let mut samples = Vec::new();
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
@@ -96,6 +118,8 @@ pub fn read_audio(path: &Path) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     Ok((samples, sample_rate))
 }
 
+/// Decode a WAV file using [`hound`], returning interleaved mono samples and
+/// the file's sample rate.
 fn read_wav(path: &Path) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     let mut reader = WavReader::open(path)?;
     let spec = reader.spec();
@@ -106,6 +130,7 @@ fn read_wav(path: &Path) -> Result<(Vec<f32>, u32), Box<dyn Error>> {
     Ok((samples, spec.sample_rate))
 }
 
+/// Write an RGB image to disk as a PNG with the requested bit depth.
 pub fn save_png(
     img: &ImageBuffer<Rgb<u16>, Vec<u16>>,
     path: &Path,
@@ -133,6 +158,7 @@ pub fn save_png(
     Ok(())
 }
 
+/// Save an RGB image to an SVG file by mapping each pixel to a tiny rectangle.
 pub fn save_svg(img: &ImageBuffer<Rgb<u16>, Vec<u16>>, path: &Path) -> Result<(), Box<dyn Error>> {
     use svg::node::element::Rectangle;
     use svg::Document;

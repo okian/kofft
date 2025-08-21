@@ -33,9 +33,7 @@ pub fn fuzzy_score(pattern: &str, text: &str, pattern_len: usize) -> usize {
         );
     }
 
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-    let text_len = text_chars.len();
+    let text_len = text.chars().count();
 
     let mut prev: Vec<usize> = (0..=text_len).collect();
     let mut curr = vec![0; text_len + 1];
@@ -68,7 +66,6 @@ pub fn fuzzy_match(pattern: &str, pattern_len: usize, text: &str) -> bool {
     }
 
     fuzzy_score(pattern, text, pattern_len) <= pattern_len / MATCH_THRESHOLD_DIVISOR
-
 }
 
 /// Compute fuzzy scores for a batch of candidate strings.
@@ -81,7 +78,6 @@ pub fn fuzzy_scores(pattern: &str, pattern_len: usize, candidates: &[String]) ->
         .iter()
         .map(|c| fuzzy_score(pattern, c, pattern_len))
         .collect()
-
 }
 
 #[cfg(test)]

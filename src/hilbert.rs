@@ -25,7 +25,6 @@ const POS_FREQ_START: usize = 1;
 /// # Returns
 /// A vector of complex values representing the analytic signal. The real part
 /// matches the original input while the imaginary part is the Hilbert transform.
-
 pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
     if input.is_empty() {
         return Err(FftError::EmptyInput);
@@ -76,7 +75,7 @@ mod tests {
     fn hilbert_single_sample() {
         let x = [42.0];
         let analytic = hilbert_analytic(&x).unwrap();
-        assert_eq!(analytic, vec![Complex32::new(42.0, 0.0)]);
+        assert_eq!(analytic, alloc::vec![Complex32::new(42.0, 0.0)]);
     }
 
     /// Even-length inputs should preserve the real part and produce the expected

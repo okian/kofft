@@ -38,6 +38,8 @@ use crate::fft_kernels::{fft2, fft4};
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(all(feature = "parallel", feature = "std"))]
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 use num_cpus;
@@ -73,6 +75,8 @@ static ENV_THREADS: OnceLock<usize> = OnceLock::new();
 static CALIBRATED_PER_CORE_WORK: OnceLock<usize> = OnceLock::new();
 #[cfg(all(feature = "parallel", feature = "std"))]
 static PARALLEL_FFT_THRESHOLD: OnceLock<usize> = OnceLock::new();
+#[cfg(all(feature = "parallel", feature = "std"))]
+static RAYON_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 fn env_parallel_fft_threshold() -> usize {
@@ -238,6 +242,21 @@ fn parallel_fft_block_size() -> usize {
     {
         1024
     }
+}
+
+#[cfg(all(feature = "parallel", feature = "std"))]
+/// Obtain a global Rayon thread pool configured with the current FFT thread
+/// count.
+///
+/// The pool is lazily initialized on first use and reused thereafter to avoid
+/// repeated allocations and to guarantee bounded concurrency.
+pub(crate) fn rayon_pool() -> &'static ThreadPool {
+    RAYON_POOL.get_or_init(|| {
+        ThreadPoolBuilder::new()
+            .num_threads(parallel_fft_threads().max(1))
+            .build()
+            .expect("failed to build thread pool")
+    })
 }
 
 #[cfg(feature = "parallel")]
@@ -1149,23 +1168,24 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
         if n == 1 {
             return Ok(());
         }
-        #[cfg(feature = "parallel")]
+        #[cfg(all(feature = "parallel", feature = "std"))]
         {
-            #[cfg(all(feature = "parallel", feature = "std"))]
             let threshold = parallel_fft_threshold();
-            #[cfg(not(all(feature = "parallel", feature = "std")))]
-            let threshold = 0;
             if should_parallelize_fft(n, threshold)
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {
                 let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                input32.par_iter_mut().for_each(|c| c.im = -c.im);
+                rayon_pool().install(|| {
+                    input32.par_iter_mut().for_each(|c| c.im = -c.im);
+                });
                 self.fft(input)?;
                 let scale = 1.0 / n as f32;
-                input32.par_iter_mut().for_each(|c| {
-                    c.im = -c.im;
-                    c.re *= scale;
-                    c.im *= scale;
+                rayon_pool().install(|| {
+                    input32.par_iter_mut().for_each(|c| {
+                        c.im = -c.im;
+                        c.re *= scale;
+                        c.im *= scale;
+                    });
                 });
                 return Ok(());
             }
