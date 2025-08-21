@@ -109,4 +109,26 @@ describe("DesignProvider", () => {
       expect(() => applyPalette(p as any)).toThrow(ERR_RE);
     }
   });
+
+  /** Hex colour used for malformed palette tests. */
+  const TEST_COLOR = "#000" as const;
+  /** Non-string value used to trigger type checks. */
+  const NON_STRING = 123 as const;
+  /**
+   * Palettes missing required keys or containing incorrect types.
+   * Each entry should cause applyPalette to throw.
+   */
+  const INVALID_PALETTES: readonly unknown[] = [
+    { background: TEST_COLOR, text: TEST_COLOR },
+    { background: TEST_COLOR, text: TEST_COLOR, accent: NON_STRING },
+    { background: TEST_COLOR, accent: TEST_COLOR },
+    { background: NON_STRING, text: TEST_COLOR, accent: TEST_COLOR },
+  ];
+
+  it.each(INVALID_PALETTES)(
+    "rejects malformed palette %o",
+    (invalid: unknown) => {
+      expect(() => applyPalette(invalid)).toThrow(/valid palette/);
+    },
+  );
 });
