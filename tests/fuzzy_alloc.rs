@@ -29,11 +29,11 @@ static A: CountingAlloc = CountingAlloc;
 #[test]
 fn fuzzy_match_allocations() {
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_score("abc", "abc");
+    fuzzy_score("abc", "abc", 3);
     let score_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    fuzzy_match("abc", "abc");
+    fuzzy_match("abc", 3, "abc");
     let match_allocs = ALLOC_COUNT.load(Ordering::SeqCst);
 
     assert_eq!(

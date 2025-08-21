@@ -726,7 +726,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 mod tests {
     use super::*;
     // Only the complex type and scalar FFT implementation are required for tests.
-    use crate::fft::{Complex32, ScalarFftImpl};
+    use crate::fft::{Complex32, FftStrategy, ScalarFftImpl};
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
