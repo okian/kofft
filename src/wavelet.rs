@@ -7,43 +7,99 @@
 extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt;
+
+/// Number of samples processed together in the Haar transform pair.
+pub const HAAR_PAIR_LEN: usize = 2;
+/// Scaling factor applied when computing averages and differences.
+pub const HAAR_SCALE: f32 = 0.5;
+
+/// Errors produced by wavelet operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaveletError {
+    /// The input length was odd when an even length was required.
+    InputLengthOdd { len: usize },
+    /// The buffers provided to the inverse transform did not match in size.
+    BufferSizeMismatch { avg: usize, diff: usize },
+}
+
+impl fmt::Display for WaveletError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WaveletError::InputLengthOdd { len } => {
+                write!(f, "input length {} is not even", len)
+            }
+            WaveletError::BufferSizeMismatch { avg, diff } => {
+                write!(
+                    f,
+                    "average buffer length {} does not match detail buffer length {}",
+                    avg, diff
+                )
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for WaveletError {}
 
 /// Forward Haar wavelet transform (single level)
-pub fn haar_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
-    let n = input.len() / 2;
+///
+/// # Errors
+/// Returns [`WaveletError::InputLengthOdd`] when the input length is not even.
+pub fn haar_forward(input: &[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError> {
+    if input.len() % HAAR_PAIR_LEN != 0 {
+        return Err(WaveletError::InputLengthOdd { len: input.len() });
+    }
+    let n = input.len() / HAAR_PAIR_LEN;
     let mut avg = vec![0.0; n];
     let mut diff = vec![0.0; n];
     for i in 0..n {
-        avg[i] = (input[2 * i] + input[2 * i + 1]) / 2.0;
-        diff[i] = (input[2 * i] - input[2 * i + 1]) / 2.0;
+        avg[i] = (input[HAAR_PAIR_LEN * i] + input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE;
+        diff[i] = (input[HAAR_PAIR_LEN * i] - input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE;
     }
-    (avg, diff)
+    Ok((avg, diff))
 }
 
 /// Inverse Haar wavelet transform (single level)
-pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Vec<f32> {
-    let n = avg.len();
-    let mut output = vec![0.0; n * 2];
-    for i in 0..n {
-        output[2 * i] = avg[i] + diff[i];
-        output[2 * i + 1] = avg[i] - diff[i];
+///
+/// # Errors
+/// Returns [`WaveletError::BufferSizeMismatch`] when `avg` and `diff` have different lengths.
+pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError> {
+    if avg.len() != diff.len() {
+        return Err(WaveletError::BufferSizeMismatch {
+            avg: avg.len(),
+            diff: diff.len(),
+        });
     }
-    output
+    let n = avg.len();
+    let mut output = vec![0.0; n * HAAR_PAIR_LEN];
+    for i in 0..n {
+        output[HAAR_PAIR_LEN * i] = avg[i] + diff[i];
+        output[HAAR_PAIR_LEN * i + 1] = avg[i] - diff[i];
+    }
+    Ok(output)
 }
 
 /// Batch Haar forward transform
-pub fn batch_forward(inputs: &[Vec<f32>]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+///
+/// # Errors
+/// Propagates any error returned by [`haar_forward`].
+pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<(Vec<Vec<f32>>, Vec<Vec<f32>>), WaveletError> {
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
-        let (avg, diff) = haar_forward(input);
+        let (avg, diff) = haar_forward(input)?;
         avgs.push(avg);
         diffs.push(diff);
     }
-    (avgs, diffs)
+    Ok((avgs, diffs))
 }
 /// Batch Haar inverse transform
-pub fn batch_inverse(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Vec<Vec<f32>> {
+///
+/// # Errors
+/// Propagates any error returned by [`haar_inverse`].
+pub fn batch_inverse(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, WaveletError> {
     avgs.iter()
         .zip(diffs.iter())
         .map(|(a, d)| haar_inverse(a, d))
@@ -51,64 +107,84 @@ pub fn batch_inverse(avgs: &[Vec<f32>], diffs: &[Vec<f32>]) -> Vec<Vec<f32>> {
 }
 
 /// Multi-level decomposition using a single-level forward function.
-pub fn multi_level_forward<F>(input: &[f32], levels: usize, forward: F) -> (Vec<f32>, Vec<Vec<f32>>)
+///
+/// # Errors
+/// Propagates any error produced by the provided `forward` function.
+pub fn multi_level_forward<F>(
+    input: &[f32],
+    levels: usize,
+    forward: F,
+) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError>
 where
-    F: Fn(&[f32]) -> (Vec<f32>, Vec<f32>),
+    F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
     let mut current = input.to_vec();
     let mut details = Vec::with_capacity(levels);
     for _ in 0..levels {
-        if !current.len().is_multiple_of(2) {
+        if current.len() % HAAR_PAIR_LEN != 0 {
             if let Some(&last) = current.last() {
                 current.push(last);
             }
         }
-        let (avg, diff) = forward(&current);
+        let (avg, diff) = forward(&current)?;
         details.push(diff);
         current = avg;
     }
-    (current, details)
+    Ok((current, details))
 }
 
 /// Multi-level reconstruction using a single-level inverse function.
-pub fn multi_level_inverse<F>(approx: &[f32], details: &[Vec<f32>], inverse: F) -> Vec<f32>
+///
+/// # Errors
+/// Propagates any error produced by the provided `inverse` function.
+pub fn multi_level_inverse<F>(
+    approx: &[f32],
+    details: &[Vec<f32>],
+    inverse: F,
+) -> Result<Vec<f32>, WaveletError>
 where
-    F: Fn(&[f32], &[f32]) -> Vec<f32>,
+    F: Fn(&[f32], &[f32]) -> Result<Vec<f32>, WaveletError>,
 {
     let mut current = approx.to_vec();
     for d in details.iter().rev() {
-        current = inverse(&current, d);
+        current = inverse(&current, d)?;
     }
-    current
+    Ok(current)
 }
 
 /// Batch multi-level decomposition.
+///
+/// # Errors
+/// Propagates any error produced by [`multi_level_forward`].
 pub fn multi_level_forward_batch<F>(
     inputs: &[Vec<f32>],
     levels: usize,
     forward: F,
-) -> (Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>)
+) -> Result<(Vec<Vec<f32>>, Vec<Vec<Vec<f32>>>), WaveletError>
 where
-    F: Fn(&[f32]) -> (Vec<f32>, Vec<f32>),
+    F: Fn(&[f32]) -> Result<(Vec<f32>, Vec<f32>), WaveletError>,
 {
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {
-        let (avg, diff_levels) = multi_level_forward(input, levels, &forward);
+        let (avg, diff_levels) = multi_level_forward(input, levels, &forward)?;
         avgs.push(avg);
         diffs.push(diff_levels);
     }
-    (avgs, diffs)
+    Ok((avgs, diffs))
 }
 
 /// Batch multi-level reconstruction.
+///
+/// # Errors
+/// Propagates any error produced by [`multi_level_inverse`].
 pub fn multi_level_inverse_batch<F>(
     avgs: &[Vec<f32>],
     diffs: &[Vec<Vec<f32>>],
     inverse: F,
-) -> Vec<Vec<f32>>
+) -> Result<Vec<Vec<f32>>, WaveletError>
 where
-    F: Fn(&[f32], &[f32]) -> Vec<f32>,
+    F: Fn(&[f32], &[f32]) -> Result<Vec<f32>, WaveletError>,
 {
     avgs.iter()
         .zip(diffs.iter())
@@ -123,14 +199,14 @@ pub fn haar_forward_inplace_stack<const N: usize>(
     avg: &mut [f32],
     diff: &mut [f32],
 ) {
-    let n = N / 2;
+    let n = N / HAAR_PAIR_LEN;
     assert!(
         avg.len() == n && diff.len() == n,
         "Output buffers must be of length N/2"
     );
     for i in 0..n {
-        avg[i] = (input[2 * i] + input[2 * i + 1]) / 2.0;
-        diff[i] = (input[2 * i] - input[2 * i + 1]) / 2.0;
+        avg[i] = (input[HAAR_PAIR_LEN * i] + input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE;
+        diff[i] = (input[HAAR_PAIR_LEN * i] - input[HAAR_PAIR_LEN * i + 1]) * HAAR_SCALE;
     }
 }
 
@@ -139,12 +215,12 @@ pub fn haar_forward_inplace_stack<const N: usize>(
 pub fn haar_inverse_inplace_stack<const N: usize>(avg: &[f32], diff: &[f32], out: &mut [f32]) {
     let n = avg.len();
     assert!(
-        diff.len() == n && out.len() == 2 * n,
+        diff.len() == n && out.len() == HAAR_PAIR_LEN * n,
         "Output buffer must be of length 2*N"
     );
     for i in 0..n {
-        out[2 * i] = avg[i] + diff[i];
-        out[2 * i + 1] = avg[i] - diff[i];
+        out[HAAR_PAIR_LEN * i] = avg[i] + diff[i];
+        out[HAAR_PAIR_LEN * i + 1] = avg[i] - diff[i];
     }
 }
 
@@ -535,47 +611,86 @@ pub fn coif1_inverse(approx: &[f32], detail: &[f32]) -> Vec<f32> {
 }
 
 // Convenience wrappers for multi-level operations
-pub fn haar_forward_multi(input: &[f32], levels: usize) -> (Vec<f32>, Vec<Vec<f32>>) {
+pub fn haar_forward_multi(
+    input: &[f32],
+    levels: usize,
+) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
     multi_level_forward(input, levels, haar_forward)
 }
-pub fn haar_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Vec<f32> {
+pub fn haar_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
     multi_level_inverse(avg, details, haar_inverse)
 }
-pub fn db2_forward_multi(input: &[f32], levels: usize) -> (Vec<f32>, Vec<Vec<f32>>) {
-    multi_level_forward(input, levels, db2_forward)
+pub fn db2_forward_multi(
+    input: &[f32],
+    levels: usize,
+) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
+    multi_level_forward(input, levels, |x| Ok(db2_forward(x)))
 }
-pub fn db2_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Vec<f32> {
-    multi_level_inverse(avg, details, db2_inverse)
+pub fn db2_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
+    multi_level_inverse(avg, details, |a, d| Ok(db2_inverse(a, d)))
 }
-pub fn db4_forward_multi(input: &[f32], levels: usize) -> (Vec<f32>, Vec<Vec<f32>>) {
-    multi_level_forward(input, levels, db4_forward)
+pub fn db4_forward_multi(
+    input: &[f32],
+    levels: usize,
+) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
+    multi_level_forward(input, levels, |x| Ok(db4_forward(x)))
 }
-pub fn db4_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Vec<f32> {
-    multi_level_inverse(avg, details, db4_inverse)
+pub fn db4_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
+    multi_level_inverse(avg, details, |a, d| Ok(db4_inverse(a, d)))
 }
-pub fn sym4_forward_multi(input: &[f32], levels: usize) -> (Vec<f32>, Vec<Vec<f32>>) {
-    multi_level_forward(input, levels, sym4_forward)
+pub fn sym4_forward_multi(
+    input: &[f32],
+    levels: usize,
+) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
+    multi_level_forward(input, levels, |x| Ok(sym4_forward(x)))
 }
-pub fn sym4_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Vec<f32> {
-    multi_level_inverse(avg, details, sym4_inverse)
+pub fn sym4_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
+    multi_level_inverse(avg, details, |a, d| Ok(sym4_inverse(a, d)))
 }
-pub fn coif1_forward_multi(input: &[f32], levels: usize) -> (Vec<f32>, Vec<Vec<f32>>) {
-    multi_level_forward(input, levels, coif1_forward)
+pub fn coif1_forward_multi(
+    input: &[f32],
+    levels: usize,
+) -> Result<(Vec<f32>, Vec<Vec<f32>>), WaveletError> {
+    multi_level_forward(input, levels, |x| Ok(coif1_forward(x)))
 }
-pub fn coif1_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Vec<f32> {
-    multi_level_inverse(avg, details, coif1_inverse)
+pub fn coif1_inverse_multi(avg: &[f32], details: &[Vec<f32>]) -> Result<Vec<f32>, WaveletError> {
+    multi_level_inverse(avg, details, |a, d| Ok(coif1_inverse(a, d)))
 }
 
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
     #[test]
+    /// Verifies that forward and inverse Haar transforms round-trip accurately.
     fn test_haar_wavelet_roundtrip() {
         let x = [1.0, 2.0, 3.0, 4.0];
-        let (avg, diff) = haar_forward(&x);
-        let recon = haar_inverse(&avg, &diff);
+        let (avg, diff) = haar_forward(&x).unwrap();
+        let recon = haar_inverse(&avg, &diff).unwrap();
         for (a, b) in x.iter().zip(recon.iter()) {
             assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
+        }
+    }
+
+    #[test]
+    /// Ensures an error is returned for odd-length input slices.
+    fn test_haar_forward_odd_length_error() {
+        let x = [1.0, 2.0, 3.0];
+        match haar_forward(&x) {
+            Err(WaveletError::InputLengthOdd { len }) => assert_eq!(len, 3),
+            other => panic!("unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    /// Ensures an error is returned when buffers for inverse differ in size.
+    fn test_haar_inverse_mismatch_error() {
+        let avg = [1.0, 2.0];
+        let diff = [1.0];
+        match haar_inverse(&avg, &diff) {
+            Err(WaveletError::BufferSizeMismatch { avg: a, diff: d }) => {
+                assert_eq!((a, d), (2, 1))
+            }
+            other => panic!("unexpected result: {:?}", other),
         }
     }
 }
@@ -584,10 +699,11 @@ mod tests {
 mod batch_tests {
     use super::*;
     #[test]
+    /// Checks that batch Haar transform round-trips multiple signals.
     fn test_haar_batch_roundtrip() {
         let xs = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        let (avgs, diffs) = batch_forward(&xs);
-        let recon = batch_inverse(&avgs, &diffs);
+        let (avgs, diffs) = batch_forward(&xs).unwrap();
+        let recon = batch_inverse(&avgs, &diffs).unwrap();
         for (orig, rec) in xs.iter().zip(recon.iter()) {
             for (a, b) in orig.iter().zip(rec.iter()) {
                 assert!((a - b).abs() < 1e-5);
@@ -600,6 +716,7 @@ mod batch_tests {
 mod db2_tests {
     use super::*;
     #[test]
+    /// Validates db2 wavelet batch round-trip within acceptable error.
     fn test_db2_batch_roundtrip() {
         // For short signals, db2 is not perfectly invertible due to boundary effects.
         // This test demonstrates the limitation: the error is small relative to the signal.
@@ -631,14 +748,15 @@ mod db2_tests {
         );
     }
     #[test]
+    /// Confirms Haar batch transforms are lossless for even-length inputs.
     fn test_haar_batch_roundtrip_strict() {
         // Haar wavelet is perfectly invertible for all signal lengths
         let xs = vec![
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             vec![5.0, 6.0, 7.0, 8.0, 1.0, 2.0, 3.0, 4.0],
         ];
-        let (avgs, diffs) = batch_forward(&xs);
-        let recon = batch_inverse(&avgs, &diffs);
+        let (avgs, diffs) = batch_forward(&xs).unwrap();
+        let recon = batch_inverse(&avgs, &diffs).unwrap();
         for (orig, rec) in xs.iter().zip(recon.iter()) {
             for (a, b) in orig.iter().zip(rec.iter()) {
                 assert!((a - b).abs() < 1e-6, "{} vs {}", a, b);
@@ -652,10 +770,11 @@ mod multilevel_tests {
     use super::*;
 
     #[test]
+    /// Verifies multi-level Haar transforms reconstruct the original signal.
     fn test_haar_multi_roundtrip() {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let (a, d) = haar_forward_multi(&x, 3);
-        let recon = haar_inverse_multi(&a, &d);
+        let (a, d) = haar_forward_multi(&x, 3).unwrap();
+        let recon = haar_inverse_multi(&a, &d).unwrap();
         for (o, r) in x.iter().zip(recon.iter()) {
             assert!((o - r).abs() < 1e-5);
         }
@@ -667,6 +786,7 @@ mod additional_tests {
     use super::*;
 
     #[test]
+    /// Validates in-place stack-only Haar transform round-trip.
     fn test_haar_inplace_stack_roundtrip() {
         let input = [1.0_f32, 2.0, 3.0, 4.0];
         let mut avg = [0.0_f32; 2];
@@ -682,10 +802,11 @@ mod additional_tests {
     }
 
     #[test]
+    /// Ensures batch multi-level transforms reconstruct inputs.
     fn test_multi_level_batch_roundtrip() {
         let inputs = vec![vec![1.0, 2.0, 3.0, 4.0], vec![5.0, 6.0, 7.0, 8.0]];
-        let (avgs, diffs) = multi_level_forward_batch(&inputs, 2, haar_forward);
-        let recon = multi_level_inverse_batch(&avgs, &diffs, haar_inverse);
+        let (avgs, diffs) = multi_level_forward_batch(&inputs, 2, haar_forward).unwrap();
+        let recon = multi_level_inverse_batch(&avgs, &diffs, haar_inverse).unwrap();
         for (orig, rec) in inputs.iter().zip(recon.iter()) {
             for (a, b) in orig.iter().zip(rec.iter()) {
                 assert!((a - b).abs() < 1e-5, "{} vs {}", a, b);
@@ -694,6 +815,7 @@ mod additional_tests {
     }
 
     #[test]
+    /// Checks single-level db2 wavelet transform round-trip within error bounds.
     fn test_db2_single_roundtrip() {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let (a, d) = db2_forward(&x);
@@ -718,15 +840,16 @@ mod additional_tests {
     }
 
     #[test]
+    /// Ensures sym4 and coif1 multi-level transforms complete without errors.
     fn test_sym4_and_coif1_multi_roundtrip() {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 
-        let (sa, sd) = sym4_forward_multi(&x, 2);
-        let srecon = sym4_inverse_multi(&sa, &sd);
+        let (sa, sd) = sym4_forward_multi(&x, 2).unwrap();
+        let srecon = sym4_inverse_multi(&sa, &sd).unwrap();
         assert_eq!(srecon.len(), x.len());
 
-        let (ca, cd) = coif1_forward_multi(&x, 2);
-        let crecon = coif1_inverse_multi(&ca, &cd);
+        let (ca, cd) = coif1_forward_multi(&x, 2).unwrap();
+        let crecon = coif1_inverse_multi(&ca, &cd).unwrap();
         assert_eq!(crecon.len(), x.len());
     }
 }
