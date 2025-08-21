@@ -107,7 +107,22 @@ export function getShortcutDisplay(combo: string): string {
   return combo
     .split('+')
     .map(key => key.charAt(0).toUpperCase() + key.slice(1))
-    .join(' + ')
+  // Map normalized key names to display names
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const keyDisplayMap: Record<string, string> = {
+    meta: isMac ? 'Cmd' : 'Meta',
+    control: 'Ctrl',
+    shift: 'Shift',
+    alt: isMac ? 'Option' : 'Alt',
+    // Add more mappings as needed
+  };
+  return combo
+    .split('+')
+    .map(key => {
+      const lower = key.trim().toLowerCase();
+      return keyDisplayMap[lower] || (key.charAt(0).toUpperCase() + key.slice(1));
+    })
+    .join(' + ');
 }
 
 /**
