@@ -1,3 +1,5 @@
+#![cfg(feature = "parallel")]
+
 use kofft::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
 use kofft::stft::{inverse_parallel, istft, stft};
 use kofft::window::hann;
@@ -118,24 +120,27 @@ fn inverse_parallel_matches_istft() {
         assert!((a - b).abs() < 1e-5);
     }
 }
-
 #[test]
 fn inverse_parallel_large_batch_allocation() {
-    let win_len = 64;
-    let hop = 32;
-    let frames_count = 512;
-    let window = hann(win_len);
-    let frames = vec![vec![Complex32::new(1.0, 0.0); win_len]; frames_count];
-    let out_len = hop * (frames_count - 1) + win_len;
+    /// Window length used for each frame.
+    const WIN_LEN: usize = 64;
+    /// Hop size in samples between frames.
+    const HOP: usize = 32;
+    /// Total number of frames processed in the test batch.
+    const FRAMES_COUNT: usize = 512;
+    /// Maximum acceptable allocations per frame to remain efficient.
+    const MAX_ALLOCS_PER_FRAME: f32 = 3.5;
+
+    let window = hann(WIN_LEN);
+    let frames = vec![vec![Complex32::new(1.0, 0.0); WIN_LEN]; FRAMES_COUNT];
+    let out_len = HOP * (FRAMES_COUNT - 1) + WIN_LEN;
     let mut out = vec![0.0f32; out_len];
     let fft = SyncFft::default();
-    // warm up to populate fft plans
-    inverse_parallel(&frames, &window, hop, &mut out, &fft).unwrap();
+    // Warm up to populate FFT plans before measuring allocations.
+    inverse_parallel(&frames, &window, HOP, &mut out, &fft).unwrap();
     reset_alloc();
-    inverse_parallel(&frames, &window, hop, &mut out, &fft).unwrap();
-    let per_frame = allocs() as f32 / frames_count as f32;
-    assert!(per_frame < 3.5);
-    // The threshold of 3.5 allocations per frame is chosen empirically.
-    // It allows for a small number of allocations per frame due to internal buffering
-    // or scratch space, but ensures that allocation behavior remains efficient.
-    assert!(per_frame < 3.5);
+    inverse_parallel(&frames, &window, HOP, &mut out, &fft).unwrap();
+    let per_frame = allocs() as f32 / FRAMES_COUNT as f32;
+    // Threshold chosen empirically: allows minor internal buffers while remaining efficient.
+    assert!(per_frame < MAX_ALLOCS_PER_FRAME);
+}
