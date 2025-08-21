@@ -351,7 +351,6 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
                 let acc_frame = take(acc);
                 let norm_frame = take(norm);
                 Ok((start, acc_frame, norm_frame))
-
             },
         )
         .collect();
@@ -567,7 +566,8 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
 #[cfg(all(feature = "internal-tests", test))]
 mod tests {
     use super::*;
-    use crate::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
+    // Only the complex type and scalar FFT implementation are required for tests.
+    use crate::fft::{Complex32, ScalarFftImpl};
 
     #[test]
     fn test_stft_istft_frame_roundtrip() {
