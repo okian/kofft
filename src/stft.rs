@@ -98,9 +98,12 @@ const STREAM_PAD_MULTIPLIER: usize = 2;
 ///
 /// # Errors
 ///
-/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds `window.len()`.
+/// - [`FftError::InvalidHopSize`] if `hop_size` is less than
+///   [`MIN_HOP_SIZE`] or exceeds `window.len()`.
+/// - [`FftError::WindowTooSmall`] if `window.len()` falls below
+///   [`MIN_WINDOW_LEN`].
 /// - [`FftError::MismatchedLengths`] if `output` does not contain exactly the
-///   number of frames required or the window is empty.
+///   number of frames required.
 pub fn stft<Fft: FftImpl<f32>>(
     signal: &[f32],
     window: &[f32],
@@ -108,12 +111,12 @@ pub fn stft<Fft: FftImpl<f32>>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size == 0 || hop_size > window.len() {
+    let win_len = window.len();
+    if hop_size < MIN_HOP_SIZE || hop_size > win_len {
         return Err(FftError::InvalidHopSize);
     }
-    let win_len = window.len();
-    if win_len == 0 {
-        return Err(FftError::MismatchedLengths);
+    if win_len < MIN_WINDOW_LEN {
+        return Err(FftError::WindowTooSmall);
     }
     let required = signal.len().div_ceil(hop_size);
     if output.len() != required {
@@ -301,8 +304,10 @@ mod parallel_tests {
 ///
 /// # Errors
 ///
-/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds
-///   `window.len()`.
+/// - [`FftError::InvalidHopSize`] if `hop_size` is less than
+///   [`MIN_HOP_SIZE`] or exceeds `window.len()`.
+/// - [`FftError::WindowTooSmall`] if `window.len()` falls below
+///   [`MIN_WINDOW_LEN`].
 /// - [`FftError::MismatchedLengths`] if frame, window, or buffer sizes are
 ///   inconsistent.
 pub fn istft<Fft: FftImpl<f32>>(
@@ -313,14 +318,14 @@ pub fn istft<Fft: FftImpl<f32>>(
     scratch: &mut [f32],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size == 0 || hop_size > window.len() {
+    let win_len = window.len();
+    if hop_size < MIN_HOP_SIZE || hop_size > win_len {
         return Err(FftError::InvalidHopSize);
     }
-    if scratch.len() != output.len() {
-        return Err(FftError::MismatchedLengths);
+    if win_len < MIN_WINDOW_LEN {
+        return Err(FftError::WindowTooSmall);
     }
-    let win_len = window.len();
-    if win_len == 0 {
+    if scratch.len() != output.len() {
         return Err(FftError::MismatchedLengths);
     }
     let required = if frames.is_empty() {
@@ -367,9 +372,9 @@ pub struct StftStream<'a, Fft: crate::fft::FftImpl<f32>> {
 impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
     /// Create a new streaming STFT processor over `signal`.
     ///
-    /// Validates that `window` is non-empty and that `hop_size` advances by at
-    /// least one sample. Returns [`FftError::InvalidHopSize`] or
-    /// [`FftError::EmptyInput`] on invalid parameters.
+    /// Validates that `window` meets the minimum length and that `hop_size`
+    /// advances by at least one sample. Returns [`FftError::InvalidHopSize`] or
+    /// [`FftError::WindowTooSmall`] on invalid parameters.
     /// Create a streaming STFT iterator over `signal`.
     ///
     /// Validates hop size and window length to prevent misaligned frames.
@@ -379,11 +384,11 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
         hop_size: usize,
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
-        if hop_size < MIN_HOP_SIZE {
+        if hop_size < MIN_HOP_SIZE || hop_size > window.len() {
             return Err(FftError::InvalidHopSize);
         }
         if window.len() < MIN_WINDOW_LEN {
-            return Err(FftError::EmptyInput);
+            return Err(FftError::WindowTooSmall);
         }
         Ok(Self {
             signal,
@@ -447,9 +452,12 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
 ///
 /// # Errors
 ///
-/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds `window.len()`.
+/// - [`FftError::InvalidHopSize`] if `hop_size` is less than
+///   [`MIN_HOP_SIZE`] or exceeds `window.len()`.
+/// - [`FftError::WindowTooSmall`] if `window.len()` falls below
+///   [`MIN_WINDOW_LEN`].
 /// - [`FftError::MismatchedLengths`] when `output` does not contain exactly the
-///   required number of frames or the window is empty.
+///   required number of frames.
 ///
 /// # Examples
 /// ```ignore
@@ -470,12 +478,12 @@ pub fn parallel<Fft: FftImpl<f32> + Sync>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     use rayon::prelude::*;
-    if hop_size == 0 || hop_size > window.len() {
+    let win_len = window.len();
+    if hop_size < MIN_HOP_SIZE || hop_size > win_len {
         return Err(FftError::InvalidHopSize);
     }
-    let win_len = window.len();
-    if win_len == 0 {
-        return Err(FftError::MismatchedLengths);
+    if win_len < MIN_WINDOW_LEN {
+        return Err(FftError::WindowTooSmall);
     }
     let required = signal.len().div_ceil(hop_size);
     if output.len() != required {
@@ -519,8 +527,10 @@ pub fn parallel<Fft: FftImpl<f32> + Sync>(
 ///
 /// # Errors
 ///
-/// - [`FftError::InvalidHopSize`] if `hop_size` is zero or exceeds
-///   `window.len()`.
+/// - [`FftError::InvalidHopSize`] if `hop_size` is less than
+///   [`MIN_HOP_SIZE`] or exceeds `window.len()`.
+/// - [`FftError::WindowTooSmall`] if `window.len()` falls below
+///   [`MIN_WINDOW_LEN`].
 /// - [`FftError::MismatchedLengths`] if frame or buffer sizes are inconsistent.
 ///
 /// # Examples
@@ -541,18 +551,12 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     output: &mut [f32],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size < MIN_HOP_SIZE {
-        return Err(FftError::InvalidHopSize);
-    }
-    if hop_size == 0 || hop_size > window.len() {
-        return Err(FftError::InvalidHopSize);
-    }
-    if window.len() < MIN_WINDOW_LEN {
-        return Err(FftError::EmptyInput);
-    }
     let win_len = window.len();
-    if win_len == 0 {
-        return Err(FftError::MismatchedLengths);
+    if hop_size < MIN_HOP_SIZE || hop_size > win_len {
+        return Err(FftError::InvalidHopSize);
+    }
+    if win_len < MIN_WINDOW_LEN {
+        return Err(FftError::WindowTooSmall);
     }
     let required = if frames.is_empty() {
         0
@@ -630,6 +634,13 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
 /// - `fft`: FFT instance implementing [`FftImpl`]
 ///
 /// Returns Ok(()) on success, or FftError on failure.
+///
+/// # Errors
+///
+/// - [`FftError::WindowTooSmall`] if `window.len()` falls below
+///   [`MIN_WINDOW_LEN`].
+/// - [`FftError::MismatchedLengths`] if `frame_out` does not match
+///   `window.len()`.
 #[inline]
 pub fn frame<Fft: FftImpl<f32>>(
     signal: &[f32],
@@ -639,7 +650,10 @@ pub fn frame<Fft: FftImpl<f32>>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     let win_len = window.len();
-    if win_len < MIN_WINDOW_LEN || frame_out.len() != win_len {
+    if win_len < MIN_WINDOW_LEN {
+        return Err(FftError::WindowTooSmall);
+    }
+    if frame_out.len() != win_len {
         return Err(FftError::MismatchedLengths);
     }
     for i in 0..win_len {
@@ -662,6 +676,12 @@ pub fn frame<Fft: FftImpl<f32>>(
 /// - `fft`: FFT instance implementing [`FftImpl`]
 ///
 /// Returns Ok(()) on success, or FftError on failure.
+///
+/// # Errors
+///
+/// - [`FftError::WindowTooSmall`] if `window.len()` falls below
+///   [`MIN_WINDOW_LEN`].
+/// - [`FftError::MismatchedLengths`] if `frame` does not match `window.len()`.
 #[inline]
 pub fn inverse_frame<Fft: FftImpl<f32>>(
     frame: &mut [Complex32],
@@ -671,7 +691,10 @@ pub fn inverse_frame<Fft: FftImpl<f32>>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     let win_len = window.len();
-    if win_len < MIN_WINDOW_LEN || frame.len() != win_len {
+    if win_len < MIN_WINDOW_LEN {
+        return Err(FftError::WindowTooSmall);
+    }
+    if frame.len() != win_len {
         return Err(FftError::MismatchedLengths);
     }
     fft.ifft(frame)?;
@@ -705,23 +728,25 @@ pub struct IstftStream<'a, Fft: crate::fft::FftImpl<f32>> {
 impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
     /// Create a streaming ISTFT processor.
     ///
-    /// Returns [`FftError::InvalidHopSize`] if `hop` is zero or
-    /// [`FftError::MismatchedLengths`] when `window` does not match `win_len` or
-    /// is empty.
+    /// Returns [`FftError::InvalidHopSize`] if `hop` is less than
+    /// [`MIN_HOP_SIZE`] or exceeds `win_len`. Returns
+    /// [`FftError::WindowTooSmall`] when `win_len` falls below
+    /// [`MIN_WINDOW_LEN`]. Returns [`FftError::MismatchedLengths`] when
+    /// `window` does not match `win_len`.
     pub fn new(
         win_len: usize,
         hop: usize,
         window: &'a [f32],
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
-        if win_len < MIN_WINDOW_LEN || window.len() != win_len {
+        if win_len < MIN_WINDOW_LEN {
+            return Err(FftError::WindowTooSmall);
+        }
+        if window.len() != win_len {
             return Err(FftError::MismatchedLengths);
         }
-        if hop == 0 || hop > win_len {
+        if hop < MIN_HOP_SIZE || hop > win_len {
             return Err(FftError::InvalidHopSize);
-        }
-        if window.len() != win_len || win_len == 0 {
-            return Err(FftError::MismatchedLengths);
         }
         let buffer = vec![0.0f32; win_len + hop * STREAM_PAD_MULTIPLIER];
         let norm_buf = vec![0.0f32; win_len + hop * STREAM_PAD_MULTIPLIER];
@@ -971,6 +996,93 @@ mod tests {
             assert!((a - b).abs() < 1e-4, "{} vs {}", a, b);
         }
     }
+
+    /// Ensure hop sizes that are zero or negative (via underflow) fail fast.
+    #[test]
+    fn test_invalid_hop_sizes() {
+        let signal = [0.0f32; 4];
+        let window = [1.0f32; 4];
+        let fft = ScalarFftImpl::<f32>::default();
+        let mut frames: Vec<Vec<Complex32>> = Vec::new();
+        assert!(matches!(
+            stft(&signal, &window, 0, &mut frames, &fft),
+            Err(FftError::InvalidHopSize)
+        ));
+        let neg_hop = (-1i32) as usize;
+        assert!(matches!(
+        let overflow_hop = (-1i32) as usize;
+        assert!(matches!(
+            stft(&signal, &window, overflow_hop, &mut frames, &fft),
+            Err(FftError::InvalidHopSize)
+        ));
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; 1];
+        let mut output = vec![0.0f32; window.len()];
+        let mut scratch = vec![0.0f32; output.len()];
+        assert!(matches!(
+            istft(&mut frames, &window, 0, &mut output, &mut scratch, &fft),
+            Err(FftError::InvalidHopSize)
+        ));
+    }
+
+    /// Validate behavior with the smallest allowed window length and empty windows.
+    #[test]
+    fn test_minimal_window() {
+        let signal = [1.0f32, 2.0, 3.0];
+        let window = [1.0f32; MIN_WINDOW_LEN];
+        let hop = MIN_HOP_SIZE;
+        let required = signal.len().div_ceil(hop);
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; required];
+        let fft = ScalarFftImpl::<f32>::default();
+        stft(&signal, &window, hop, &mut frames, &fft).unwrap();
+        let mut output = vec![0.0f32; signal.len()];
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
+        assert!(signal
+            .iter()
+            .zip(output.iter())
+            .all(|(a, b)| (a - b).abs() < 1e-6));
+        let mut frames: Vec<Vec<Complex32>> = Vec::new();
+        assert!(matches!(
+            stft(&signal, &[], hop, &mut frames, &fft),
+            Err(FftError::WindowTooSmall)
+        ));
+    }
+
+    /// Heavy overlap (hop size of one) should still reconstruct accurately.
+    #[test]
+    fn test_extreme_overlap() {
+        let signal = [1.0f32, 2.0, 3.0, 4.0];
+        let window = [1.0f32, 1.0, 1.0, 1.0];
+        let hop = MIN_HOP_SIZE;
+        let required = signal.len().div_ceil(hop);
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; required];
+        let fft = ScalarFftImpl::<f32>::default();
+        stft(&signal, &window, hop, &mut frames, &fft).unwrap();
+        let mut output = vec![0.0f32; signal.len() + window.len() - hop];
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
+        assert!(signal
+            .iter()
+            .zip(output.iter().take(signal.len()))
+            .all(|(a, b)| (a - b).abs() < 1e-6));
+    }
+
+    /// Near-silent inputs should remain bounded after reconstruction.
+    #[test]
+    fn test_near_silence_stability() {
+        let n = 16;
+        let signal = vec![1e-9f32; n];
+        let window = vec![1.0f32; 4];
+        let hop = MIN_HOP_SIZE;
+        let required = signal.len().div_ceil(hop);
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; required];
+        let fft = ScalarFftImpl::<f32>::default();
+        stft(&signal, &window, hop, &mut frames, &fft).unwrap();
+        let mut output = vec![0.0f32; signal.len() + window.len() - hop];
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, hop, &mut output, &mut scratch, &fft).unwrap();
+        assert!(output.iter().all(|x| x.abs() <= NORM_EPSILON));
+    }
 }
 
 #[cfg(all(feature = "internal-tests", test))]
@@ -1065,7 +1177,7 @@ mod edge_case_tests {
         let mut frames = vec![vec![Complex32::new(0.0, 0.0); 4]];
         let fft = ScalarFftImpl::<f32>::default();
         let res = stft(&signal, &window, 0, &mut frames, &fft);
-        assert!(res.is_err());
+        assert!(matches!(res, Err(FftError::InvalidHopSize)));
     }
 
     #[test]

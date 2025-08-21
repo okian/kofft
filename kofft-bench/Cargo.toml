@@ -42,6 +42,10 @@ harness = false
 name = "stft_parallel"
 harness = false
 
+[[bench]]
+name = "spectrogram_memory"
+harness = false
+
 [[example]]
 name = "update_bench_readme"
 path = "examples/update_bench_readme.rs"

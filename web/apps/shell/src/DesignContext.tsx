@@ -25,16 +25,49 @@ const MODE_ATTR = "data-mode";
 /** Prefix shared by Japanese design identifiers. */
 const JAPANESE_PREFIX = "japanese" as const;
 
-/** Apply a palette to the document root. */
-function applyPalette(palette: Palette): void {
+/** Name of the CSS variable for page background colour. */
+const VAR_BG = "--color-bg" as const;
+/** Name of the CSS variable for default text colour. */
+const VAR_TEXT = "--color-text" as const;
+/** Name of the CSS variable for primary accent colour. */
+const VAR_ACCENT = "--color-accent" as const;
+/** Name of the CSS variable for secondary accent colour. */
+const VAR_SECONDARY = "--color-secondary" as const;
+/** Name of the CSS variable for tertiary accent colour. */
+const VAR_TERTIARY = "--color-tertiary" as const;
+
+/**
+ * Apply a palette to the document root.
+ * Fails fast when invoked without a palette and removes optional colours when
+ * absent. Explicit removal prevents stale values from previous designs from
+ * leaking into the current theme.
+ */
+export function applyPalette(palette: Palette): void {
+  if (
+    !palette ||
+    typeof palette !== "object" ||
+    !("background" in palette) ||
+    !("text" in palette) ||
+    !("accent" in palette)
+  ) {
+    throw new Error(
+      "applyPalette requires a valid palette with background, text, and accent properties",
+    );
+  }
   const root = document.documentElement;
-  root.style.setProperty("--color-bg", palette.background);
-  root.style.setProperty("--color-text", palette.text);
-  root.style.setProperty("--color-accent", palette.accent);
-  if (palette.secondary)
-    root.style.setProperty("--color-secondary", palette.secondary);
-  if (palette.tertiary)
-    root.style.setProperty("--color-tertiary", palette.tertiary);
+  root.style.setProperty(VAR_BG, palette.background);
+  root.style.setProperty(VAR_TEXT, palette.text);
+  root.style.setProperty(VAR_ACCENT, palette.accent);
+  if (palette.secondary !== undefined) {
+    root.style.setProperty(VAR_SECONDARY, palette.secondary);
+  } else {
+    root.style.removeProperty(VAR_SECONDARY);
+  }
+  if (palette.tertiary !== undefined) {
+    root.style.setProperty(VAR_TERTIARY, palette.tertiary);
+  } else {
+    root.style.removeProperty(VAR_TERTIARY);
+  }
 }
 
 /**

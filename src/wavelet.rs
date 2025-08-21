@@ -7,7 +7,6 @@
 extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
-
 use core::fmt;
 
 /// Number of samples processed together in the Haar transform pair.

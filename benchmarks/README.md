@@ -5,6 +5,7 @@ Latest benchmarks on an Intel Xeon Platinum 8370C show:
 - 1024-point complex FFT: ~7.1 µs
 - 4096-point complex FFT: ~28 µs
 - 1,048,576-point real FFT: ~11 ms
+- Spectrogram (65k samples, 1024 window) memory growth: ~0 MB
 
 See [latest.json](latest.json) for full results.
 
