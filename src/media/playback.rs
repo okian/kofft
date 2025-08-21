@@ -8,6 +8,20 @@
 use rusqlite::{params, Connection};
 use std::{error::Error, fmt, vec::Vec};
 
+/// Maximum length allowed for a track identifier.
+///
+/// Limiting the identifier length prevents unbounded allocations and guards
+/// against abuse via extremely long IDs. The limit matches SQLite's default
+/// `VARCHAR(255)` convention, ensuring compatibility with common schemas.
+pub const MAX_TRACK_ID_LENGTH: usize = 255;
+
+/// Number of bytes required to encode a single `f32` sample.
+///
+/// This is used when converting waveforms to and from byte buffers for database
+/// storage. Explicitly naming the size avoids scattering the magic value `4`
+/// throughout the code and documents the underlying storage format.
+pub const BYTES_PER_SAMPLE: usize = std::mem::size_of::<f32>();
+
 /// Default number of audio samples aggregated into one waveform point.
 ///
 /// A value of `100` offers a reasonable compromise between time resolution
@@ -21,6 +35,9 @@ pub const DEFAULT_WAVEFORM_WINDOW: usize = 100;
 pub enum PlaybackError {
     /// The configured waveform window size was zero.
     InvalidWaveformWindow,
+    /// A track identifier failed validation (empty, too long, or containing
+    /// disallowed characters).
+    InvalidTrackId,
     /// An error bubbled up from the underlying SQLite database.
     Database(rusqlite::Error),
 }
@@ -31,6 +48,7 @@ impl fmt::Display for PlaybackError {
             PlaybackError::InvalidWaveformWindow => {
                 write!(f, "waveform window must be greater than zero")
             }
+            PlaybackError::InvalidTrackId => write!(f, "invalid track identifier"),
             PlaybackError::Database(e) => write!(f, "database error: {e}"),
         }
     }
@@ -59,6 +77,23 @@ pub fn init_db(conn: &Connection) -> Result<(), PlaybackError> {
     Ok(())
 }
 
+/// Validate a track identifier for safety before using it in SQL queries.
+///
+/// Identifiers must be non-empty, ASCII-only, and no longer than
+/// [`MAX_TRACK_ID_LENGTH`]. Allowing only a restricted character set prevents
+/// SQL injection via control characters and ensures consistent storage.
+fn validate_track_id(track_id: &str) -> Result<(), PlaybackError> {
+    let valid_len = !track_id.is_empty() && track_id.len() <= MAX_TRACK_ID_LENGTH;
+    let valid_chars = track_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+    if valid_len && valid_chars {
+        Ok(())
+    } else {
+        Err(PlaybackError::InvalidTrackId)
+    }
+}
+
 /// Store a waveform snapshot for the given track identifier.
 ///
 /// Fails if the database write cannot be completed.
@@ -67,6 +102,7 @@ fn store_waveform(
     track_id: &str,
     waveform: &[f32],
 ) -> Result<(), PlaybackError> {
+    validate_track_id(track_id)?;
     let bytes = waveform_as_bytes(waveform);
     conn.execute(
         "INSERT OR REPLACE INTO waveform_samples (track_id, samples) VALUES (?1, ?2)",
@@ -79,6 +115,7 @@ fn store_waveform(
 ///
 /// Returns `Ok(None)` when no cached waveform exists.
 fn load_waveform(conn: &Connection, track_id: &str) -> Result<Option<Vec<f32>>, PlaybackError> {
+    validate_track_id(track_id)?;
     let mut stmt = conn.prepare("SELECT samples FROM waveform_samples WHERE track_id = ?1")?;
     let mut rows = stmt.query(params![track_id])?;
     if let Some(row) = rows.next()? {
@@ -97,6 +134,7 @@ pub fn get_or_generate_waveform(
     track_id: &str,
     audio: &[f32],
 ) -> Result<Vec<f32>, PlaybackError> {
+    validate_track_id(track_id)?;
     if let Some(cached) = load_waveform(conn, track_id)? {
         return Ok(cached);
     }
@@ -125,15 +163,23 @@ fn generate_waveform_with_window(window: usize, audio: &[f32]) -> Result<Vec<f32
 }
 
 /// Convert a waveform slice into a byte vector for database storage.
+///
+/// The resulting buffer uses little-endian encoding for portability and is
+/// suitable for storage in a SQLite `BLOB` column. No allocations are retained
+/// beyond the returned vector.
 fn waveform_as_bytes(waveform: &[f32]) -> Vec<u8> {
     waveform.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
 /// Reconstruct a waveform from its byte representation loaded from the database.
+///
+/// The input slice length must be a multiple of [`BYTES_PER_SAMPLE`]; otherwise
+/// any trailing incomplete sample is silently discarded. The function performs
+/// no allocations other than the output vector.
 fn bytes_to_waveform(bytes: &[u8]) -> Vec<f32> {
     bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .chunks_exact(BYTES_PER_SAMPLE)
+        .map(|b| f32::from_le_bytes(b.try_into().expect("chunk size fixed")))
         .collect()
 }
 
@@ -147,6 +193,23 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_db(&conn).unwrap();
         conn
+    }
+
+    /// Verify that waveforms can be persisted and retrieved from the cache.
+    #[test]
+    fn store_and_load_roundtrip() {
+        let conn = setup();
+        let samples = vec![0.2f32; 5];
+        store_waveform(&conn, "round", &samples).unwrap();
+        let loaded = load_waveform(&conn, "round").unwrap().unwrap();
+        assert_eq!(loaded, samples);
+    }
+
+    /// Loading a non-existent track should yield `None` rather than an error.
+    #[test]
+    fn load_waveform_cache_miss() {
+        let conn = setup();
+        assert!(load_waveform(&conn, "missing").unwrap().is_none());
     }
 
     /// Ensure that generated waveforms are cached and retrieved on subsequent calls.
@@ -181,5 +244,22 @@ mod tests {
         let audio = vec![0.1f32; 10];
         let err = generate_waveform_with_window(0, &audio).unwrap_err();
         assert!(matches!(err, PlaybackError::InvalidWaveformWindow));
+    }
+
+    /// Track identifiers containing disallowed characters must be rejected.
+    #[test]
+    fn rejects_invalid_track_id() {
+        let conn = setup();
+        let err = get_or_generate_waveform(&conn, "bad id", &[0.0f32; 10]).unwrap_err();
+        assert!(matches!(err, PlaybackError::InvalidTrackId));
+    }
+
+    /// Round-trip conversion between waveform vectors and their byte encoding.
+    #[test]
+    fn waveform_bytes_roundtrip() {
+        let samples = vec![0.0f32, 1.0, -0.5];
+        let bytes = waveform_as_bytes(&samples);
+        let decoded = bytes_to_waveform(&bytes);
+        assert_eq!(samples, decoded);
     }
 }

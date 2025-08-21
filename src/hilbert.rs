@@ -67,7 +67,6 @@ pub fn hilbert_analytic(input: &[f32]) -> Result<Vec<Complex32>, FftError> {
 mod tests {
     use super::*;
     use alloc::vec;
-
     /// Acceptable tolerance for floating-point comparisons in tests.
     const EPSILON: f32 = 1e-6;
 

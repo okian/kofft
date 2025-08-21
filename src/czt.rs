@@ -11,11 +11,28 @@ use alloc::vec::Vec;
 const UNIT_COMPLEX: (f32, f32) = (1.0, 0.0);
 /// Zero complex number `(0 + 0j)` used to initialize output buffers.
 const ZERO_COMPLEX: (f32, f32) = (0.0, 0.0);
+/// Maximum number of frequency bins allowed to keep allocations bounded.
+const MAX_BINS: usize = 1 << 20; // 1,048,576 bins
+/// Minimum stable magnitude for complex parameters to avoid underflow.
+const MIN_MAGNITUDE: f32 = 1.0e-12;
+/// Maximum stable magnitude for complex parameters to avoid overflow.
+const MAX_MAGNITUDE: f32 = 1.0e12;
+/// Square of [`MIN_MAGNITUDE`] for cheap magnitude comparisons.
+const MIN_MAG_SQ: f32 = MIN_MAGNITUDE * MIN_MAGNITUDE;
+/// Square of [`MAX_MAGNITUDE`] for cheap magnitude comparisons.
+const MAX_MAG_SQ: f32 = MAX_MAGNITUDE * MAX_MAGNITUDE;
+
+/// Compute the squared magnitude of a complex tuple.
+#[inline]
+fn magnitude_squared(z: (f32, f32)) -> f32 {
+    let (re, im) = z;
+    re * re + im * im
+}
 
 /// Errors that can occur during CZT computation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CztError {
-    /// The `a` parameter has zero magnitude which would cause a division by zero.
+    /// One or more parameters are invalid (zero, NaN, or magnitude out of range).
     InvalidParameter,
 }
 
@@ -23,7 +40,7 @@ pub enum CztError {
 impl core::fmt::Display for CztError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CztError::InvalidParameter => write!(f, "parameter causes division by zero"),
+            CztError::InvalidParameter => write!(f, "invalid parameter magnitude"),
         }
     }
 }
@@ -55,22 +72,33 @@ pub fn czt_f32(
     w: (f32, f32),
     a: (f32, f32),
 ) -> Result<Vec<(f32, f32)>, CztError> {
-    // Extract and validate `a` by computing its reciprocal. Fail fast if the
-    // magnitude is zero to prevent division by zero and undefined behaviour.
-    let (ar, ai) = a;
-    let denom = ar * ar + ai * ai;
-    if denom == 0.0 {
+    // Validate requested output bins to avoid excessive allocation.
+    if m == 0 || m > MAX_BINS {
         return Err(CztError::InvalidParameter);
     }
-    let a_inv_r = ar / denom;
-    let a_inv_i = -ai / denom;
+
+    // Validate and extract `w` ensuring its magnitude is within safe bounds.
+    let w_mag = magnitude_squared(w);
+    if !w_mag.is_finite() || !(MIN_MAG_SQ..=MAX_MAG_SQ).contains(&w_mag) {
+        return Err(CztError::InvalidParameter);
+    }
+    let (wr, wi) = w;
+
+    // Extract and validate `a` by computing its reciprocal. Fail fast if the
+    // magnitude is out of range to prevent division by zero or overflow.
+    let a_mag = magnitude_squared(a);
+    if !a_mag.is_finite() || !(MIN_MAG_SQ..=MAX_MAG_SQ).contains(&a_mag) {
+        return Err(CztError::InvalidParameter);
+    }
+    let (ar, ai) = a;
+    let a_inv_r = ar / a_mag;
+    let a_inv_i = -ai / a_mag;
 
     // Prepare output buffer initialised to zero.
     let mut output = vec![ZERO_COMPLEX; m];
 
     // Precompute successive powers of `w` iteratively. `w_k` holds `w^k` for the
     // current bin and is updated in-place for the next bin.
-    let (wr, wi) = w;
     let mut w_k_r = UNIT_COMPLEX.0;
     let mut w_k_i = UNIT_COMPLEX.1;
 
@@ -114,4 +142,80 @@ pub fn czt_f32(
     }
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Simple two-sample input used across tests.
+    const INPUT: [f32; 2] = [1.0, 1.0];
+    /// Scaling factor used to create out-of-range magnitudes.
+    const SCALE: f32 = 10.0;
+
+    /// Ensure the transform rejects zero `m`.
+    #[test]
+    fn rejects_zero_m() {
+        assert_eq!(
+            czt_f32(&INPUT, 0, UNIT_COMPLEX, UNIT_COMPLEX).unwrap_err(),
+            CztError::InvalidParameter
+        );
+    }
+
+    /// Ensure the transform rejects excessively large `m`.
+    #[test]
+    fn rejects_large_m() {
+        assert_eq!(
+            czt_f32(&INPUT, MAX_BINS + 1, UNIT_COMPLEX, UNIT_COMPLEX).unwrap_err(),
+            CztError::InvalidParameter
+        );
+    }
+
+    /// Reject `w` values with magnitude below the stability threshold.
+    #[test]
+    fn rejects_small_w() {
+        let bad_w = (MIN_MAGNITUDE / SCALE, 0.0);
+        assert_eq!(
+            czt_f32(&INPUT, 1, bad_w, UNIT_COMPLEX).unwrap_err(),
+            CztError::InvalidParameter
+        );
+    }
+
+    /// Reject `w` values with magnitude above the stability threshold.
+    #[test]
+    fn rejects_large_w() {
+        let bad_w = (MAX_MAGNITUDE * SCALE, 0.0);
+        assert_eq!(
+            czt_f32(&INPUT, 1, bad_w, UNIT_COMPLEX).unwrap_err(),
+            CztError::InvalidParameter
+        );
+    }
+
+    /// Reject `a` values with magnitude below the stability threshold.
+    #[test]
+    fn rejects_small_a() {
+        let bad_a = (MIN_MAGNITUDE / SCALE, 0.0);
+        assert_eq!(
+            czt_f32(&INPUT, 1, UNIT_COMPLEX, bad_a).unwrap_err(),
+            CztError::InvalidParameter
+        );
+    }
+
+    /// Reject `a` values with magnitude above the stability threshold.
+    #[test]
+    fn rejects_large_a() {
+        let bad_a = (MAX_MAGNITUDE * SCALE, 0.0);
+        assert_eq!(
+            czt_f32(&INPUT, 1, UNIT_COMPLEX, bad_a).unwrap_err(),
+            CztError::InvalidParameter
+        );
+    }
+
+    /// Basic correctness check for valid parameters.
+    #[test]
+    fn computes_basic_transform() {
+        let out = czt_f32(&INPUT, 1, UNIT_COMPLEX, UNIT_COMPLEX).unwrap();
+        assert!((out[0].0 - 2.0).abs() < 1e-6);
+        assert!((out[0].1).abs() < 1e-6);
+    }
 }

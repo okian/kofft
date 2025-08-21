@@ -1,5 +1,5 @@
 import { SpectrogramEvent } from '@/types'
-import { cn } from '@/utils/cn'
+import { cn } from '@/shared/utils/cn'
 
 interface SpectrogramTooltipProps {
   event: SpectrogramEvent
