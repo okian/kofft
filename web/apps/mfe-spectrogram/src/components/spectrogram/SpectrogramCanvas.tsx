@@ -469,7 +469,11 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
         if (initWebGL()) {
           resizeCanvas()
         }
-        animate()
+          animate()
+        } else {
+          // Fallback: just start animation loop for non-WebGL environments
+          animate()
+        }
       }
 
       canvas.addEventListener('webglcontextlost', handleContextLost as EventListener)
