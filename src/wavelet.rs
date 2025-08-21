@@ -7,6 +7,12 @@
 extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
+
+/// Convenience alias for a two-dimensional `Vec`.
+type Vec2<T> = Vec<Vec<T>>;
+
+/// Convenience alias for a three-dimensional `Vec`.
+type Vec3<T> = Vec<Vec<Vec<T>>>;
 use core::fmt;
 
 /// Number of samples processed together in the Haar transform pair.

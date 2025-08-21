@@ -39,7 +39,7 @@ pub fn fuzzy_score(pattern: &str, text: &str, pattern_len: usize) -> usize {
     let mut prev: Vec<usize> = (0..=text_len).collect();
     let mut curr = vec![0; text_len + 1];
 
-    for (i, pc) in pattern.chars().enumerate().take(pattern_len) {
+    for (i, &pc) in pattern_chars.iter().take(pattern_len).enumerate() {
         curr[0] = i + 1;
         for (j, &tc) in text_chars.iter().enumerate() {
             let cost = if pc == tc { 0 } else { 1 };
