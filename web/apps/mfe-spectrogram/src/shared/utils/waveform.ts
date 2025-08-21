@@ -94,25 +94,41 @@ function computeWaveformPeaksJS(
   return peaks;
 }
 
-function linearResample(
+// Minimum output length to avoid negative array sizes.
+const MIN_TARGET_LENGTH = 0;
+// Output length when only one sample is requested.
+const SINGLE_SAMPLE_LENGTH = 1;
+
+/**
+ * Pure TypeScript linear resampler mirroring the WASM implementation.
+ * Resamples to `targetLength` using linear interpolation, guaranteeing the
+ * last output sample equals the last input sample. Exported for unit tests.
+ */
+export function linearResample(
   input: Float32Array,
   targetLength: number,
 ): Float32Array {
-  if (targetLength <= 0 || input.length === 0) {
-    return new Float32Array(targetLength);
+  if (targetLength <= MIN_TARGET_LENGTH || input.length === MIN_TARGET_LENGTH) {
+    return new Float32Array(Math.max(MIN_TARGET_LENGTH, targetLength));
   }
   const output = new Float32Array(targetLength);
-  if (targetLength === 1) {
-    output[0] = input[input.length - 1];
+  if (targetLength === SINGLE_SAMPLE_LENGTH) {
+    output[MIN_TARGET_LENGTH] = input[input.length - SINGLE_SAMPLE_LENGTH];
     return output;
   }
-  const ratio = (input.length - 1) / (targetLength - 1);
+  const ratio =
+    (input.length - SINGLE_SAMPLE_LENGTH) /
+    (targetLength - SINGLE_SAMPLE_LENGTH);
   for (let i = 0; i < targetLength; i++) {
     const pos = i * ratio;
     const idx = Math.floor(pos);
     const frac = pos - idx;
     const s0 = input[idx];
-    const s1 = input[idx + 1 < input.length ? idx + 1 : idx];
+    const nextIdx =
+      idx + SINGLE_SAMPLE_LENGTH < input.length
+        ? idx + SINGLE_SAMPLE_LENGTH
+        : idx;
+    const s1 = input[nextIdx];
     output[i] = s0 + (s1 - s0) * frac;
   }
   return output;
@@ -197,5 +213,3 @@ export function createLivePeaksAnimator(
   raf = requestAnimationFrame(animate);
   return () => cancelAnimationFrame(raf);
 }
-
-
