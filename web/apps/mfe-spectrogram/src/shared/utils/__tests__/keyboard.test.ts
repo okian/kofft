@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   parseKeyCombo,
   isKeyComboPressed,
@@ -9,6 +9,12 @@ import {
   loadShortcuts,
   SHORTCUTS_STORAGE_KEY,
 } from "../keyboard";
+
+// Ensure clean storage and mocks for each test run.
+beforeEach(() => {
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
 
 describe("Keyboard Utils", () => {
   describe("parseKeyCombo", () => {
@@ -115,6 +121,30 @@ describe("Keyboard Utils", () => {
       expect(stored).not.toBeNull();
       const loaded = loadShortcuts();
       expect(loaded.playPause).toBe("k");
+    });
+
+    it("logs and preserves existing shortcuts when save fails", () => {
+      const original = { ...DEFAULT_SHORTCUTS, playPause: "k" };
+      localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(original));
+      const error = new Error("storage-failure");
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw error;
+      });
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+
+      expect(() =>
+        saveShortcuts({ ...DEFAULT_SHORTCUTS, playPause: "x" }),
+      ).toThrow(error);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "Failed to save shortcuts",
+        error,
+      );
+      const stored = JSON.parse(
+        localStorage.getItem(SHORTCUTS_STORAGE_KEY) as string,
+      );
+      expect(stored.playPause).toBe("k");
     });
   });
 });
