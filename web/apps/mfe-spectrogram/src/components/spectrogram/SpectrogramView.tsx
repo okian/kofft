@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/shared/stores/settingsStore'
 import { useAudioFile } from '@/hooks/useAudioFile'
 import { useMicrophone } from '@/hooks/useMicrophone'
 import { useScreenSize } from '@/hooks/useScreenSize'

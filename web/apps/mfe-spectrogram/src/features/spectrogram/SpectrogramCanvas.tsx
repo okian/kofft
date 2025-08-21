@@ -1,5 +1,7 @@
 import React, { forwardRef, useEffect, useRef, useImperativeHandle, useCallback } from 'react'
-import { useSettingsStore } from '../../shared/stores/settingsStore'
+import { useSettingsStore } from '@/shared/stores/settingsStore'
+import { useSpectrogramStore } from '@/shared/stores/spectrogramStore'
+import { BUILTIN_LUTS, generateLUTTexture } from '@/shared/utils/lut'
 
 interface SpectrogramCanvasProps {
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void
@@ -23,20 +25,33 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
     const glRef = useRef<WebGLRenderingContext | null>(null)
     const programRef = useRef<WebGLProgram | null>(null)
     const textureRef = useRef<WebGLTexture | null>(null)
+    const lutTextureRef = useRef<WebGLTexture | null>(null)
     const bufferRef = useRef<WebGLBuffer | null>(null)
     const animationFrameRef = useRef<number | null>(null)
     const webglSupportedRef = useRef(false)
-    const { theme, amplitudeScale, refreshRate } = useSettingsStore()
+    const { theme, amplitudeScale, refreshRate, lutMode, currentLUT, colormap } = useSettingsStore()
+    const { setCanvasRef } = useSpectrogramStore()
 
     const spectrogramDataRef = useRef<Uint8Array[]>([])
     const maxFramesRef = useRef(15 * refreshRate)
     const currentFrameRef = useRef(0)
 
+    // Get the current LUT based on settings
+    const getCurrentLUT = useCallback(() => {
+      console.log('getCurrentLUT called:', { lutMode, currentLUT, colormap })
+      if (currentLUT) {
+        console.log('Using current LUT:', currentLUT.name)
+        return currentLUT
+      }
+      console.log('Using builtin LUT:', colormap)
+      return BUILTIN_LUTS[colormap] || BUILTIN_LUTS['viridis']
+    }, [lutMode, currentLUT, colormap])
+
     const colorMaps = {
-      dark: { background: [0,0,0,1], low: [0,0,0.2,1], mid: [1,0.2,0,1], high: [1,0.4,0,1], peak: [1,0.67,0,1] },
-      light: { background: [0.98,0.98,0.98,1], low: [0,0,0.5,1], mid: [0,0.5,1,1], high: [1,0.5,0,1], peak: [1,0,0,1] },
-      neon: { background: [0,0,0,1], low: [0,0,0,0], mid: [0,1,1,1], high: [1,0,1,1], peak: [1,1,0,1] },
-      'high-contrast': { background: [0,0,0,1], low: [0,0,0,1], mid: [1,1,1,1], high: [1,1,1,1], peak: [1,1,1,1] }
+      dark: { background: [0,0,0,1] },
+      light: { background: [0.98,0.98,0.98,1] },
+      neon: { background: [0,0,0,1] },
+      'high-contrast': { background: [0,0,0,1] }
     } as const
 
     const checkWebGLSupport = useCallback(() => {
@@ -56,10 +71,22 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
 
     const initWebGL = useCallback(() => {
       const canvas = canvasRef.current
-      if (!canvas) return false
-      if (!checkWebGLSupport()) { webglSupportedRef.current = false; return false }
+      if (!canvas) {
+        console.error('Canvas not found')
+        return false
+      }
+      if (!checkWebGLSupport()) {
+        console.error('WebGL support check failed')
+        webglSupportedRef.current = false
+        return false
+      }
       const gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false })
-      if (!gl) { webglSupportedRef.current = false; return false }
+      if (!gl) {
+        console.error('WebGL context creation failed')
+        webglSupportedRef.current = false
+        return false
+      }
+      console.log('WebGL context created successfully')
       glRef.current = gl
       webglSupportedRef.current = true
 
@@ -72,18 +99,14 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       const fragmentShaderSource = `
         precision mediump float;
         uniform sampler2D u_texture;
-        uniform vec4 u_lowColor; uniform vec4 u_midColor; uniform vec4 u_highColor; uniform vec4 u_peakColor;
-        uniform float u_intensityScale; varying vec2 v_texCoord;
+        varying vec2 v_texCoord;
+        
         void main() {
           vec4 texColor = texture2D(u_texture, v_texCoord);
           float intensity = texColor.r;
-          if (u_intensityScale > 0.5) { intensity = log(max(intensity, 0.001)) / log(0.001); }
-          vec4 color;
-          if (intensity < 0.25) { color = mix(u_lowColor, u_midColor, intensity * 4.0); }
-          else if (intensity < 0.5) { color = mix(u_midColor, u_highColor, (intensity - 0.25) * 4.0); }
-          else if (intensity < 0.75) { color = mix(u_highColor, u_peakColor, (intensity - 0.5) * 4.0); }
-          else { color = u_peakColor; }
-          gl_FragColor = color;
+          
+          // Simple red output for testing
+          gl_FragColor = vec4(intensity, 0.0, 0.0, 1.0);
         }
       `
 
@@ -93,13 +116,27 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       gl.shaderSource(fragmentShader, fragmentShaderSource)
       gl.compileShader(vertexShader)
       gl.compileShader(fragmentShader)
-      if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) { webglSupportedRef.current = false; return false }
-      if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) { webglSupportedRef.current = false; return false }
+      
+      // Check for shader compilation errors
+      if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+        console.error('Vertex shader compilation failed:', gl.getShaderInfoLog(vertexShader))
+        webglSupportedRef.current = false
+        return false
+      }
+      if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+        console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader))
+        webglSupportedRef.current = false
+        return false
+      }
       const program = gl.createProgram()!
       gl.attachShader(program, vertexShader)
       gl.attachShader(program, fragmentShader)
       gl.linkProgram(program)
-      if (!gl.getProgramParameter(program, gl.linkStatus || 35714)) { webglSupportedRef.current = false; return false }
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Program linking failed:', gl.getProgramInfoLog(program))
+        webglSupportedRef.current = false
+        return false
+      }
       programRef.current = program
 
       const buffer = gl.createBuffer()!
@@ -121,6 +158,10 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
       textureRef.current = texture
 
+      // Create LUT texture (simplified for now)
+      const lutTexture = gl.createTexture()!
+      lutTextureRef.current = lutTexture
+
       const positionLocation = gl.getAttribLocation(program, 'a_position')
       const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord')
       gl.enableVertexAttribArray(positionLocation)
@@ -139,8 +180,10 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       canvas.height = rect.height * pixelRatio
       canvas.style.width = rect.width + 'px'
       canvas.style.height = rect.height + 'px'
+      console.log('SpectrogramCanvas: Resized to', rect.width, 'x', rect.height, 'pixels')
       if (webglSupportedRef.current && glRef.current) {
         glRef.current.viewport(0, 0, canvas.width, canvas.height)
+        console.log('SpectrogramCanvas: WebGL viewport set to', canvas.width, 'x', canvas.height)
       }
     }, [])
 
@@ -150,9 +193,13 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       const texture = textureRef.current
       if (!gl || !texture) return
       const data = spectrogramDataRef.current
-      if (data.length === 0) return
+      if (data.length === 0) {
+        console.log('SpectrogramCanvas: No data to update texture')
+        return
+      }
       const width = data[0].length
       const height = data.length
+      console.log('SpectrogramCanvas: Updating texture with', width, 'x', height, 'data')
       const imageData = new Uint8Array(width * height)
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
@@ -162,31 +209,71 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       }
       gl.bindTexture(gl.TEXTURE_2D, texture)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, imageData)
+      console.log('SpectrogramCanvas: Texture updated successfully')
     }, [])
 
+    const updateLUTTexture = useCallback(() => {
+      if (!webglSupportedRef.current || !lutTextureRef.current) return
+      const gl = glRef.current!
+      const lut = getCurrentLUT()
+      console.log('Updating LUT texture for:', lut.name)
+      const lutData = generateLUTTexture(lut, 256)
+      
+      gl.bindTexture(gl.TEXTURE_2D, lutTextureRef.current)
+      // Create a 2D texture by repeating the 1D data
+      const lutData2D = new Uint8Array(256 * 256 * 4)
+      for (let y = 0; y < 256; y++) {
+        for (let x = 0; x < 256; x++) {
+          const srcIndex = x * 4
+          const dstIndex = (y * 256 + x) * 4
+          lutData2D[dstIndex] = lutData[srcIndex]     // R
+          lutData2D[dstIndex + 1] = lutData[srcIndex + 1] // G
+          lutData2D[dstIndex + 2] = lutData[srcIndex + 2] // B
+          lutData2D[dstIndex + 3] = lutData[srcIndex + 3] // A
+        }
+      }
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, lutData2D)
+    }, [getCurrentLUT])
+
     const render = useCallback(() => {
-      if (!webglSupportedRef.current) return
+      if (!webglSupportedRef.current) {
+        console.warn('WebGL not supported, skipping render')
+        return
+      }
       const gl = glRef.current!
       const program = programRef.current!
       const colors = (colorMaps as any)[theme] || (colorMaps as any).dark
+      console.log('Rendering simple WebGL shader')
+      
       gl.useProgram(program)
-      const lowColorLocation = gl.getUniformLocation(program, 'u_lowColor')
-      const midColorLocation = gl.getUniformLocation(program, 'u_midColor')
-      const highColorLocation = gl.getUniformLocation(program, 'u_highColor')
-      const peakColorLocation = gl.getUniformLocation(program, 'u_peakColor')
-      const intensityScaleLocation = gl.getUniformLocation(program, 'u_intensityScale')
-      gl.uniform4fv(lowColorLocation, colors.low)
-      gl.uniform4fv(midColorLocation, colors.mid)
-      gl.uniform4fv(highColorLocation, colors.high)
-      gl.uniform4fv(peakColorLocation, colors.peak)
-      gl.uniform1f(intensityScaleLocation, amplitudeScale === 'db' ? 1.0 : 0.0)
+      
+      // Set up texture
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, textureRef.current)
+      gl.uniform1i(gl.getUniformLocation(program, 'u_texture'), 0)
+      
       gl.clearColor(colors.background[0], colors.background[1], colors.background[2], colors.background[3])
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-    }, [theme, amplitudeScale])
+    }, [theme])
 
     const animate = useCallback(() => {
-      if (webglSupportedRef.current) { updateTexture(); render() }
+      if (webglSupportedRef.current) { 
+        updateTexture()
+        render() 
+      } else {
+        console.warn('WebGL not supported in animate loop, trying 2D canvas fallback')
+        // Fallback to 2D canvas if WebGL fails
+        const canvas = canvasRef.current
+        if (canvas) {
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            ctx.fillStyle = 'red'
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+            console.log('Drew red rectangle on 2D canvas as fallback')
+          }
+        }
+      }
       animationFrameRef.current = requestAnimationFrame(animate)
     }, [updateTexture, render])
 
@@ -196,6 +283,7 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       if (data.length > maxFramesRef.current) { data.splice(maxFramesRef.current) }
       spectrogramDataRef.current = data
       currentFrameRef.current = data.length
+      console.log('SpectrogramCanvas: Added frame, total frames:', data.length, 'frequencyData length:', frequencyData.length)
     }, [])
 
     const clear = useCallback(() => {
@@ -205,10 +293,41 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
 
     useImperativeHandle(ref, () => ({ addFrame, clear, resize: resizeCanvas, getCanvas: () => canvasRef.current }), [addFrame, clear, resizeCanvas])
 
+    // Register with global store
     useEffect(() => {
-      if (initWebGL()) { resizeCanvas(); animate() } else { animate() }
+      const canvasRefObj = {
+        addFrame,
+        clear,
+        resize: resizeCanvas,
+        getCanvas: () => canvasRef.current
+      }
+      console.log('SpectrogramCanvas: Registering with global store')
+      setCanvasRef(canvasRefObj)
+      return () => {
+        console.log('SpectrogramCanvas: Unregistering from global store')
+        setCanvasRef(null)
+      }
+    }, [addFrame, clear, resizeCanvas, setCanvasRef])
+
+    useEffect(() => {
+      console.log('SpectrogramCanvas useEffect - initWebGL starting...')
+      const success = initWebGL()
+      console.log('SpectrogramCanvas useEffect - initWebGL result:', success)
+      if (success) { 
+        resizeCanvas()
+        animate() 
+      } else { 
+        console.error('Failed to initialize WebGL, but continuing animation loop')
+        animate() 
+      }
       return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current) }
     }, [initWebGL, resizeCanvas, animate])
+
+    // Debug: Log when component mounts
+    useEffect(() => {
+      console.log('SpectrogramCanvas: Component mounted')
+      return () => console.log('SpectrogramCanvas: Component unmounted')
+    }, [])
 
     useEffect(() => {
       const handleResize = () => resizeCanvas()
@@ -223,18 +342,47 @@ export const SpectrogramCanvas = forwardRef<SpectrogramCanvasRef, SpectrogramCan
       }
     }, [refreshRate])
 
+    // Update LUT texture when LUT changes
+    useEffect(() => {
+      if (webglSupportedRef.current) {
+        updateLUTTexture()
+      }
+    }, [lutMode, currentLUT, colormap, updateLUTTexture])
+
     return (
-      <canvas
-        ref={canvasRef}
-        className={className || 'w-full h-full block'}
-        onMouseMove={onMouseMove}
-        onMouseLeave={onMouseLeave}
-        onClick={onMouseClick}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        style={{ cursor: 'crosshair' }}
-        data-testid="spectrogram-canvas"
-      />
+      <div className="relative w-full h-full">
+        <canvas
+          ref={canvasRef}
+          className={className || 'w-full h-full block'}
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
+          onClick={onMouseClick}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+          style={{ cursor: 'crosshair' }}
+          data-testid="spectrogram-canvas"
+        />
+        {/* Debug overlay for testing */}
+        <div className="absolute top-2 right-2 z-10">
+          <button
+            onClick={() => {
+              console.log('SpectrogramCanvas: Adding test data...')
+              const testData = new Uint8Array(256)
+              for (let i = 0; i < 256; i++) {
+                testData[i] = Math.floor((i / 255) * 255)
+              }
+              addFrame(testData)
+            }}
+            className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+            title="Add test data"
+          >
+            Test Data
+          </button>
+          <div className="text-xs text-white bg-black bg-opacity-50 px-1 mt-1 rounded">
+            Canvas Debug
+          </div>
+        </div>
+      </div>
     )
   }
 )

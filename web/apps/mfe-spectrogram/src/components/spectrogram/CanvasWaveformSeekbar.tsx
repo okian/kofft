@@ -8,15 +8,16 @@ import {
 import { useSeekbarColors } from "@/hooks/useSeekbarColors";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
 
+
 /**
  * Width of each visualisation bar in CSS pixels. Kept small to minimise GPU
  * workload while preserving sufficient detail for short clips.
  */
-export const BAR_WIDTH = 4;
+export const BAR_WIDTH = 3;
 /** Gap between bars in CSS pixels. A narrow gap keeps the waveform compact. */
-export const BAR_GAP = 5;
+export const BAR_GAP = 6;
 /** Minimum drawn bar height so silent segments remain visible. */
-const MIN_BAR_HEIGHT = 2; // Increased minimum height for better visibility
+const MIN_BAR_HEIGHT = 4; // Increased minimum height for better visibility
 /** Default maximum bar height used when no explicit value is supplied. */
 const DEFAULT_MAX_BAR_HEIGHT = 40;
 /** Delay between seek callbacks during pointer drags in milliseconds. */
@@ -28,7 +29,7 @@ const SMALL_STEP = 1;
 /** Keyboard seek step when holding the Shift modifier. */
 const LARGE_STEP = 5;
 /** Width of the playhead indicator in CSS pixels. */
-const PLAYHEAD_WIDTH = 1;
+const PLAYHEAD_WIDTH = 3;
 
 interface CanvasWaveformSeekbarProps {
   /** Raw PCM audio used for fixed waveform mode. */
@@ -48,18 +49,22 @@ interface CanvasWaveformSeekbarProps {
   /** Amount of audio buffered in seconds. */
   bufferedTime?: number;
   /**
-   * Optional provider for live time-domain samples. Required for live and
-   * frequency bar modes.
+   * Optional provider for live time-domain samples. Required for live mode.
    */
   getTimeData?: () => Uint8Array | null;
+  /**
+   * Optional provider for live frequency-domain samples. Required for frequency mode.
+   */
+  getFrequencyData?: () => Uint8Array | null;
+
 }
 
 /**
- * Generate a crude frequency-domain animation from live time data.
- * This is a lightweight approximation used when the real FFT is unavailable.
+ * Generate a proper frequency-domain animation from real FFT data.
+ * This creates a frequency band visualizer using actual frequency analysis.
  */
 function createFrequencyAnimator(
-  getTimeData: () => Uint8Array | null,
+  getFrequencyData: () => Uint8Array | null,
   numBars: number,
   cb: (peaks: Float32Array) => void,
 ): () => void {
@@ -67,28 +72,64 @@ function createFrequencyAnimator(
     throw new Error("numBars must be a positive finite number");
   const peaks = new Float32Array(numBars);
   let raf = 0;
+  
   const animate = () => {
-    const data = getTimeData();
-    if (data && data.length > 0) {
-      const step = data.length / numBars;
+    const frequencyData = getFrequencyData();
+    if (frequencyData && frequencyData.length > 0) {
+      // Debug: Log frequency data distribution
+      console.log("Frequency data:", {
+        length: frequencyData.length,
+        firstFew: Array.from(frequencyData.slice(0, 10)),
+        lastFew: Array.from(frequencyData.slice(-10))
+      });
+      // Map frequency bins to seekbar bars with more balanced distribution
+      // Use a hybrid approach that spreads activity across the full width
       for (let i = 0; i < numBars; i++) {
-        const start = Math.floor(i * step);
-        const end = Math.floor((i + 1) * step);
-        let max = 0;
-        for (let j = start; j < end; j++) {
-          const sample = (data[j] - 128) / 128;
-          const mag = Math.abs(sample);
-          if (mag > max) max = mag;
+        // Create a more balanced distribution that still respects frequency perception
+        // Use a combination of linear and logarithmic mapping
+        const normalizedPosition = i / (numBars - 1);
+        
+        // Blend between different mapping strategies for better distribution
+        const linearMap = normalizedPosition;
+        const logMap = Math.log(normalizedPosition * 9 + 1) / Math.log(10); // Log base 10
+        const powerMap = Math.pow(normalizedPosition, 0.7);
+        
+        // Use a weighted blend: 40% linear, 30% logarithmic, 30% power
+        const blendedPosition = 0.4 * linearMap + 0.3 * logMap + 0.3 * powerMap;
+        
+        // Map to frequency bins with some overlap for smoother transitions
+        const startBin = Math.floor(blendedPosition * frequencyData.length * 0.9);
+        const endBin = Math.floor(((i + 1) / numBars) * frequencyData.length);
+        
+        // Calculate average frequency magnitude for this bar
+        let sum = 0;
+        let count = 0;
+        for (let bin = startBin; bin < endBin && bin < frequencyData.length; bin++) {
+          // Convert from 0-255 range to 0-1 range
+          const magnitude = frequencyData[bin] / 255;
+          sum += magnitude;
+          count++;
         }
-        peaks[i] = max;
+        
+        // Store the average magnitude for this frequency band
+        peaks[i] = count > 0 ? sum / count : 0;
+      }
+    } else {
+      // No frequency data available, use idle animation
+      for (let i = 0; i < numBars; i++) {
+        peaks[i] = 0;
       }
     }
+    
     cb(peaks);
     raf = requestAnimationFrame(animate);
   };
+  
   raf = requestAnimationFrame(animate);
   return () => cancelAnimationFrame(raf);
 }
+
+
 
 /** Apply significance threshold and global scaling to a peak value. */
 function adjustPeak(value: number, significance: number, scale: number): number {
@@ -112,6 +153,8 @@ export function CanvasWaveformSeekbar({
   disabled = false,
   bufferedTime = 0,
   getTimeData,
+  getFrequencyData,
+
 }: CanvasWaveformSeekbarProps) {
   // Defensive programming: validate numeric props immediately.
   if (!Number.isFinite(maxBarHeight) || maxBarHeight <= 0) {
@@ -124,11 +167,14 @@ export function CanvasWaveformSeekbar({
   const [containerWidth, setContainerWidth] = useState(0);
   const [numBars, setNumBars] = useState(1);
   const peaksRef = useRef<Float32Array>(new Float32Array(0));
+  const targetPeaksRef = useRef<Float32Array>(new Float32Array(0));
   const [drawTick, setDrawTick] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekProgress, setSeekProgress] = useState(0);
   const lastDispatch = useRef({ time: 0, pos: 0 });
   const dispatched = useRef(false);
+  const transitionRef = useRef<number>(0);
+  const animationFrameRef = useRef<number>(0);
 
   // Theme-driven colours and seek bar settings from the global store.
   useSeekbarColors();
@@ -151,6 +197,8 @@ export function CanvasWaveformSeekbar({
     seekbarSignificance: s.seekbarSignificance,
     seekbarAmplitudeScale: s.seekbarAmplitudeScale,
   }));
+
+
 
   // Track container width and compute the maximum number of full bars that fit.
   useEffect(() => {
@@ -203,44 +251,98 @@ export function CanvasWaveformSeekbar({
     return value;
   }, []);
 
+  // Smooth transition function for peak values
+  const smoothTransition = useCallback((newPeaks: Float32Array) => {
+    // Cancel any existing animation
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
+    // Store the current peaks as starting point
+    const currentPeaks = peaksRef.current;
+    targetPeaksRef.current = newPeaks;
+    
+    // Reset transition progress
+    transitionRef.current = 0;
+    
+    // Create a temporary array for interpolation
+    const tempPeaks = new Float32Array(Math.max(currentPeaks.length, newPeaks.length));
+    
+    const animate = () => {
+      transitionRef.current += 0.05; // Adjust speed here (0.05 = 20 frames for full transition)
+      
+      if (transitionRef.current >= 1) {
+        // Transition complete
+        peaksRef.current = newPeaks;
+        setDrawTick((t) => t + 1);
+        return;
+      }
+      
+      // Interpolate between current and target peaks
+      const t = transitionRef.current;
+      const easeT = 1 - Math.pow(1 - t, 3); // Ease-out cubic function
+      
+      for (let i = 0; i < tempPeaks.length; i++) {
+        const current = i < currentPeaks.length ? currentPeaks[i] : 0;
+        const target = i < newPeaks.length ? newPeaks[i] : 0;
+        tempPeaks[i] = current + (target - current) * easeT;
+      }
+      
+      peaksRef.current = tempPeaks;
+      setDrawTick((t) => t + 1);
+      
+      // Continue animation
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+    
+    animationFrameRef.current = requestAnimationFrame(animate);
+  }, []);
+
   // Precompute peaks for static waveform mode.
   useEffect(() => {
     if (seekbarMode !== "waveform") return;
     
     const computePeaks = async () => {
       try {
-        peaksRef.current = await computeWaveformPeaks(audioData, numBars);
-        setDrawTick((t) => t + 1);
+        const newPeaks = await computeWaveformPeaks(audioData, numBars);
+        smoothTransition(newPeaks);
       } catch (error) {
         console.warn("Failed to compute waveform peaks:", error);
         // Fall back to empty peaks if computation fails
-        peaksRef.current = new Float32Array(numBars);
-        setDrawTick((t) => t + 1);
+        const emptyPeaks = new Float32Array(numBars);
+        smoothTransition(emptyPeaks);
       }
     };
     
     computePeaks();
-  }, [audioData, numBars, seekbarMode]);
+  }, [audioData, numBars, seekbarMode, smoothTransition]);
 
   // Drive animations for live and frequency modes.
   useEffect(() => {
     if (seekbarMode === "waveform") return;
     let stop: (() => void) | undefined;
     const update = (p: Float32Array) => {
-      peaksRef.current = p;
-      setDrawTick((t) => t + 1);
+      smoothTransition(p);
     };
+    
     if (seekbarMode === "live") {
       stop = getTimeData
         ? createLivePeaksAnimator(getTimeData, numBars, update)
         : createIdlePeaksAnimator(numBars, update);
     } else if (seekbarMode === "frequency") {
-      stop = getTimeData
-        ? createFrequencyAnimator(getTimeData, numBars, update)
+      stop = getFrequencyData
+        ? createFrequencyAnimator(getFrequencyData, numBars, update)
         : createIdlePeaksAnimator(numBars, update);
     }
-    return () => stop && stop();
-  }, [seekbarMode, numBars, getTimeData]);
+    return () => {
+      stop?.();
+      // Cancel any ongoing transition animation
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = 0;
+      }
+    };
+  }, [seekbarMode, numBars, getTimeData, getFrequencyData, smoothTransition]);
 
   // Current playback positions normalised to [0,1].
   const playedPos = duration > 0 ? currentTime / duration : 0;
@@ -269,7 +371,7 @@ export function CanvasWaveformSeekbar({
     canvas.width = width * devicePixelRatio;
     canvas.height = height * devicePixelRatio;
     const totalWidth = numBars * (BAR_WIDTH + BAR_GAP) - BAR_GAP;
-    const xOffset = width - totalWidth;
+    const xOffset = (width - totalWidth) / 2; // Center the seekbar
 
     // Temporarily disable GPU paths to use 2D canvas
     console.log("Using 2D canvas path");
@@ -285,6 +387,7 @@ export function CanvasWaveformSeekbar({
         return;
       }
     }
+
     const gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
     if (gl) {
       // No-op: presence of context indicates WebGL path would be used.
@@ -316,8 +419,8 @@ export function CanvasWaveformSeekbar({
       const raw = peaks[i] ?? 0;
       const adjusted = adjustPeak(
         raw,
-        seekbarSignificance,
-        seekbarAmplitudeScale,
+        seekbarSignificance ?? 0.05,
+        seekbarAmplitudeScale ?? 8,
       );
       const h = Math.max(MIN_BAR_HEIGHT, adjusted * maxBarHeight);
       

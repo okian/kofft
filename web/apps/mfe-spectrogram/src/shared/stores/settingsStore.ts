@@ -10,6 +10,8 @@ import {
   RefreshRate,
   APIKeys,
   APIKeyStatus,
+  LUT,
+  LUTMode,
 } from "@/shared/types";
 
 interface SettingsStore extends SpectrogramSettings {
@@ -53,6 +55,13 @@ interface SettingsStore extends SpectrogramSettings {
   setEnableAcoustID: (enable: boolean) => void;
   setEnableMusicBrainz: (enable: boolean) => void;
   setEnablePlaceholderArtwork: (enable: boolean) => void;
+
+  // LUT actions
+  setLUTMode: (mode: LUTMode) => void;
+  setCurrentLUT: (lut: LUT | null) => void;
+  addCustomLUT: (lut: LUT) => void;
+  removeCustomLUT: (id: string) => void;
+  updateCustomLUT: (id: string, lut: Partial<LUT>) => void;
 }
 
 /** Default settings used when no user overrides are present. */
@@ -85,6 +94,10 @@ const defaultSettings: SpectrogramSettings = {
   enableAcoustID: true,
   enableMusicBrainz: true,
   enablePlaceholderArtwork: true,
+  // LUT settings
+  lutMode: "builtin",
+  currentLUT: null,
+  customLUTs: [],
 };
 
 /** Key used for persisting settings in localStorage. */
@@ -117,9 +130,33 @@ function sanitiseSettings(input: any): SpectrogramSettings {
   const result: SpectrogramSettings = { ...defaultSettings };
   if (typeof input !== "object" || !input) return result;
 
+  // Theme
   if (typeof input.theme === "string" && input.theme in THEME_COLORS)
     result.theme = input.theme as Theme;
 
+  // Spectrogram settings
+  if (typeof input.amplitudeScale === "string" && ["linear", "logarithmic", "db"].includes(input.amplitudeScale))
+    result.amplitudeScale = input.amplitudeScale as AmplitudeScale;
+
+  if (typeof input.frequencyScale === "string" && ["linear", "logarithmic"].includes(input.frequencyScale))
+    result.frequencyScale = input.frequencyScale as FrequencyScale;
+
+  if (typeof input.resolution === "string" && ["low", "medium", "high"].includes(input.resolution))
+    result.resolution = input.resolution as Resolution;
+
+  if (typeof input.refreshRate === "number" && [30, 60].includes(input.refreshRate))
+    result.refreshRate = input.refreshRate as RefreshRate;
+
+  if (typeof input.colormap === "string")
+    result.colormap = input.colormap;
+
+  if (typeof input.showLegend === "boolean")
+    result.showLegend = input.showLegend;
+
+  if (typeof input.enableToastNotifications === "boolean")
+    result.enableToastNotifications = input.enableToastNotifications;
+
+  // Seekbar settings
   if (typeof input.seekPlayedColor === "string")
     result.seekPlayedColor = sanitiseColor(input.seekPlayedColor);
 
@@ -148,6 +185,55 @@ function sanitiseSettings(input: any): SpectrogramSettings {
     input.seekbarAmplitudeScale > 0
   )
     result.seekbarAmplitudeScale = input.seekbarAmplitudeScale;
+
+  // API Keys
+  if (typeof input.apiKeys === "object" && input.apiKeys) {
+    result.apiKeys = {
+      acoustid: typeof input.apiKeys.acoustid === "string" ? input.apiKeys.acoustid : "",
+      musicbrainz: typeof input.apiKeys.musicbrainz === "string" ? input.apiKeys.musicbrainz : "",
+    };
+  }
+
+  if (typeof input.apiKeyStatus === "object" && input.apiKeyStatus) {
+    result.apiKeyStatus = {
+      acoustid: { 
+        valid: typeof input.apiKeyStatus.acoustid?.valid === "boolean" ? input.apiKeyStatus.acoustid.valid : false,
+        lastChecked: input.apiKeyStatus.acoustid?.lastChecked ? new Date(input.apiKeyStatus.acoustid.lastChecked) : undefined,
+      },
+      musicbrainz: { 
+        valid: typeof input.apiKeyStatus.musicbrainz?.valid === "boolean" ? input.apiKeyStatus.musicbrainz.valid : false,
+        lastChecked: input.apiKeyStatus.musicbrainz?.lastChecked ? new Date(input.apiKeyStatus.musicbrainz.lastChecked) : undefined,
+      },
+    };
+  }
+
+  // Artwork settings
+  if (typeof input.enableExternalArtwork === "boolean")
+    result.enableExternalArtwork = input.enableExternalArtwork;
+
+  if (typeof input.enableAcoustID === "boolean")
+    result.enableAcoustID = input.enableAcoustID;
+
+  if (typeof input.enableMusicBrainz === "boolean")
+    result.enableMusicBrainz = input.enableMusicBrainz;
+
+  if (typeof input.enablePlaceholderArtwork === "boolean")
+    result.enablePlaceholderArtwork = input.enablePlaceholderArtwork;
+
+  // LUT settings
+  if (typeof input.lutMode === "string" && ["builtin", "custom", "file"].includes(input.lutMode))
+    result.lutMode = input.lutMode as LUTMode;
+
+  if (input.currentLUT && typeof input.currentLUT === "object")
+    result.currentLUT = input.currentLUT as LUT;
+
+  if (Array.isArray(input.customLUTs))
+    result.customLUTs = input.customLUTs.filter(lut => 
+      lut && typeof lut === "object" && 
+      typeof lut.id === "string" && 
+      typeof lut.name === "string" &&
+      Array.isArray(lut.entries)
+    ) as LUT[];
 
   return result;
 }
@@ -324,6 +410,28 @@ export const useSettingsStore = create<SettingsStore>()(
     setEnableMusicBrainz: (enable) => set((state) => ({ ...state, enableMusicBrainz: enable })),
     setEnablePlaceholderArtwork: (enable) =>
       set((state) => ({ ...state, enablePlaceholderArtwork: enable })),
+
+    // LUT actions
+    setLUTMode: (mode) => set((state) => ({ ...state, lutMode: mode })),
+    
+    setCurrentLUT: (lut) => set((state) => ({ ...state, currentLUT: lut })),
+    
+    addCustomLUT: (lut) => set((state) => ({
+      ...state,
+      customLUTs: [...state.customLUTs, lut]
+    })),
+    
+    removeCustomLUT: (id) => set((state) => ({
+      ...state,
+      customLUTs: state.customLUTs.filter(l => l.id !== id)
+    })),
+    
+    updateCustomLUT: (id, updates) => set((state) => ({
+      ...state,
+      customLUTs: state.customLUTs.map(l => 
+        l.id === id ? { ...l, ...updates } : l
+      )
+    })),
   })),
 );
 

@@ -1,5 +1,7 @@
 import { Theme } from '@/types'
 import { cn } from '@/utils/cn'
+import { useSettingsStore } from '@/shared/stores/settingsStore'
+import { BUILTIN_LUTS, mapValueToColor } from '@/shared/utils/lut'
 
 interface SpectrogramLegendProps {
   theme: Theme
@@ -7,23 +9,31 @@ interface SpectrogramLegendProps {
 }
 
 export function SpectrogramLegend({ theme, className }: SpectrogramLegendProps) {
-  const getColorMap = (theme: Theme) => {
-    switch (theme) {
-      case 'dark':
-        return ['#000033', '#0066cc', '#00ffff', '#ffff00', '#ff6600', '#ff0000']
-      case 'light':
-        return ['#ffffff', '#e6f3ff', '#66ccff', '#ffcc66', '#ff9966', '#ff6666']
-      case 'neon':
-        return ['#000000', '#00ffff', '#00ff00', '#ffff00', '#ff00ff', '#ff0080']
-      case 'high-contrast':
-        return ['#000000', '#333333', '#666666', '#999999', '#cccccc', '#ffffff']
-      default:
-        return ['#000033', '#0066cc', '#00ffff', '#ffff00', '#ff6600', '#ff0000']
+  const { lutMode, currentLUT, colormap } = useSettingsStore()
+
+  const getCurrentLUT = () => {
+    if (lutMode === 'custom' && currentLUT) {
+      return currentLUT
     }
+    return BUILTIN_LUTS[colormap] || BUILTIN_LUTS['viridis']
   }
 
-  const colors = getColorMap(theme)
-  const gradient = `linear-gradient(to bottom, ${colors.join(', ')})`
+  const generateGradient = () => {
+    const lut = getCurrentLUT()
+    const colors: string[] = []
+    
+    // Generate 6 color stops for the gradient
+    for (let i = 0; i < 6; i++) {
+      const value = i / 5 // 0 to 1
+      const color = mapValueToColor(value, lut)
+      const hexColor = `#${Math.round(color[0] * 255).toString(16).padStart(2, '0')}${Math.round(color[1] * 255).toString(16).padStart(2, '0')}${Math.round(color[2] * 255).toString(16).padStart(2, '0')}`
+      colors.push(hexColor)
+    }
+    
+    return `linear-gradient(to bottom, ${colors.join(', ')})`
+  }
+
+  const gradient = generateGradient()
 
   return (
     <div 

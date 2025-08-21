@@ -46,10 +46,10 @@ export function ControlSection({
       app.stage.removeChildren();
 
       const sprite = PIXI.Sprite.from(art);
-      sprite.width = 100;
-      sprite.height = 100;
+      sprite.width = 216; // Increased by 1 rem (16px)
+      sprite.height = 216; // Increased by 1 rem (16px)
       sprite.x = 0;
-      sprite.y = 25;
+      sprite.y = 17; // Adjusted y position to center the larger art
       app.stage.addChild(sprite);
 
       const titleText = new PIXI.Text(title, {
@@ -77,7 +77,7 @@ export function ControlSection({
       const img = new Image();
       img.onload = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 25, 100, 100);
+        ctx.drawImage(img, 0, 17, 116, 116); // Increased by 1 rem (16px) and adjusted y position
         ctx.fillStyle = "white";
         ctx.font = "16px sans-serif";
         ctx.fillText(title, 110, 20);

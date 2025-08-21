@@ -197,3 +197,5 @@ export function createLivePeaksAnimator(
   raf = requestAnimationFrame(animate);
   return () => cancelAnimationFrame(raf);
 }
+
+

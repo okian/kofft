@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useRef, useImperativeHandle, useCallback } from 'react'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/shared/stores/settingsStore'
 
 interface SpectrogramCanvasProps {
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void

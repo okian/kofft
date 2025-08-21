@@ -147,6 +147,18 @@ export interface SpectrogramSettings {
    * Whether to show the playhead (progress line) in the seekbar.
    */
   showSeekbarPlayhead?: boolean;
+  /**
+   * Selects how the seek bar visualises audio data.
+   */
+  seekbarMode?: "live" | "frequency" | "waveform";
+  /**
+   * Adjusts the statistical significance level used when drawing bars.
+   */
+  seekbarSignificance?: number;
+  /**
+   * Scales bar amplitudes without altering audio.
+   */
+  seekbarAmplitudeScale?: number;
   // API Keys
   apiKeys: APIKeys;
   apiKeyStatus: APIKeyStatus;
@@ -155,6 +167,10 @@ export interface SpectrogramSettings {
   enableAcoustID: boolean;
   enableMusicBrainz: boolean;
   enablePlaceholderArtwork: boolean;
+  // LUT settings
+  lutMode: LUTMode;
+  currentLUT: LUT | null;
+  customLUTs: LUT[];
 }
 
 export interface SpectrogramData {
@@ -311,6 +327,22 @@ export type AmplitudeScale = "linear" | "logarithmic" | "db";
 export type FrequencyScale = "linear" | "logarithmic";
 export type Resolution = "low" | "medium" | "high";
 export type RefreshRate = 30 | 60;
+
+// LUT (Look-Up Table) types
+export interface LUTEntry {
+  position: number // 0.0 to 1.0
+  color: [number, number, number, number] // RGBA values
+}
+
+export interface LUT {
+  id: string
+  name: string
+  description?: string
+  entries: LUTEntry[]
+  interpolation: 'linear' | 'cubic' | 'step'
+}
+
+export type LUTMode = 'builtin' | 'custom' | 'file'
 
 // WASM types
 export interface WASMModule {

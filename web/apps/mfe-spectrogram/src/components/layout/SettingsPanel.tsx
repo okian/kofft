@@ -12,6 +12,12 @@ import {
   Loader2,
   Database,
   BarChart,
+  ChevronDown,
+  ChevronRight,
+  Volume2,
+  Eye,
+  Settings,
+  Play,
 } from "lucide-react";
 import {
   SpectrogramSettings,
@@ -20,18 +26,46 @@ import {
   FrequencyScale,
   Resolution,
   RefreshRate,
-} from "@/types";
+} from "@/shared/types";
 import { THEME_COLORS } from "@/shared/theme";
 import { cn } from "@/utils/cn";
 import { conditionalToast, directToast } from "@/utils/toast";
 import { MetadataStorePanel } from "./MetadataStorePanel";
 import { StatisticsPanel } from "./StatisticsPanel";
+import { LUTSettingsPanel } from "@/features/settings/LUTSettingsPanel";
 
 interface SettingsPanelProps {
   settings: SpectrogramSettings;
   isOpen: boolean;
   onClose: () => void;
   onSettingsChange: (settings: Partial<SpectrogramSettings>) => void;
+}
+
+interface CollapsibleSectionProps {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+function CollapsibleSection({ title, icon, children, defaultOpen = true }: CollapsibleSectionProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="border border-neutral-700 rounded-lg">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3 text-left hover:bg-neutral-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="text-sm font-medium text-neutral-100">{title}</span>
+        </div>
+        {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {isOpen && <div className="p-3 pt-0 space-y-3">{children}</div>}
+    </div>
+  );
 }
 
 export function SettingsPanel({
@@ -44,7 +78,7 @@ export function SettingsPanel({
     [key: string]: boolean;
   }>({});
   const [activeTab, setActiveTab] = useState<
-    "general" | "artwork" | "api" | "database" | "stats"
+    "general" | "artwork" | "api" | "database" | "stats" | "lut"
   >("general");
 
   if (!isOpen) return null;
@@ -82,8 +116,7 @@ export function SettingsPanel({
     { value: 60, label: "60 FPS" },
   ];
 
-  // Theme-aware seekbar colour values. Using local variables avoids repeated
-  // lookups when rendering inputs.
+  // Theme-aware seekbar colour values
   const themeColours = THEME_COLORS[settings.theme];
   const playedColour = settings.seekPlayedColor || themeColours.accent;
   const unplayedColour = settings.seekUnplayedColor || themeColours.primary;
@@ -98,21 +131,15 @@ export function SettingsPanel({
     });
   };
 
-  /**
-   * Validate a user-supplied API key.
-   * Fetches the validation function lazily from the settings store and
-   * surfaces any errors instead of failing silently.
-   */
   const validateAPIKey = async (service: "acoustid" | "musicbrainz") => {
     setValidatingKeys((prev) => ({ ...prev, [service]: true }));
 
     try {
-      const isValid = await import("@/stores/settingsStore").then((module) =>
+      const isValid = await import("@/shared/stores/settingsStore").then((module) =>
         module.useSettingsStore.getState().validateAPIKey(service),
       );
 
       if (isValid) {
-        // Update the status in settings
         onSettingsChange({
           apiKeyStatus: {
             ...settings.apiKeyStatus,
@@ -176,7 +203,7 @@ export function SettingsPanel({
     >
       <div
         className={cn(
-          "panel w-full max-w-2xl max-h-[90vh]",
+          "panel w-full max-w-4xl max-h-[90vh]",
           "flex flex-col",
           "animate-scale-in",
         )}
@@ -250,24 +277,33 @@ export function SettingsPanel({
             <Database size={16} className="inline mr-2" />
             Database
           </button>
+          <button
+            onClick={() => setActiveTab("lut")}
+            className={cn(
+              "flex-1 px-4 py-3 text-sm font-medium transition-colors",
+              activeTab === "lut"
+                ? "text-accent-blue border-b-2 border-accent-blue"
+                : "text-neutral-400 hover:text-neutral-200",
+            )}
+          >
+            <Palette size={16} className="inline mr-2" />
+            Color Maps
+          </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 p-4 overflow-y-auto scrollbar-thin">
           {activeTab === "general" && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* Theme Selection */}
-              <div>
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Theme
-                </h4>
+              <CollapsibleSection title="Appearance" icon={<Palette size={16} />}>
                 <div className="grid grid-cols-2 gap-2">
                   {themes.map((theme) => (
                     <button
                       key={theme.value}
                       onClick={() => onSettingsChange({ theme: theme.value })}
                       className={cn(
-                        "flex items-center gap-2 p-3 rounded border",
+                        "flex items-center gap-2 p-2 rounded border text-sm",
                         "transition-colors",
                         settings.theme === theme.value
                           ? "border-accent-blue bg-accent-blue/10 text-accent-blue"
@@ -275,66 +311,136 @@ export function SettingsPanel({
                       )}
                     >
                       {theme.icon}
-                      <span className="text-sm">{theme.label}</span>
+                      <span>{theme.label}</span>
                     </button>
                   ))}
                 </div>
-              </div>
+              </CollapsibleSection>
 
-              {/* Seekbar Colour Overrides */}
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Seekbar Colours
-                </h4>
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 text-sm text-neutral-300">
-                    Played
-                    <input
-                      type="color"
-                      value={playedColour}
-                      onChange={(e) =>
-                        onSettingsChange({ seekPlayedColor: e.target.value })
-                      }
-                      className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-neutral-300">
-                    Unplayed
-                    <input
-                      type="color"
-                      value={unplayedColour}
-                      onChange={(e) =>
-                        onSettingsChange({ seekUnplayedColor: e.target.value })
-                      }
-                      className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-neutral-300">
-                    Playhead
-                    <input
-                      type="color"
-                      value={playheadColour}
-                      onChange={(e) =>
-                        onSettingsChange({ seekPlayheadColor: e.target.value })
-                      }
-                      className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
-                    />
-                  </label>
-                  <button
-                    onClick={() =>
-                      onSettingsChange({
-                        seekPlayedColor: "",
-                        seekUnplayedColor: "",
-                        seekPlayheadColor: "",
-                      })
-                    }
-                    className="px-2 py-1 text-xs text-accent-blue border border-accent-blue rounded hover:bg-accent-blue/10"
-                  >
-                    Reset
-                  </button>
-                </div>
-                {/* Playhead visibility toggle */}
-                <div className="mt-2">
+              {/* Seekbar Settings */}
+              <CollapsibleSection title="Seekbar" icon={<Play size={16} />}>
+                <div className="space-y-3">
+                  {/* Colors */}
+                  <div>
+                    <span className="block text-xs text-neutral-400 mb-2">Colors</span>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs text-neutral-300">
+                        Played
+                        <input
+                          type="color"
+                          value={playedColour}
+                          onChange={(e) =>
+                            onSettingsChange({ seekPlayedColor: e.target.value })
+                          }
+                          className="w-6 h-6 p-0 border-none bg-transparent cursor-pointer rounded"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-neutral-300">
+                        Unplayed
+                        <input
+                          type="color"
+                          value={unplayedColour}
+                          onChange={(e) =>
+                            onSettingsChange({ seekUnplayedColor: e.target.value })
+                          }
+                          className="w-6 h-6 p-0 border-none bg-transparent cursor-pointer rounded"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-neutral-300">
+                        Playhead
+                        <input
+                          type="color"
+                          value={playheadColour}
+                          onChange={(e) =>
+                            onSettingsChange({ seekPlayheadColor: e.target.value })
+                          }
+                          className="w-6 h-6 p-0 border-none bg-transparent cursor-pointer rounded"
+                        />
+                      </label>
+                      <button
+                        onClick={() =>
+                          onSettingsChange({
+                            seekPlayedColor: "",
+                            seekUnplayedColor: "",
+                            seekPlayheadColor: "",
+                          })
+                        }
+                        className="px-2 py-1 text-xs text-accent-blue border border-accent-blue rounded hover:bg-accent-blue/10"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visualisation */}
+                  <div>
+                    <span className="block text-xs text-neutral-400 mb-2">Visualisation</span>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { value: "live", label: "Live Audio" },
+                        { value: "frequency", label: "Animated Frequency Bars" },
+                        { value: "waveform", label: "Fixed Waveform" },
+                      ].map((m) => (
+                        <label
+                          key={m.value}
+                          className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
+                        >
+                          <input
+                            type="radio"
+                            name="seekbarMode"
+                            value={m.value}
+                            checked={settings.seekbarMode === m.value}
+                            onChange={(e) =>
+                              onSettingsChange({
+                                seekbarMode: e.target.value as any,
+                              })
+                            }
+                            className="text-accent-blue"
+                          />
+                          {m.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Controls */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="block text-xs text-neutral-400 mb-1">Significance</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={settings.seekbarSignificance}
+                        onChange={(e) =>
+                          onSettingsChange({
+                            seekbarSignificance: parseFloat(e.target.value),
+                          })
+                        }
+                        className="w-full"
+                      />
+                      <span className="text-xs text-neutral-500">{settings.seekbarSignificance}</span>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-neutral-400 mb-1">Amplitude Scale</span>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={20}
+                        step={0.1}
+                        value={settings.seekbarAmplitudeScale}
+                        onChange={(e) =>
+                          onSettingsChange({
+                            seekbarAmplitudeScale: parseFloat(e.target.value),
+                          })
+                        }
+                        className="w-full"
+                      />
+                      <span className="text-xs text-neutral-500">{settings.seekbarAmplitudeScale}</span>
+                    </div>
+                  </div>
+
                   <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
                     <input
                       type="checkbox"
@@ -349,262 +455,164 @@ export function SettingsPanel({
                     Show playhead (progress line)
                   </label>
                 </div>
-              </div>
+              </CollapsibleSection>
 
-              {/* Seekbar Visualisation Options */}
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Seekbar Visualisation
-                </h4>
-                {/* Mode selection */}
-                <div className="mb-3">
-                  <span className="block text-xs text-neutral-400 mb-1">
-                    Mode
-                  </span>
-                  <div className="flex flex-col gap-1">
-                    {[
-                      { value: "live", label: "Live" },
-                      { value: "frequency", label: "Animated Frequency Bars" },
-                      { value: "waveform", label: "Fixed Waveform" },
-                    ].map((m) => (
-                      <label
-                        key={m.value}
-                        className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name="seekbarMode"
-                          value={m.value}
-                          checked={settings.seekbarMode === m.value}
-                          onChange={(e) =>
-                            onSettingsChange({
-                              seekbarMode: e.target.value as any,
-                            })
-                          }
-                          className="text-accent-blue"
-                        />
-                        {m.label}
-                      </label>
-                    ))}
+              {/* Spectrogram Settings */}
+              <CollapsibleSection title="Spectrogram" icon={<BarChart size={16} />}>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="block text-xs text-neutral-400 mb-2">Amplitude Scale</span>
+                      <div className="space-y-1">
+                        {amplitudeScales.map((scale) => (
+                          <label
+                            key={scale.value}
+                            className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name="amplitudeScale"
+                              value={scale.value}
+                              checked={settings.amplitudeScale === scale.value}
+                              onChange={(e) =>
+                                onSettingsChange({
+                                  amplitudeScale: e.target.value as AmplitudeScale,
+                                })
+                              }
+                              className="text-accent-blue"
+                            />
+                            {scale.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-neutral-400 mb-2">Frequency Scale</span>
+                      <div className="space-y-1">
+                        {frequencyScales.map((scale) => (
+                          <label
+                            key={scale.value}
+                            className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name="frequencyScale"
+                              value={scale.value}
+                              checked={settings.frequencyScale === scale.value}
+                              onChange={(e) =>
+                                onSettingsChange({
+                                  frequencyScale: e.target.value as FrequencyScale,
+                                })
+                              }
+                              className="text-accent-blue"
+                            />
+                            {scale.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="block text-xs text-neutral-400 mb-2">Resolution</span>
+                      <div className="space-y-1">
+                        {resolutions.map((resolution) => (
+                          <label
+                            key={resolution.value}
+                            className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name="resolution"
+                              value={resolution.value}
+                              checked={settings.resolution === resolution.value}
+                              onChange={(e) =>
+                                onSettingsChange({
+                                  resolution: e.target.value as Resolution,
+                                })
+                              }
+                              className="text-accent-blue"
+                            />
+                            {resolution.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-neutral-400 mb-2">Refresh Rate</span>
+                      <div className="space-y-1">
+                        {refreshRates.map((rate) => (
+                          <label
+                            key={rate.value}
+                            className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name="refreshRate"
+                              value={rate.value}
+                              checked={settings.refreshRate === rate.value}
+                              onChange={(e) =>
+                                onSettingsChange({
+                                  refreshRate: parseInt(e.target.value) as RefreshRate,
+                                })
+                              }
+                              className="text-accent-blue"
+                            />
+                            {rate.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                {/* Significance level */}
-                <label className="flex items-center gap-2 text-sm text-neutral-300 mb-2">
-                  Significance
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    value={settings.seekbarSignificance}
-                    onChange={(e) =>
-                      onSettingsChange({
-                        seekbarSignificance: parseFloat(e.target.value),
-                      })
-                    }
-                    className="w-16 p-1 rounded bg-neutral-900 border border-neutral-700"
-                  />
-                </label>
-                {/* Amplitude scaling */}
-                <label className="flex items-center gap-2 text-sm text-neutral-300">
-                  Amplitude Scale
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={settings.seekbarAmplitudeScale}
-                    onChange={(e) =>
-                      onSettingsChange({
-                        seekbarAmplitudeScale: parseFloat(e.target.value),
-                      })
-                    }
-                    className="w-16 p-1 rounded bg-neutral-900 border border-neutral-700"
-                  />
-                </label>
-              </div>
+              </CollapsibleSection>
 
-              {/* Amplitude Scale */}
-              <div>
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Amplitude Scale
-                </h4>
+              {/* UI Settings */}
+              <CollapsibleSection title="Interface" icon={<Eye size={16} />}>
                 <div className="space-y-2">
-                  {amplitudeScales.map((scale) => (
-                    <label
-                      key={scale.value}
-                      className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="amplitudeScale"
-                        value={scale.value}
-                        checked={settings.amplitudeScale === scale.value}
-                        onChange={(e) =>
-                          onSettingsChange({
-                            amplitudeScale: e.target.value as AmplitudeScale,
-                          })
-                        }
-                        className="text-accent-blue"
-                      />
-                      <span className="text-sm text-neutral-300">
-                        {scale.label}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Frequency Scale */}
-              <div>
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Frequency Scale
-                </h4>
-                <div className="space-y-2">
-                  {frequencyScales.map((scale) => (
-                    <label
-                      key={scale.value}
-                      className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="frequencyScale"
-                        value={scale.value}
-                        checked={settings.frequencyScale === scale.value}
-                        onChange={(e) =>
-                          onSettingsChange({
-                            frequencyScale: e.target.value as FrequencyScale,
-                          })
-                        }
-                        className="text-accent-blue"
-                      />
-                      <span className="text-sm text-neutral-300">
-                        {scale.label}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Resolution */}
-              <div>
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Resolution
-                </h4>
-                <div className="space-y-2">
-                  {resolutions.map((resolution) => (
-                    <label
-                      key={resolution.value}
-                      className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="resolution"
-                        value={resolution.value}
-                        checked={settings.resolution === resolution.value}
-                        onChange={(e) =>
-                          onSettingsChange({
-                            resolution: e.target.value as Resolution,
-                          })
-                        }
-                        className="text-accent-blue"
-                      />
-                      <span className="text-sm text-neutral-300">
-                        {resolution.label}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Refresh Rate */}
-              <div>
-                <h4 className="text-sm font-medium text-neutral-100 mb-3">
-                  Refresh Rate
-                </h4>
-                <div className="space-y-2">
-                  {refreshRates.map((rate) => (
-                    <label
-                      key={rate.value}
-                      className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="refreshRate"
-                        value={rate.value}
-                        checked={settings.refreshRate === rate.value}
-                        onChange={(e) =>
-                          onSettingsChange({
-                            refreshRate: parseInt(
-                              e.target.value,
-                            ) as RefreshRate,
-                          })
-                        }
-                        className="text-accent-blue"
-                      />
-                      <span className="text-sm text-neutral-300">
-                        {rate.label}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Show Legend Toggle */}
-              <div>
-                <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.showLegend}
-                    onChange={(e) =>
-                      onSettingsChange({ showLegend: e.target.checked })
-                    }
-                    className="text-accent-blue"
-                  />
-                  <span className="text-sm text-neutral-300">Show Legend</span>
-                </label>
-              </div>
-
-              {/* Toast Notifications Toggle */}
-              <div>
-                <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.enableToastNotifications}
-                    onChange={(e) => {
-                      const enabled = e.target.checked;
-                      onSettingsChange({ enableToastNotifications: enabled });
-                      if (enabled) {
-                        directToast.success("Toast notifications enabled");
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.showLegend}
+                      onChange={(e) =>
+                        onSettingsChange({ showLegend: e.target.checked })
                       }
-                    }}
-                    className="text-accent-blue"
-                  />
-                  <div>
-                    <span className="text-sm text-neutral-300">
-                      Toast Notifications
-                    </span>
-                    <p className="text-xs text-neutral-500">
-                      Show success and error notifications
-                    </p>
-                  </div>
-                </label>
-              </div>
+                      className="text-accent-blue"
+                    />
+                    Show Legend
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.enableToastNotifications}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        onSettingsChange({ enableToastNotifications: enabled });
+                        if (enabled) {
+                          directToast.success("Toast notifications enabled");
+                        }
+                      }}
+                      className="text-accent-blue"
+                    />
+                    <div>
+                      <span>Toast Notifications</span>
+                      <p className="text-xs text-neutral-500">Show success and error notifications</p>
+                    </div>
+                  </label>
+                </div>
+              </CollapsibleSection>
             </div>
           )}
 
           {activeTab === "artwork" && (
-            <div className="space-y-6">
-              <div className="bg-neutral-800/50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-neutral-100 mb-2">
-                  Artwork Sources
-                </h4>
-                <p className="text-xs text-neutral-400 mb-4">
-                  Configure how album artwork is retrieved. Sources are tried in
-                  order of priority.
+            <div className="space-y-4">
+              <CollapsibleSection title="Artwork Sources" icon={<Image size={16} />}>
+                <p className="text-xs text-neutral-400 mb-3">
+                  Configure how album artwork is retrieved. Sources are tried in order of priority.
                 </p>
-
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.enableExternalArtwork}
@@ -616,16 +624,12 @@ export function SettingsPanel({
                       className="text-accent-blue"
                     />
                     <div>
-                      <span className="text-sm text-neutral-300">
-                        Enable External Artwork
-                      </span>
-                      <p className="text-xs text-neutral-500">
-                        Allow fetching artwork from online sources
-                      </p>
+                      <span>Enable External Artwork</span>
+                      <p className="text-xs text-neutral-500">Allow fetching artwork from online sources</p>
                     </div>
                   </label>
 
-                  <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.enableMusicBrainz}
@@ -638,16 +642,12 @@ export function SettingsPanel({
                       className="text-accent-blue"
                     />
                     <div>
-                      <span className="text-sm text-neutral-300">
-                        MusicBrainz Lookup
-                      </span>
-                      <p className="text-xs text-neutral-500">
-                        Search MusicBrainz database for album artwork
-                      </p>
+                      <span>MusicBrainz Lookup</span>
+                      <p className="text-xs text-neutral-500">Search MusicBrainz database for album artwork</p>
                     </div>
                   </label>
 
-                  <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.enableAcoustID}
@@ -658,17 +658,12 @@ export function SettingsPanel({
                       className="text-accent-blue"
                     />
                     <div>
-                      <span className="text-sm text-neutral-300">
-                        AcoustID Fingerprinting
-                      </span>
-                      <p className="text-xs text-neutral-500">
-                        Use audio fingerprinting for identification (requires
-                        API key)
-                      </p>
+                      <span>AcoustID Fingerprinting</span>
+                      <p className="text-xs text-neutral-500">Use audio fingerprinting for identification (requires API key)</p>
                     </div>
                   </label>
 
-                  <label className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer">
+                  <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.enablePlaceholderArtwork}
@@ -680,32 +675,22 @@ export function SettingsPanel({
                       className="text-accent-blue"
                     />
                     <div>
-                      <span className="text-sm text-neutral-300">
-                        Generate Placeholder Artwork
-                      </span>
-                      <p className="text-xs text-neutral-500">
-                        Create unique placeholder images when no artwork is
-                        found
-                      </p>
+                      <span>Generate Placeholder Artwork</span>
+                      <p className="text-xs text-neutral-500">Create unique placeholder images when no artwork is found</p>
                     </div>
                   </label>
                 </div>
-              </div>
+              </CollapsibleSection>
             </div>
           )}
 
           {activeTab === "api" && (
-            <div className="space-y-6">
-              <div className="bg-neutral-800/50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-neutral-100 mb-2">
-                  API Keys
-                </h4>
-                <p className="text-xs text-neutral-400 mb-4">
-                  Configure API keys for external services. Keys are stored
-                  locally and never shared.
+            <div className="space-y-4">
+              <CollapsibleSection title="API Keys" icon={<Key size={16} />}>
+                <p className="text-xs text-neutral-400 mb-3">
+                  Configure API keys for external services. Keys are stored locally and never shared.
                 </p>
-
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {/* AcoustID API Key */}
                   <div>
                     <div className="flex items-center gap-2 mb-2">
@@ -788,49 +773,30 @@ export function SettingsPanel({
                       </button>
                     </div>
                     <p className="text-xs text-neutral-500 mt-1">
-                      MusicBrainz is free and works without an API key, but you
-                      can register for higher rate limits
+                      MusicBrainz is free and works without an API key, but you can register for higher rate limits
                     </p>
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
             </div>
           )}
 
           {activeTab === "stats" && <StatisticsPanel />}
 
           {activeTab === "database" && <MetadataStorePanel />}
+
+          {activeTab === "lut" && <LUTSettingsPanel />}
         </div>
 
         {/* Footer */}
         <div className="p-4 border-t border-neutral-800">
           <button
-            onClick={() => {
-              // Reset to defaults
-              onSettingsChange({
-                theme: "dark",
-                amplitudeScale: "db",
-                frequencyScale: "logarithmic",
-                resolution: "medium",
-                refreshRate: 60,
-                colormap: "viridis",
-                showLegend: true,
-                enableToastNotifications: false,
-                seekPlayedColor: "",
-                seekUnplayedColor: "",
-                seekbarMode: "waveform",
-                seekbarSignificance: 0.5,
-                seekbarAmplitudeScale: 1,
-                enableExternalArtwork: true,
-                enableAcoustID: true,
-                enableMusicBrainz: true,
-                enablePlaceholderArtwork: true,
-                apiKeys: {},
-                apiKeyStatus: {
-                  acoustid: { valid: false },
-                  musicbrainz: { valid: false },
-                },
-              });
+            onClick={async () => {
+              // Use the store's reset function
+              const { useSettingsStore } = await import("@/shared/stores/settingsStore");
+              useSettingsStore.getState().resetToDefaults();
+              // Also update the local state
+              onSettingsChange({});
             }}
             className="btn-secondary w-full"
           >

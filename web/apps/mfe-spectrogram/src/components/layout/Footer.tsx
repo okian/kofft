@@ -578,9 +578,11 @@ export const Footer: React.FC = () => {
               }
             }
           }}
-          maxBarHeight={isMobile ? 16 : 24}
+          maxBarHeight={isMobile ? 32 : 48}
           disabled={false} // Always enable seekbar for testing
           bufferedTime={0} // No buffered visualization for waveform seekbar
+          getTimeData={audioFile.getTimeData}
+          getFrequencyData={audioFile.getFrequencyData}
         />
       </div>
     </footer>
