@@ -3,6 +3,7 @@ import { useUIStore } from "@/shared/stores/uiStore";
 import { useAudioStore } from "@/shared/stores/audioStore";
 import { useAudioFile } from "@/shared/hooks/useAudioFile";
 import { conditionalToast } from "@/shared/utils/toast";
+import { takeSnapshot } from "@/shared/utils/snapshot";
 
 /**
  * Number of seconds to seek when using Arrow Left/Right.
@@ -108,10 +109,11 @@ export const useKeyboardShortcuts = () => {
   /**
    * Respond to global key presses and trigger matching actions while
    * ignoring interactive form elements. Modifier keys are validated for
-   * each shortcut to avoid accidental activation.
+   * each shortcut to avoid accidental activation. The handler is asynchronous
+   * so it can await operations like canvas snapshots.
    */
   const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
+    async (event: KeyboardEvent) => {
       // Don't handle shortcuts if user is typing in an input field
       if (
         event.target instanceof HTMLInputElement ||
@@ -262,8 +264,12 @@ export const useKeyboardShortcuts = () => {
       // Ctrl/Cmd + Shift + S - Snapshot
       if (key.toLowerCase() === "s" && (ctrlKey || metaKey) && shiftKey) {
         event.preventDefault();
-        // TODO: Implement snapshot functionality
-        conditionalToast.success("Snapshot taken!");
+        const ok = await takeSnapshot();
+        if (ok) {
+          conditionalToast.success("Snapshot saved");
+        } else {
+          conditionalToast.error("Snapshot failed");
+        }
         return;
       }
 
@@ -385,10 +391,14 @@ export const useKeyboardShortcuts = () => {
     togglePlaylistPanel: () => setPlaylistPanelOpen(!playlistPanelOpen),
     /** Open the settings panel. */
     openSettings: () => setSettingsPanelOpen(true),
-    /** Placeholder snapshot handler until implemented. */
-    takeSnapshot: () => {
-      // TODO: Implement snapshot functionality
-      conditionalToast.success("Snapshot taken!");
+    /** Capture the current spectrogram canvas and notify the user. */
+    takeSnapshot: async () => {
+      const ok = await takeSnapshot();
+      if (ok) {
+        conditionalToast.success("Snapshot saved");
+      } else {
+        conditionalToast.error("Snapshot failed");
+      }
     },
   };
 };
