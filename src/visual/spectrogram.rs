@@ -11,6 +11,10 @@ use crate::fft::{FftError, ScalarFftImpl};
 use crate::window::hann;
 use crate::Complex32;
 
+/// Minimal positive value used to prevent division by zero and logarithm
+/// of zero when converting magnitudes to decibel-based scales.
+const DB_EPSILON: f32 = 1e-10;
+
 /// Supported colour palettes for spectrogram rendering.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Colormap {
@@ -103,9 +107,14 @@ pub fn magnitude_to_db(mag: f32, max_mag: f32, floor_db: f32) -> f32 {
 
 /// Convert a magnitude to a 0..1 range using the provided dynamic range in dB.
 ///
-/// This is equivalent to `((db + dynamic_range) / dynamic_range)`.
+/// Returns `0.0` if `max_mag` is too small to avoid dividing by zero. This is
+/// equivalent to `((db + dynamic_range) / dynamic_range)` for valid inputs.
 pub fn db_scale(mag: f32, max_mag: f32, dynamic_range: f32) -> f32 {
-    let db = 20.0 * (mag / max_mag).max(1e-10).log10();
+    if max_mag <= DB_EPSILON {
+        // Avoid division by numbers too close to zero which would yield NaNs.
+        return 0.0;
+    }
+    let db = 20.0 * (mag / max_mag).max(DB_EPSILON).log10();
     ((db + dynamic_range) / dynamic_range).clamp(0.0, 1.0)
 }
 

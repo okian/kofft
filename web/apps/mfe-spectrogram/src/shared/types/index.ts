@@ -137,6 +137,12 @@ export interface SpectrogramSettings {
     | "japanese-b-dark"
     | "bauhaus-light"
     | "bauhaus-dark";
+  /**
+   * Global animation mood. "calm" keeps motion subtle while
+   * "geometric" emphasises snappy linear movement. Themes select a
+   * style automatically to stay consistent with their visual language.
+   */
+  animationStyle: AnimationStyle;
   amplitudeScale: "linear" | "logarithmic" | "db";
   frequencyScale: "linear" | "logarithmic";
   resolution: "low" | "medium" | "high";
@@ -353,6 +359,12 @@ export type Theme =
   | "japanese-b-dark"
   | "bauhaus-light"
   | "bauhaus-dark";
+/**
+ * Coarse animation strategy toggled by the active theme. "calm" maps to
+ * gentle, low-distraction transitions while "geometric" enables abrupt,
+ * linear movements reminiscent of Bauhaus design.
+ */
+export type AnimationStyle = "calm" | "geometric";
 export type AmplitudeScale = "linear" | "logarithmic" | "db";
 export type FrequencyScale = "linear" | "logarithmic";
 export type Resolution = "low" | "medium" | "high";

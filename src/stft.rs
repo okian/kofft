@@ -66,6 +66,13 @@ compile_error!("stft requires `wasm` and `simd` features to be enabled");
 extern crate alloc;
 use crate::fft::{Complex32, FftError, FftImpl};
 use alloc::vec;
+#[cfg(feature = "parallel")]
+use core::mem::take; // for efficiently resetting buffers without reallocations
+
+/// Minimum normalization denominator to avoid division by zero and unstable
+/// amplification when overlap-adding STFT frames. Any accumulated window power
+/// below this threshold is treated as silence.
+const NORM_EPSILON: f32 = 1e-8;
 
 /// Compute the STFT of a real-valued signal.
 ///
@@ -132,9 +139,8 @@ pub fn istft<Fft: FftImpl<f32>>(
         return Err(FftError::MismatchedLengths);
     }
     let win_len = window.len();
-    for x in scratch.iter_mut() {
-        *x = 0.0;
-    }
+    // Clear normalization buffer before accumulating window power.
+    scratch.fill(0.0);
     // Overlap-add
     for (frame_idx, frame) in frames.iter_mut().enumerate() {
         let start = frame_idx * hop_size;
@@ -151,7 +157,7 @@ pub fn istft<Fft: FftImpl<f32>>(
     }
     // Normalize by window sum
     for i in 0..output.len() {
-        if scratch[i] > 1e-8 {
+        if scratch[i] > NORM_EPSILON {
             output[i] /= scratch[i];
         }
     }
@@ -330,11 +336,22 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
                 let start = frame_idx * hop_size;
                 time_buf.copy_from_slice(frame);
                 fft.ifft(time_buf)?;
+                // `acc` and `norm` are emptied by `take` at the end of the previous
+                // iteration. Resize them here to restore capacity without reallocating.
+                if acc.len() < win_len {
+                    acc.resize(win_len, 0.0);
+                    norm.resize(win_len, 0.0);
+                }
                 for i in 0..win_len {
                     acc[i] = time_buf[i].re * window[i];
                     norm[i] = window[i] * window[i];
                 }
-                Ok((start, take(acc), take(norm)))
+                // Move the accumulated data out for this frame while leaving the
+                // buffers empty for reuse in the next iteration.
+                let acc_frame = take(acc);
+                let norm_frame = take(norm);
+                Ok((start, acc_frame, norm_frame))
+
             },
         )
         .collect();
@@ -351,7 +368,7 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
         }
     }
     for i in 0..output.len() {
-        if norm[i] > 1e-8 {
+        if norm[i] > NORM_EPSILON {
             output[i] /= norm[i];
         } else {
             output[i] = 0.0;
@@ -498,7 +515,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         let out_end = self.out_pos + self.hop;
         // Normalize output before returning
         for i in out_start..out_end {
-            if self.norm_buf[i] > 1e-8 {
+            if self.norm_buf[i] > NORM_EPSILON {
                 self.buffer[i] /= self.norm_buf[i];
             }
             self.norm_buf[i] = 0.0;
@@ -532,7 +549,7 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
             return &[];
         }
         for i in out_start..out_end {
-            if self.norm_buf[i] > 1e-8 {
+            if self.norm_buf[i] > NORM_EPSILON {
                 self.buffer[i] /= self.norm_buf[i];
             }
             self.norm_buf[i] = 0.0;
@@ -576,7 +593,7 @@ mod tests {
             pos += hop;
         }
         for i in 0..n {
-            if norm[i] > 1e-8 {
+            if norm[i] > NORM_EPSILON {
                 output[i] /= norm[i];
             }
         }
@@ -856,6 +873,24 @@ mod edge_case_tests {
         output.truncate(signal.len());
         assert!(output.is_empty());
         assert!(tail.is_empty());
+    }
+
+    #[test]
+    fn test_tiny_window_threshold() {
+        let signal = [1.0f32, 2.0];
+        // Extremely small non-zero window ensures accumulated power stays below NORM_EPSILON
+        let window = [1e-9, 1e-9];
+        let required = signal.len().div_ceil(1);
+        let mut frames = vec![vec![Complex32::new(0.0, 0.0); window.len()]; required];
+        let fft = ScalarFftImpl::<f32>::default();
+        stft(&signal, &window, 1, &mut frames, &fft).unwrap();
+        let mut output = vec![0.0f32; signal.len()];
+        let mut scratch = vec![0.0f32; output.len()];
+        istft(&mut frames, &window, 1, &mut output, &mut scratch, &fft).unwrap();
+        // With such a tiny window, normalization should treat the output as silence
+        assert!(output
+            .iter()
+            .all(|x| x.is_finite() && x.abs() <= NORM_EPSILON));
     }
 }
 

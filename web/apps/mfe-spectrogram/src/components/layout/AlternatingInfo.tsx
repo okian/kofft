@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useAnimationPreset } from "@/shared/animations";
 import { cn } from "@/shared/utils/cn";
 import { MarqueeText } from "@/features/playback/MarqueeText";
 
@@ -31,16 +32,16 @@ export const AlternatingInfo: React.FC<AlternatingInfoProps> = ({
   const content = showArtist ? artist : album;
   const fallback = showArtist ? "Unknown Artist" : "Unknown Album";
   const displayText = content || fallback;
+  // Selects a fade or slide preset based on active theme.
+  const animation = useAnimationPreset("fade");
 
   return (
     <div className="relative min-w-0 overflow-hidden">
       <AnimatePresence mode="wait">
         <motion.div
           key={showArtist ? "artist" : "album"}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.5 }}
+          {...animation}
+          data-testid="alternating-info-animation"
         >
           <MarqueeText
             text={displayText}
