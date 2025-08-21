@@ -14,8 +14,10 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@shared/*": ["../../src/shared/*"]
+      "@/shared/utils/*": ["../../src/shared/utils/*"],
+      "@/shared/types": ["../../src/shared/types/index.ts"],
+      "@/shared/types/*": ["../../src/shared/types/*"],
+      "@/*": ["src/*"]
     }
   },
   "include": ["src", "../src", "../../src"]

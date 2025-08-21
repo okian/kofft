@@ -22,7 +22,7 @@ vi.mock("@/shared/hooks/useMicrophone", () => ({
 }));
 
 // Mock unified keyboard shortcut hook to prevent real listeners during tests
-vi.mock("@shared/hooks/useKeyboardShortcuts", () => ({
+vi.mock("@/shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: () => ({}),
 }));
 

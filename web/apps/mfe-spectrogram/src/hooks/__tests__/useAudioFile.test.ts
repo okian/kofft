@@ -32,16 +32,16 @@ const { extractMetadata, generateAmplitudeEnvelope } = vi.hoisted(() => {
   }
 })
 
-vi.mock('@/utils/wasm', () => ({
+vi.mock('@/shared/utils/wasm', () => ({
   extractMetadata,
   generateAmplitudeEnvelope,
 }))
 
-vi.mock('@/utils/artwork', () => ({
+vi.mock('@/shared/utils/artwork', () => ({
   extractArtwork: vi.fn().mockResolvedValue({ artwork: null })
 }))
 
-vi.mock('@/utils/audioPlayer', () => ({
+vi.mock('@/shared/utils/audioPlayer', () => ({
   audioPlayer: {
     subscribe: vi.fn().mockReturnValue(() => {}),
     initAudioContext: vi.fn().mockResolvedValue({
@@ -60,7 +60,7 @@ vi.mock('@/utils/audioPlayer', () => ({
   }
 }))
 
-vi.mock('@/utils/toast', () => ({
+vi.mock('@/shared/utils/toast', () => ({
   conditionalToast: { success: vi.fn(), error: vi.fn() }
 }))
 

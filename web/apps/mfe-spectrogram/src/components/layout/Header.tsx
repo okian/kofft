@@ -5,7 +5,7 @@ import { useAudioFile } from "@/shared/hooks/useAudioFile";
 import { useMicrophone } from "@/shared/hooks/useMicrophone";
 import { useScreenSize } from "@/shared/hooks/useScreenSize";
 import { useSettingsStore } from "@/shared/stores/settingsStore";
-import { useKeyboardShortcuts } from "@shared/hooks/useKeyboardShortcuts";
+import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
 import { takeSnapshot as captureSnapshot } from "@/shared/utils/snapshot";
 import { conditionalToast } from "@/shared/utils/toast";
 import { SPACING, TYPOGRAPHY, GRID } from "@/shared/layout";
@@ -20,7 +20,7 @@ import {
   List,
   Menu,
 } from "lucide-react";
-import { cn } from "@/utils/cn";
+import { cn } from "@/shared/utils/cn";
 
 /** Height utility applied to the header on mobile devices. */
 const HEIGHT_MOBILE = "h-14" as const;

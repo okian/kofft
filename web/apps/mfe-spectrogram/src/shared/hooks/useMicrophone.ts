@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
-import { audioPlayer } from '@/utils/audioPlayer'
-import { conditionalToast } from '@/utils/toast'
+import { audioPlayer } from '@/shared/utils/audioPlayer'
+import { conditionalToast } from '@/shared/utils/toast'
 
 export const useMicrophone = () => {
   const [isInitialized, setIsInitialized] = useState(false)

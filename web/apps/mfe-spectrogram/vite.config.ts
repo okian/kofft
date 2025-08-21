@@ -19,7 +19,12 @@ export default defineConfig({
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       "@wasm": fileURLToPath(new URL("./wasm", import.meta.url)),
-      "@shared": fileURLToPath(new URL("../../src/shared", import.meta.url)),
+      "@/shared/utils": fileURLToPath(
+        new URL("../../src/shared/utils", import.meta.url),
+      ),
+      "@/shared/types": fileURLToPath(
+        new URL("../../src/shared/types", import.meta.url),
+      ),
     },
   },
   plugins: [

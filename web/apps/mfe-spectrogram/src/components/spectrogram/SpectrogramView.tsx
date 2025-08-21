@@ -7,7 +7,7 @@ import { useScreenSize } from '@/hooks/useScreenSize'
 import { SpectrogramCanvas, SpectrogramCanvasRef } from './SpectrogramCanvas'
 import { SpectrogramLegend } from './SpectrogramLegend'
 import { SpectrogramTooltip } from './SpectrogramTooltip'
-import { cn } from '@/utils/cn'
+import { cn } from '@/shared/utils/cn'
 
 export const SpectrogramView: React.FC = () => {
   const canvasRef = useRef<SpectrogramCanvasRef>(null)

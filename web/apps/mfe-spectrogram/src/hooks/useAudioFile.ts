@@ -1,13 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAudioStore } from '@/stores/audioStore'
-import { audioPlayer, type AudioPlayerState } from '@/utils/audioPlayer'
+import { audioPlayer, type AudioPlayerState } from '@/shared/utils/audioPlayer'
 import { AudioTrack, AudioMetadata, ArtworkSource } from '@/types'
-import { extractMetadata, generateAmplitudeEnvelope } from '@/utils/wasm'
-import { extractArtwork } from '@/utils/artwork'
-import { conditionalToast } from '@/utils/toast'
-import { metadataStore } from '@/utils/metadataStore'
-import { optimisticMetadataStore, computeOptimisticKey } from '@/utils/optimisticMetadataStore'
-import { metadataVerificationWorker } from '@/utils/metadataVerificationWorker'
+import { extractMetadata, generateAmplitudeEnvelope } from '@/shared/utils/wasm'
+import { extractArtwork } from '@/shared/utils/artwork'
+import { conditionalToast } from '@/shared/utils/toast'
+import { metadataStore } from '@/shared/utils/metadataStore'
+import { optimisticMetadataStore, computeOptimisticKey } from '@/shared/utils/optimisticMetadataStore'
+import { metadataVerificationWorker } from '@/shared/utils/metadataVerificationWorker'
 
 // Utility to compute SHA-256 hash for a file buffer
 const hashArrayBuffer = async (buffer: ArrayBuffer): Promise<string> => {

@@ -50,7 +50,7 @@ vi.mock("@/shared/stores/settingsStore", () => ({
 }));
 
 // Mock unified keyboard shortcut hook to prevent real listeners during tests
-vi.mock("@shared/hooks/useKeyboardShortcuts", () => ({
+vi.mock("@/shared/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
@@ -58,13 +58,13 @@ vi.mock("../../hooks/useScreenSize", () => ({
   useScreenSize: () => ({ isMobile: false, isTablet: false }),
 }));
 
-vi.mock("../../utils/wasm", () => ({
+vi.mock("@/shared/utils/wasm", () => ({
   initWASM: vi.fn(async () => ({})),
   extractMetadata: vi.fn().mockResolvedValue({}),
   generateAmplitudeEnvelope: vi.fn().mockResolvedValue(new Float32Array()),
 }));
 
-vi.mock("../../utils/audioPlayer", () => ({
+vi.mock("@/shared/utils/audioPlayer", () => ({
   audioPlayer: {
     cleanup: vi.fn(),
     subscribe: vi.fn(() => () => {}),
@@ -73,7 +73,7 @@ vi.mock("../../utils/audioPlayer", () => ({
 }));
 
 import App from "../../App";
-import { audioPlayer } from "../../utils/audioPlayer";
+import { audioPlayer } from "@/shared/utils/audioPlayer";
 
 describe("App cleanup", () => {
   it("cleans up audio resources on unmount", () => {

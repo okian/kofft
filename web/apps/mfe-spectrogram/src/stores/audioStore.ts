@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { AudioState, AudioTrack, LoopMode } from "@/types";
-import { playbackEngine } from "@/utils/PlaybackEngine";
+import { playbackEngine } from "@/shared/utils/PlaybackEngine";
 // The playback engine registers callbacks with the store upon import.
 // We reference it to satisfy TypeScript/ESLint that the import is
 // intentional even though we don't call methods directly here.
 void playbackEngine;
-import { audioPlayer } from "@/utils/audioPlayer";
-import { revokeTrackUrl } from "@/utils/audio";
+import { audioPlayer } from "@/shared/utils/audioPlayer";
+import { revokeTrackUrl } from "@/shared/utils/audio";
 
 // Persistent storage key. Using a constant avoids magic strings and
 // keeps the key consistent across the application and tests.

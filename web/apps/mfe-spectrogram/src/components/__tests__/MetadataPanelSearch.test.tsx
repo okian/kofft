@@ -5,7 +5,7 @@ import { PlaylistPanel } from '../layout/PlaylistPanel'
 import { AudioTrack } from '@/types'
 import { usePlaylistSearchStore } from '@/stores/playlistSearchStore'
 
-vi.mock('@/utils/wasm', () => ({}), { virtual: true })
+vi.mock('@/shared/utils/wasm', () => ({}), { virtual: true })
 vi.mock('@/hooks/useAudioFile', () => ({
   useAudioFile: () => ({
     loadAudioFiles: vi.fn(),

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAudioStore } from "../audioStore";
 import type { AudioTrack } from "@/types";
-import { revokeTrackUrl } from "@/utils/audio";
+import { revokeTrackUrl } from "@/shared/utils/audio";
 
-vi.mock("@/utils/audio", () => ({
+vi.mock("@/shared/utils/audio", () => ({
   revokeTrackUrl: vi.fn(),
 }));
 
