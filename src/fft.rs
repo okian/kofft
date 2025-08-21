@@ -207,7 +207,9 @@ pub fn __test_parallel_fft_threshold() -> usize {
 ///
 /// Passing `0` reverts to the built-in heuristic.
 pub fn set_parallel_fft_threshold(threshold: usize) {
-    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(threshold, Ordering::Relaxed);
+    // SeqCst guarantees that subsequent FFT computations in other threads
+    // observe the new threshold immediately.
+    PARALLEL_FFT_THRESHOLD_OVERRIDE.store(threshold, Ordering::SeqCst);
 }
 
 #[cfg(feature = "parallel")]
@@ -215,7 +217,8 @@ pub fn set_parallel_fft_threshold(threshold: usize) {
 ///
 /// Passing `0` reverts to the built-in default or environment variable.
 pub fn set_parallel_fft_l1_cache(bytes: usize) {
-    PARALLEL_FFT_CACHE_BYTES_OVERRIDE.store(bytes, Ordering::Relaxed);
+    // Use SeqCst to publish the override to all threads before FFT planning.
+    PARALLEL_FFT_CACHE_BYTES_OVERRIDE.store(bytes, Ordering::SeqCst);
 }
 
 #[cfg(feature = "parallel")]
@@ -224,27 +227,32 @@ pub fn set_parallel_fft_l1_cache(bytes: usize) {
 ///
 /// Passing `0` reverts to the built-in default or environment variable.
 pub fn set_parallel_fft_per_core_work(points: usize) {
-    PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.store(points, Ordering::Relaxed);
+    // SeqCst ensures cross-thread visibility for the per-core work estimate.
+    PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.store(points, Ordering::SeqCst);
 }
 
 #[cfg(feature = "parallel")]
 /// Override the number of threads used for parallel FFTs. `0` uses the default
 /// heuristic or environment variable.
 pub fn set_parallel_fft_threads(threads: usize) {
-    PARALLEL_FFT_THREAD_OVERRIDE.store(threads, Ordering::Relaxed);
+    // SeqCst so that newly created thread pools see the configured thread count.
+    PARALLEL_FFT_THREAD_OVERRIDE.store(threads, Ordering::SeqCst);
 }
 
 #[cfg(feature = "parallel")]
 /// Override the block size used when splitting work among threads. `0`
 /// reverts to the built-in heuristic or environment variable.
 pub fn set_parallel_fft_block_size(size: usize) {
-    PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.store(size, Ordering::Relaxed);
+    // SeqCst to make block size overrides visible before scheduling work.
+    PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.store(size, Ordering::SeqCst);
 }
 
 #[cfg(feature = "parallel")]
 /// Return the number of threads to use for parallel FFT execution.
 fn parallel_fft_threads() -> usize {
-    let override_thr = PARALLEL_FFT_THREAD_OVERRIDE.load(Ordering::Relaxed);
+    // SeqCst load pairs with the store in `set_parallel_fft_threads` to ensure
+    // the selected thread count is globally consistent.
+    let override_thr = PARALLEL_FFT_THREAD_OVERRIDE.load(Ordering::SeqCst);
     if override_thr != 0 {
         return override_thr;
     }
@@ -261,7 +269,8 @@ fn parallel_fft_threads() -> usize {
 #[cfg(feature = "parallel")]
 /// Return the block size used when distributing work across threads.
 fn parallel_fft_block_size() -> usize {
-    let override_size = PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.load(Ordering::Relaxed);
+    // SeqCst load to see the most recent block size override.
+    let override_size = PARALLEL_FFT_BLOCK_SIZE_OVERRIDE.load(Ordering::SeqCst);
     if override_size != 0 {
         return override_size;
     }
@@ -294,7 +303,8 @@ pub(crate) fn rayon_pool() -> &'static ThreadPool {
 /// Decide if an FFT of length `n` should run in parallel given a baseline
 /// `base_threshold`.
 fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
-    let override_thr = PARALLEL_FFT_THRESHOLD_OVERRIDE.load(Ordering::Relaxed);
+    // Load the override with SeqCst to ensure global visibility.
+    let override_thr = PARALLEL_FFT_THRESHOLD_OVERRIDE.load(Ordering::SeqCst);
     let threshold = if override_thr != 0 {
         override_thr
     } else {
@@ -306,7 +316,8 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     #[cfg(feature = "std")]
     {
         let cache_bytes = {
-            let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+            // SeqCst load pairs with `set_parallel_fft_l1_cache`.
+            let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::SeqCst);
             if override_bytes != 0 {
                 override_bytes
             } else {
@@ -314,7 +325,8 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
             }
         };
         let per_core_work = {
-            let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+            // SeqCst load pairs with `set_parallel_fft_per_core_work`.
+            let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::SeqCst);
             if override_work != 0 {
                 override_work
             } else {
@@ -333,7 +345,8 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
     #[cfg(not(feature = "std"))]
     {
         let cache_bytes = {
-            let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::Relaxed);
+            // SeqCst load pairs with `set_parallel_fft_l1_cache` in no-std builds.
+            let override_bytes = PARALLEL_FFT_CACHE_BYTES_OVERRIDE.load(Ordering::SeqCst);
             if override_bytes != 0 {
                 override_bytes
             } else {
@@ -341,7 +354,8 @@ fn should_parallelize_fft(n: usize, base_threshold: usize) -> bool {
             }
         };
         let per_core_work = {
-            let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::Relaxed);
+            // SeqCst load pairs with `set_parallel_fft_per_core_work` in no-std builds.
+            let override_work = PARALLEL_FFT_PER_CORE_WORK_OVERRIDE.load(Ordering::SeqCst);
             if override_work != 0 {
                 override_work
             } else {
