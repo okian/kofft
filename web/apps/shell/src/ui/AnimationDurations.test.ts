@@ -3,6 +3,7 @@ import {
   FADE_DURATION_MS,
   SLIDE_DURATION_MS,
   THEME_ANIMATION_MS,
+  THEME_ANIMATION_CSS_VAR,
 } from "./AnimationDurations";
 
 /** Ensure animation duration constants remain stable for predictable motion. */
@@ -17,5 +18,9 @@ describe("Animation duration constants", () => {
 
   it("exposes the theme transition duration", () => {
     expect(THEME_ANIMATION_MS).toBe(300);
+  });
+
+  it("exposes the theme animation CSS variable", () => {
+    expect(THEME_ANIMATION_CSS_VAR).toBe("--anim-duration");
   });
 });

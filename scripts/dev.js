@@ -13,6 +13,8 @@ const WASM_CRATE_DIR = require("path").join(
 );
 // Directory containing the React workspace.
 const WEB_DIR = require("path").join(__dirname, "..", "web");
+// Shared constants for development tooling.
+const { DEV_SERVER_PORT } = require("./e2e-helper");
 // Synchronous process execution to invoke shell commands deterministically.
 const { execSync } = require("child_process");
 
@@ -67,7 +69,13 @@ function buildWeb() {
  * Serve the compiled web assets for local development.
  */
 function serve() {
-  run(`npx --yes serve ${require("path").join(WEB_DIR, "dist")}`);
+  // Explicitly bind to the development port so automated tests know where to connect.
+  run(
+    `npx --yes serve -l ${DEV_SERVER_PORT} ${require("path").join(
+      WEB_DIR,
+      "dist",
+    )}`,
+  );
 }
 
 /**
