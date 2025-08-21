@@ -1,54 +1,64 @@
-import React, { useState } from 'react'
-import { BUILTIN_LUTS, createCustomLUT, mapValueToColor } from '@/shared/utils/lut'
-import { LUT } from '@/shared/types'
+import React, { useState } from "react";
+import {
+  BUILTIN_LUTS,
+  createCustomLUT,
+  mapValueToColor,
+} from "@/shared/utils/lut";
+import { LUT } from "@/shared/types";
 
 export function LUTExample() {
-  const [selectedLUT, setSelectedLUT] = useState<LUT>(BUILTIN_LUTS.viridis)
-  const [customColors, setCustomColors] = useState<[number, number, number, number][]>([
+  const [selectedLUT, setSelectedLUT] = useState<LUT>(BUILTIN_LUTS.viridis);
+  const [customColors, setCustomColors] = useState<
+    [number, number, number, number][]
+  >([
     [0, 0, 0, 1],
     [0.5, 0, 0.5, 1],
     [1, 0.65, 0, 1],
     [1, 1, 0, 1],
-    [1, 1, 1, 1]
-  ])
+    [1, 1, 1, 1],
+  ]);
 
   const generatePreview = (lut: LUT) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 200
-    canvas.height = 50
-    const ctx = canvas.getContext('2d')!
-    
+    const canvas = document.createElement("canvas");
+    canvas.width = 200;
+    canvas.height = 50;
+    const ctx = canvas.getContext("2d")!;
+
     for (let x = 0; x < canvas.width; x++) {
-      const value = x / canvas.width
-      const color = mapValueToColor(value, lut)
-      ctx.fillStyle = `rgba(${Math.round(color[0] * 255)}, ${Math.round(color[1] * 255)}, ${Math.round(color[2] * 255)}, ${color[3]})`
-      ctx.fillRect(x, 0, 1, canvas.height)
+      const value = x / canvas.width;
+      const color = mapValueToColor(value, lut);
+      ctx.fillStyle = `rgba(${Math.round(color[0] * 255)}, ${Math.round(color[1] * 255)}, ${Math.round(color[2] * 255)}, ${color[3]})`;
+      ctx.fillRect(x, 0, 1, canvas.height);
     }
-    
-    return canvas.toDataURL()
-  }
+
+    return canvas.toDataURL();
+  };
 
   const handleCreateCustomLUT = () => {
     const newLUT = createCustomLUT(
       `custom-${Date.now()}`,
-      'Custom LUT',
+      "Custom LUT",
       customColors,
-      'linear',
-      'Custom color map'
-    )
-    setSelectedLUT(newLUT)
-  }
+      "linear",
+      "Custom color map",
+    );
+    setSelectedLUT(newLUT);
+  };
 
-  const updateCustomColor = (index: number, component: number, value: number) => {
-    const newColors = [...customColors]
-    newColors[index][component] = value
-    setCustomColors(newColors)
-  }
+  const updateCustomColor = (
+    index: number,
+    component: number,
+    value: number,
+  ) => {
+    const newColors = [...customColors];
+    newColors[index][component] = value;
+    setCustomColors(newColors);
+  };
 
   return (
     <div className="p-6 space-y-6">
       <h2 className="text-2xl font-bold">LUT (Look-Up Table) Example</h2>
-      
+
       {/* Built-in LUTs */}
       <div>
         <h3 className="text-lg font-semibold mb-4">Built-in Color Maps</h3>
@@ -58,12 +68,19 @@ export function LUTExample() {
               key={id}
               onClick={() => setSelectedLUT(lut)}
               className={`p-4 border rounded-lg text-left transition-colors ${
-                selectedLUT.id === id ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+                selectedLUT.id === id
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-gray-300 hover:border-gray-400"
               }`}
             >
               <div className="font-medium">{lut.name}</div>
-              <div className="text-sm text-gray-600 mt-1">{lut.description}</div>
-              <div className="mt-2 h-8 rounded" style={{ background: `url(${generatePreview(lut)})` }} />
+              <div className="text-sm text-gray-600 mt-1">
+                {lut.description}
+              </div>
+              <div
+                className="mt-2 h-8 rounded"
+                style={{ background: `url(${generatePreview(lut)})` }}
+              />
             </button>
           ))}
         </div>
@@ -84,7 +101,9 @@ export function LUTExample() {
                     max="1"
                     step="0.01"
                     value={color[0]}
-                    onChange={(e) => updateCustomColor(index, 0, parseFloat(e.target.value))}
+                    onChange={(e) =>
+                      updateCustomColor(index, 0, parseFloat(e.target.value))
+                    }
                     className="w-full"
                   />
                   <input
@@ -93,7 +112,9 @@ export function LUTExample() {
                     max="1"
                     step="0.01"
                     value={color[1]}
-                    onChange={(e) => updateCustomColor(index, 1, parseFloat(e.target.value))}
+                    onChange={(e) =>
+                      updateCustomColor(index, 1, parseFloat(e.target.value))
+                    }
                     className="w-full"
                   />
                   <input
@@ -102,14 +123,16 @@ export function LUTExample() {
                     max="1"
                     step="0.01"
                     value={color[2]}
-                    onChange={(e) => updateCustomColor(index, 2, parseFloat(e.target.value))}
+                    onChange={(e) =>
+                      updateCustomColor(index, 2, parseFloat(e.target.value))
+                    }
                     className="w-full"
                   />
                 </div>
                 <div
                   className="w-full h-8 rounded border"
                   style={{
-                    backgroundColor: `rgba(${Math.round(color[0] * 255)}, ${Math.round(color[1] * 255)}, ${Math.round(color[2] * 255)}, ${color[3]})`
+                    backgroundColor: `rgba(${Math.round(color[0] * 255)}, ${Math.round(color[1] * 255)}, ${Math.round(color[2] * 255)}, ${color[3]})`,
                   }}
                 />
               </div>
@@ -126,18 +149,26 @@ export function LUTExample() {
 
       {/* Selected LUT Preview */}
       <div>
-        <h3 className="text-lg font-semibold mb-4">Selected Color Map Preview</h3>
+        <h3 className="text-lg font-semibold mb-4">
+          Selected Color Map Preview
+        </h3>
         <div className="p-4 border rounded-lg">
           <div className="font-medium">{selectedLUT.name}</div>
           {selectedLUT.description && (
-            <div className="text-sm text-gray-600 mt-1">{selectedLUT.description}</div>
+            <div className="text-sm text-gray-600 mt-1">
+              {selectedLUT.description}
+            </div>
           )}
-          <div className="mt-4 h-12 rounded" style={{ background: `url(${generatePreview(selectedLUT)})` }} />
+          <div
+            className="mt-4 h-12 rounded"
+            style={{ background: `url(${generatePreview(selectedLUT)})` }}
+          />
           <div className="mt-2 text-sm text-gray-600">
-            Interpolation: {selectedLUT.interpolation} | Entries: {selectedLUT.entries.length}
+            Interpolation: {selectedLUT.interpolation} | Entries:{" "}
+            {selectedLUT.entries.length}
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

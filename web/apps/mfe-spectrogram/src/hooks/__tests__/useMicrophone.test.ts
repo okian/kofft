@@ -13,7 +13,7 @@ vi.mock("@/shared/stores/audioStore", () => ({
 const startMicrophoneMock = vi.fn().mockResolvedValue(true);
 const stopMicrophoneMock = vi.fn().mockReturnValue(true);
 
-vi.mock("@/utils/audioPlayer", () => ({
+vi.mock("@/shared/utils/audioPlayer", () => ({
   audioPlayer: {
     initAudioContext: vi.fn().mockResolvedValue({}),
     startMicrophone: startMicrophoneMock,
@@ -27,7 +27,7 @@ vi.mock("@/utils/audioPlayer", () => ({
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 
-vi.mock("@/utils/toast", () => ({
+vi.mock("@/shared/utils/toast", () => ({
   conditionalToast: {
     success: toastSuccess,
     error: toastError,
