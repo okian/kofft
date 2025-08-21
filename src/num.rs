@@ -460,7 +460,7 @@ impl From<ComplexVec> for Vec<Complex32> {
     fn from(cv: ComplexVec) -> Self {
         cv.re
             .into_iter()
-            .zip(cv.im.into_iter())
+            .zip(cv.im)
             .map(|(r, i)| Complex32::new(r, i))
             .collect()
     }

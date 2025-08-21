@@ -544,6 +544,52 @@ pub enum FftStrategy {
     Auto,
 }
 
+/// Safely reinterpret a mutable slice of type `A` as a slice of `B`.
+///
+/// # What
+/// Performs a raw pointer cast only when element sizes match and the pointer is
+/// properly aligned for `B`.
+///
+/// # Why
+/// Casting slices without verifying alignment leads to undefined behavior and
+/// hard-to-debug memory corruption. FFT routines frequently need to view generic
+/// buffers as `f32`/`f64` representations, so centralized checks keep those
+/// transitions safe.
+///
+/// # How
+/// Alignment is asserted in debug builds and [`FftError::InvalidValue`] is
+/// returned on failure, allowing callers to propagate a clear error.
+fn checked_cast_slice_mut<A, B>(slice: &mut [A]) -> Result<&mut [B], FftError> {
+    use core::mem::{align_of, size_of};
+    if size_of::<A>() != size_of::<B>() {
+        return Err(FftError::InvalidValue);
+    }
+    let ptr = slice.as_mut_ptr() as *mut B;
+    if (ptr as usize) % align_of::<B>() != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    debug_assert_eq!((ptr as usize) % align_of::<B>(), 0);
+    let len = slice.len();
+    Ok(unsafe { core::slice::from_raw_parts_mut(ptr, len) })
+}
+
+/// Reinterpret a [`ScalarFftImpl`] reference as another float type after checking
+/// alignment.
+///
+/// This enables dynamic dispatch based on [`core::any::TypeId`] while preventing
+/// accidental misaligned accesses.
+fn checked_cast_impl_ref<A: Float, B: Float>(
+    this: &ScalarFftImpl<A>,
+) -> Result<&ScalarFftImpl<B>, FftError> {
+    use core::mem::align_of;
+    let ptr = this as *const _ as *const ScalarFftImpl<B>;
+    if (ptr as usize) % align_of::<ScalarFftImpl<B>>() != 0 {
+        return Err(FftError::InvalidValue);
+    }
+    debug_assert_eq!((ptr as usize) % align_of::<ScalarFftImpl<B>>(), 0);
+    Ok(unsafe { &*ptr })
+}
+
 // Refactor FftImpl and ScalarFftImpl to be generic over T: Float
 pub trait FftImpl<T: Float>: Any {
     fn fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError>;
@@ -635,6 +681,19 @@ pub trait FftImpl<T: Float>: Any {
         }
     }
 
+    /// FFT where real and imaginary components are stored in separate buffers.
+    ///
+    /// # What
+    /// Converts the split representation into complex numbers, performs an FFT,
+    /// and writes the results back into the provided buffers.
+    ///
+    /// # Why
+    /// Some applications maintain split buffers to interoperate with real-valued
+    /// systems or hardware DSP chains.
+    ///
+    /// # How
+    /// Utilizes SIMD-optimized routines for `f32`/`f64` and validates buffer
+    /// alignment before casting.
     fn fft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
         if re.len() != im.len() {
             return Err(FftError::MismatchedLengths);
@@ -651,6 +710,19 @@ pub trait FftImpl<T: Float>: Any {
         Ok(())
     }
 
+    /// Inverse FFT operating on split real and imaginary buffers.
+    ///
+    /// # What
+    /// Reconstructs complex values from `re`/`im`, runs an IFFT, and scales the
+    /// outputs back into the split representation.
+    ///
+    /// # Why
+    /// Mirrors [`fft_split`] for applications that require inverse transforms on
+    /// split data.
+    ///
+    /// # How
+    /// Similar to [`fft_split`], leverages optimized paths and checks alignment
+    /// before casting.
     fn ifft_split(&self, re: &mut [T], im: &mut [T]) -> Result<(), FftError> {
         if re.len() != im.len() {
             return Err(FftError::MismatchedLengths);
@@ -713,6 +785,17 @@ impl<T: Float> ScalarFftImpl<T> {
         &mut *self.planner.get()
     }
 
+    /// Entry point for the Stockham auto-sort FFT.
+    ///
+    /// # What
+    /// Computes an in-place FFT using the Stockham algorithm.
+    ///
+    /// # Why
+    /// Stockham maintains better cache locality and avoids bit-reversal.
+    ///
+    /// # How
+    /// Delegates to [`stockham_fft_with_threshold`] after obtaining the
+    /// parallelization threshold from runtime configuration.
     pub fn stockham_fft(&self, input: &mut [Complex<T>]) -> Result<(), FftError> {
         #[cfg(all(feature = "parallel", feature = "std"))]
         let threshold = parallel_fft_threshold();
@@ -721,6 +804,10 @@ impl<T: Float> ScalarFftImpl<T> {
         self.stockham_fft_with_threshold(input, threshold)
     }
 
+    /// Core Stockham FFT implementation allowing a custom parallel threshold.
+    ///
+    /// The `_threshold` parameter exists so tests can supply deterministic
+    /// values; in normal operation it is computed from system heuristics.
     fn stockham_fft_with_threshold(
         &self,
         input: &mut [Complex<T>],
@@ -765,10 +852,10 @@ impl<T: Float> ScalarFftImpl<T> {
         }
 
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
-            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f32>) };
-            let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-            let re32 = unsafe { &mut *(split_re.as_mut_slice() as *mut [T] as *mut [f32]) };
-            let im32 = unsafe { &mut *(split_im.as_mut_slice() as *mut [T] as *mut [f32]) };
+            let this = checked_cast_impl_ref::<T, f32>(self)?;
+            let input32 = checked_cast_slice_mut::<Complex<T>, Complex32>(input)?;
+            let re32 = checked_cast_slice_mut::<T, f32>(split_re.as_mut_slice())?;
+            let im32 = checked_cast_slice_mut::<T, f32>(split_im.as_mut_slice())?;
             for (c, (r, i)) in input32.iter().zip(re32.iter_mut().zip(im32.iter_mut())) {
                 *r = c.re;
                 *i = c.im;
@@ -787,10 +874,10 @@ impl<T: Float> ScalarFftImpl<T> {
             return Ok(());
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f64>() {
-            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f64>) };
-            let input64 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex64]) };
-            let re64 = unsafe { &mut *(split_re.as_mut_slice() as *mut [T] as *mut [f64]) };
-            let im64 = unsafe { &mut *(split_im.as_mut_slice() as *mut [T] as *mut [f64]) };
+            let this = checked_cast_impl_ref::<T, f64>(self)?;
+            let input64 = checked_cast_slice_mut::<Complex<T>, Complex64>(input)?;
+            let re64 = checked_cast_slice_mut::<T, f64>(split_re.as_mut_slice())?;
+            let im64 = checked_cast_slice_mut::<T, f64>(split_im.as_mut_slice())?;
             for (c, (r, i)) in input64.iter().zip(re64.iter_mut().zip(im64.iter_mut())) {
                 *r = c.re;
                 *i = c.im;
@@ -1227,17 +1314,22 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             if should_parallelize_fft(n, threshold)
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {
-                let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                parallel_pool().install(|| input32.par_iter_mut().for_each(|c| c.im = -c.im));
+                {
+                    let input32 = checked_cast_slice_mut::<Complex<T>, Complex32>(input)?;
+                    parallel_pool().install(|| input32.par_iter_mut().for_each(|c| c.im = -c.im));
+                }
                 self.fft(input)?;
                 let scale = 1.0 / n as f32;
-                parallel_pool().install(|| {
-                    input32.par_iter_mut().for_each(|c| {
-                        c.im = -c.im;
-                        c.re *= scale;
-                        c.im *= scale;
+                {
+                    let input32 = checked_cast_slice_mut::<Complex<T>, Complex32>(input)?;
+                    parallel_pool().install(|| {
+                        input32.par_iter_mut().for_each(|c| {
+                            c.im = -c.im;
+                            c.re *= scale;
+                            c.im *= scale;
+                        });
                     });
-                });
+                }
                 return Ok(());
             }
         }
@@ -1448,15 +1540,15 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Err(FftError::MismatchedLengths);
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
-            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f32>) };
-            let re32 = unsafe { &mut *(re as *mut [T] as *mut [f32]) };
-            let im32 = unsafe { &mut *(im as *mut [T] as *mut [f32]) };
+            let this = checked_cast_impl_ref::<T, f32>(self)?;
+            let re32 = checked_cast_slice_mut::<T, f32>(re)?;
+            let im32 = checked_cast_slice_mut::<T, f32>(im)?;
             return this.fft_split_simd(re32, im32);
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f64>() {
-            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f64>) };
-            let re64 = unsafe { &mut *(re as *mut [T] as *mut [f64]) };
-            let im64 = unsafe { &mut *(im as *mut [T] as *mut [f64]) };
+            let this = checked_cast_impl_ref::<T, f64>(self)?;
+            let re64 = checked_cast_slice_mut::<T, f64>(re)?;
+            let im64 = checked_cast_slice_mut::<T, f64>(im)?;
             return this.fft_split_simd(re64, im64);
         }
         let mut buf: Vec<Complex<T>> = Vec::with_capacity(re.len());
@@ -1476,9 +1568,9 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Err(FftError::MismatchedLengths);
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
-            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f32>) };
-            let re32 = unsafe { &mut *(re as *mut [T] as *mut [f32]) };
-            let im32 = unsafe { &mut *(im as *mut [T] as *mut [f32]) };
+            let this = checked_cast_impl_ref::<T, f32>(self)?;
+            let re32 = checked_cast_slice_mut::<T, f32>(re)?;
+            let im32 = checked_cast_slice_mut::<T, f32>(im)?;
             for x in im32.iter_mut() {
                 *x = -*x;
             }
@@ -1492,9 +1584,9 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
             return Ok(());
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f64>() {
-            let this = unsafe { &*(self as *const _ as *const ScalarFftImpl<f64>) };
-            let re64 = unsafe { &mut *(re as *mut [T] as *mut [f64]) };
-            let im64 = unsafe { &mut *(im as *mut [T] as *mut [f64]) };
+            let this = checked_cast_impl_ref::<T, f64>(self)?;
+            let re64 = checked_cast_slice_mut::<T, f64>(re)?;
+            let im64 = checked_cast_slice_mut::<T, f64>(im)?;
             for x in im64.iter_mut() {
                 *x = -*x;
             }
@@ -2097,7 +2189,7 @@ impl<T: Float> FftPlan<T> {
         }
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>() {
             // Use twiddles for f32
-            let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
+            let input32 = checked_cast_slice_mut::<Complex<T>, Complex32>(input)?;
             match self.strategy {
                 FftStrategy::Radix2 => {
                     if let Some(tw) = &self.twiddles {
