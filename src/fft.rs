@@ -102,7 +102,7 @@ static CALIBRATED_PER_CORE_WORK: OnceLock<usize> = OnceLock::new();
 #[cfg(all(feature = "parallel", feature = "std"))]
 static PARALLEL_FFT_THRESHOLD: OnceLock<usize> = OnceLock::new();
 #[cfg(all(feature = "parallel", feature = "std"))]
-static PARALLEL_POOL: OnceLock<ThreadPool> = OnceLock::new();
+static RAYON_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
 #[cfg(all(feature = "parallel", feature = "std"))]
 /// Helper to parse an environment variable into `usize` or use `default` when
@@ -1228,10 +1228,12 @@ impl<T: Float> FftImpl<T> for ScalarFftImpl<T> {
                 && core::any::TypeId::of::<T>() == core::any::TypeId::of::<f32>()
             {
                 let input32 = unsafe { &mut *(input as *mut [Complex<T>] as *mut [Complex32]) };
-                parallel_pool().install(|| input32.par_iter_mut().for_each(|c| c.im = -c.im));
+                rayon_pool().install(|| {
+                    input32.par_iter_mut().for_each(|c| c.im = -c.im);
+                });
                 self.fft(input)?;
                 let scale = 1.0 / n as f32;
-                parallel_pool().install(|| {
+                rayon_pool().install(|| {
                     input32.par_iter_mut().for_each(|c| {
                         c.im = -c.im;
                         c.re *= scale;

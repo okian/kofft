@@ -58,8 +58,7 @@ pub fn fuzzy_score(pattern: &str, text: &str, pattern_len: usize) -> usize {
         return pattern_len;
     }
 
-    let text_chars: Vec<char> = text.chars().collect();
-    let text_len = text_chars.len();
+    let text_len = text.chars().count();
     let mut prev: Vec<usize> = (0..=text_len).collect();
     let mut curr = vec![0; text_len + 1];
 

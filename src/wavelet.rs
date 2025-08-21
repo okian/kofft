@@ -77,6 +77,38 @@ pub const DB4_INVERSE_HIGHPASS: [f32; 8] = [
     -0.2303778133088965,   // h7: eighth reconstruction detail coefficient
 ];
 
+/// Daubechies-2 low-pass analysis filter coefficients.
+pub const DB2_ANALYSIS_LOW: [f32; 4] = [
+    0.6830127,   // h0
+    1.1830127,   // h1
+    0.3169873,   // h2
+    -0.1830127,  // h3
+];
+
+/// Daubechies-2 high-pass analysis filter coefficients.
+pub const DB2_ANALYSIS_HIGH: [f32; 4] = [
+    -0.1830127,  // g0
+    -0.3169873,  // g1
+    1.1830127,   // g2
+    -0.6830127,  // g3
+];
+
+/// Daubechies-2 low-pass synthesis filter coefficients.
+pub const DB2_SYNTHESIS_LOW: [f32; 4] = [
+    -0.1830127,  // h0
+    0.3169873,   // h1
+    1.1830127,   // h2
+    0.6830127,   // h3
+];
+
+/// Daubechies-2 high-pass synthesis filter coefficients.
+pub const DB2_SYNTHESIS_HIGH: [f32; 4] = [
+    0.6830127,   // g0
+    -1.1830127,  // g1
+    0.3169873,   // g2
+    0.1830127,   // g3
+];
+
 /// Errors produced by wavelet operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveletError {
@@ -157,7 +189,6 @@ pub fn haar_inverse(avg: &[f32], diff: &[f32]) -> Result<Vec<f32>, WaveletError>
 /// # Errors
 /// Propagates any error returned by [`haar_forward`].
 pub fn batch_forward(inputs: &[Vec<f32>]) -> Result<BatchOutput, WaveletError> {
-#[allow(clippy::type_complexity)]
     let mut avgs = Vec::with_capacity(inputs.len());
     let mut diffs = Vec::with_capacity(inputs.len());
     for input in inputs {

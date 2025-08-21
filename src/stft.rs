@@ -110,15 +110,15 @@ pub fn stft<Fft: FftImpl<f32>>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    if hop_size == 0 || hop_size > window.len() {
+    if hop_size < MIN_HOP_SIZE {
         return Err(FftError::InvalidHopSize);
     }
-    let win_len = window.len();
-    if win_len == 0 {
-        return Err(FftError::MismatchedLengths);
+    if window.len() < MIN_WINDOW_LEN {
+        return Err(FftError::EmptyInput);
     }
+    let win_len = window.len();
     let required = signal.len().div_ceil(hop_size);
-    if output.len() != required {
+    if output.len() < required {
         return Err(FftError::MismatchedLengths);
     }
     for (frame_idx, frame) in output.iter_mut().enumerate() {
@@ -372,9 +372,6 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
     /// Validates that `window` is non-empty and that `hop_size` advances by at
     /// least one sample. Returns [`FftError::InvalidHopSize`] or
     /// [`FftError::EmptyInput`] on invalid parameters.
-    /// Create a streaming STFT iterator over `signal`.
-    ///
-    /// Validates hop size and window length to prevent misaligned frames.
     pub fn new(
         signal: &'a [f32],
         window: &'a [f32],
@@ -400,10 +397,6 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> StftStream<'a, Fft> {
     /// Returns `Ok(true)` when a frame is produced or `Ok(false)` after the
     /// signal is exhausted. Errors if `out` does not match the configured
     /// window length.
-    /// Compute the next FFT frame into `out`.
-    ///
-    /// Returns `Ok(true)` while frames remain or `Ok(false)` when the end of
-    /// the signal is reached. Errors if `out` does not match the window length.
     pub fn next_frame(&mut self, out: &mut [Complex32]) -> Result<bool, FftError> {
         let win_len = self.window.len();
         if out.len() != win_len {
@@ -471,16 +464,15 @@ pub fn parallel<Fft: FftImpl<f32> + Sync>(
     output: &mut [alloc::vec::Vec<Complex32>],
     fft: &Fft,
 ) -> Result<(), FftError> {
-    use rayon::prelude::*;
-    if hop_size == 0 || hop_size > window.len() {
+    if hop_size < MIN_HOP_SIZE {
         return Err(FftError::InvalidHopSize);
     }
-    let win_len = window.len();
-    if win_len == 0 {
-        return Err(FftError::MismatchedLengths);
+    if window.len() < MIN_WINDOW_LEN {
+        return Err(FftError::EmptyInput);
     }
+    let win_len = window.len();
     let required = signal.len().div_ceil(hop_size);
-    if output.len() != required {
+    if output.len() < required {
         return Err(FftError::MismatchedLengths);
     }
     // Pre-size frames to avoid repeated allocations in the parallel loop
@@ -544,7 +536,6 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     fft: &Fft,
 ) -> Result<(), FftError> {
     if hop_size < MIN_HOP_SIZE {
-    if hop_size == 0 || hop_size > window.len() {
         return Err(FftError::InvalidHopSize);
     }
     if window.len() < MIN_WINDOW_LEN {
@@ -564,42 +555,44 @@ pub fn inverse_parallel<Fft: FftImpl<f32> + Sync>(
     }
     type Accum = (usize, alloc::vec::Vec<f32>, alloc::vec::Vec<f32>);
     type AccumResult = Result<alloc::vec::Vec<Accum>, FftError>;
-    let partials: AccumResult = frames
-        .par_iter()
-        .enumerate()
-        .map_init(
-            || {
-                (
-                    vec![Complex32::new(0.0, 0.0); win_len],
-                    vec![0.0f32; win_len],
-                    vec![0.0f32; win_len],
-                )
-            },
-            |(time_buf, acc, norm), (frame_idx, frame)| {
-                if frame.len() != win_len {
-                    return Err(FftError::MismatchedLengths);
-                }
-                let start = frame_idx * hop_size;
-                time_buf.copy_from_slice(frame);
-                fft.ifft(time_buf)?;
-                // `acc` and `norm` are emptied by `take` at the end of the previous
-                // iteration. Resize them here to restore capacity without reallocating.
-                if acc.len() < win_len {
-                    acc.resize(win_len, 0.0);
-                    norm.resize(win_len, 0.0);
-                }
-                for i in 0..win_len {
-                    acc[i] = time_buf[i].re * window[i];
-                    norm[i] = window[i] * window[i];
-                }
-                // Move the accumulated data out for this frame while leaving the
-                // buffers empty for reuse in the next iteration.
-                let acc_frame = take(acc);
-                let norm_frame = take(norm);
-                Ok((start, acc_frame, norm_frame))
-            },
-        )
-        .collect();
+    let partials: AccumResult = rayon_pool().install(|| {
+        frames
+            .par_iter()
+            .enumerate()
+            .map_init(
+                || {
+                    (
+                        vec![Complex32::new(0.0, 0.0); win_len],
+                        vec![0.0f32; win_len],
+                        vec![0.0f32; win_len],
+                    )
+                },
+                |(time_buf, acc, norm), (frame_idx, frame)| {
+                    if frame.len() != win_len {
+                        return Err(FftError::MismatchedLengths);
+                    }
+                    let start = frame_idx * hop_size;
+                    time_buf.copy_from_slice(frame);
+                    fft.ifft(time_buf)?;
+                    // `acc` and `norm` are emptied by `take` at the end of the previous
+                    // iteration. Resize them here to restore capacity without reallocating.
+                    if acc.len() < win_len {
+                        acc.resize(win_len, 0.0);
+                        norm.resize(win_len, 0.0);
+                    }
+                    for i in 0..win_len {
+                        acc[i] = time_buf[i].re * window[i];
+                        norm[i] = window[i] * window[i];
+                    }
+                    // Move the accumulated data out for this frame while leaving the
+                    // buffers empty for reuse in the next iteration.
+                    let acc_frame = take(acc);
+                    let norm_frame = take(norm);
+                    Ok((start, acc_frame, norm_frame))
+                },
+            )
+            .collect()
+    });
     let partials = partials?;
     output.fill(0.0);
     let mut norm = alloc::vec::Vec::with_capacity(output.len());
@@ -714,11 +707,10 @@ impl<'a, Fft: crate::fft::FftImpl<f32>> IstftStream<'a, Fft> {
         window: &'a [f32],
         fft: &'a Fft,
     ) -> Result<Self, FftError> {
-        if win_len < MIN_WINDOW_LEN || window.len() != win_len {
-        if hop == 0 || hop > win_len {
+        if hop < MIN_HOP_SIZE {
             return Err(FftError::InvalidHopSize);
         }
-        if window.len() != win_len || win_len == 0 {
+        if win_len < MIN_WINDOW_LEN || window.len() != win_len {
             return Err(FftError::MismatchedLengths);
         }
         let buffer = vec![0.0f32; win_len + hop * STREAM_PAD_MULTIPLIER];
