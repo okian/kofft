@@ -287,7 +287,12 @@ describe("PlaybackEngine", () => {
     } as any;
     const fastTrack2 = {
       file: { arrayBuffer: async () => new ArrayBuffer(8) },
-    } as any;
+  const fastTrack1 = {
+    file: { arrayBuffer: async () => new ArrayBuffer(8) },
+  } as any;
+  const fastTrack2 = {
+    file: { arrayBuffer: async () => new ArrayBuffer(8) },
+  } as any;
 
     const p1 = playbackEngine.load(slowTrack).catch((e) => e);
     const p2 = playbackEngine.load(fastTrack1).catch((e) => e);
