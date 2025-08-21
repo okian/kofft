@@ -14,6 +14,38 @@ pub const HAAR_PAIR_LEN: usize = 2;
 /// Scaling factor applied when computing averages and differences.
 pub const HAAR_SCALE: f32 = 0.5;
 
+/// Low-pass analysis coefficients for the Daubechies-2 (db2) wavelet.
+pub const DB2_ANALYSIS_LOW: [f32; 4] = [
+    0.482_962_913_144_534_1,
+    0.836_516_303_737_807_9,
+    0.224_143_868_042_013_4,
+    -0.129_409_522_551_260_4,
+];
+
+/// High-pass analysis coefficients for the db2 wavelet.
+pub const DB2_ANALYSIS_HIGH: [f32; 4] = [
+    -0.129_409_522_551_260_4,
+    -0.224_143_868_042_013_4,
+    0.836_516_303_737_807_9,
+    -0.482_962_913_144_534_1,
+];
+
+/// Low-pass synthesis coefficients for the db2 wavelet.
+pub const DB2_SYNTHESIS_LOW: [f32; 4] = [
+    0.482_962_913_144_534_1,
+    0.836_516_303_737_807_9,
+    0.224_143_868_042_013_4,
+    -0.129_409_522_551_260_4,
+];
+
+/// High-pass synthesis coefficients for the db2 wavelet.
+pub const DB2_SYNTHESIS_HIGH: [f32; 4] = [
+    -0.129_409_522_551_260_4,
+    -0.224_143_868_042_013_4,
+    0.836_516_303_737_807_9,
+    -0.482_962_913_144_534_1,
+];
+
 /// Errors produced by wavelet operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveletError {
@@ -231,33 +263,22 @@ pub fn db2_forward(input: &[f32]) -> (Vec<f32>, Vec<f32>) {
     let n = input.len() / 2;
     let mut approx = vec![0.0; n];
     let mut detail = vec![0.0; n];
-    // db2 coefficients
-    let h0 = 0.4829629131445341;
-    let h1 = 0.8365163037378079;
-    let h2 = 0.2241438680420134;
-    let h3 = -0.1294095225512604;
-    let g0 = -0.1294095225512604;
-    let g1 = -0.2241438680420134;
-    let g2 = 0.8365163037378079;
-    let g3 = -0.4829629131445341;
     let len = input.len();
+    // Symmetric extension helper: reflect indices outside the signal range.
     let reflect = |mut idx: isize| -> f32 {
         let n = len as isize;
         while idx < 0 || idx >= n {
-            if idx < 0 {
-                idx = -idx;
-            } else {
-                idx = 2 * (n - 1) - idx;
-            }
+            idx = if idx < 0 { -idx } else { 2 * (n - 1) - idx };
         }
         input[idx as usize]
     };
     for i in 0..n {
         let j = 2 * i as isize;
-        approx[i] =
-            h0 * reflect(j) + h1 * reflect(j + 1) + h2 * reflect(j + 2) + h3 * reflect(j + 3);
-        detail[i] =
-            g0 * reflect(j) + g1 * reflect(j + 1) + g2 * reflect(j + 2) + g3 * reflect(j + 3);
+        for k in 0..4 {
+            let sample = reflect(j + k as isize);
+            approx[i] += DB2_ANALYSIS_LOW[k] * sample;
+            detail[i] += DB2_ANALYSIS_HIGH[k] * sample;
+        }
     }
     (approx, detail)
 }
@@ -267,54 +288,23 @@ pub fn db2_inverse(approx: &[f32], detail: &[f32]) -> Vec<f32> {
     let n = approx.len();
     let len = n * 2;
     let mut output = vec![0.0; len];
-    // Synthesis filters (reverse of analysis filters)
-    let _g0 = 0.4829629131445341;
-    let _g1 = 0.8365163037378079;
-    let _g2 = 0.2241438680420134;
-    let _g3 = -0.1294095225512604;
-    let _h0 = -0.1294095225512604;
-    let _h1 = -0.2241438680420134;
-    let _h2 = 0.8365163037378079;
-    let _h3 = -0.4829629131445341;
+    // Symmetric extension helper: reflect indices outside the signal range.
     let reflect = |mut idx: isize| -> usize {
         let n = len as isize;
         while idx < 0 || idx >= n {
-            if idx < 0 {
-                idx = -idx;
-            } else {
-                idx = 2 * (n - 1) - idx;
-            }
+            idx = if idx < 0 { -idx } else { 2 * (n - 1) - idx };
         }
         idx as usize
     };
-    // Upsample and convolve
+    // Upsample and convolve with synthesis filters.
     for i in 0..n {
         let j = 2 * i;
         for k in 0..4 {
             let idx = reflect(j as isize + k as isize);
-            output[idx] += gk(k) * approx[i] + hk(k) * detail[i];
+            output[idx] += DB2_SYNTHESIS_LOW[k] * approx[i] + DB2_SYNTHESIS_HIGH[k] * detail[i];
         }
     }
     output
-}
-// Helper functions for synthesis filter taps
-fn gk(k: usize) -> f32 {
-    match k {
-        0 => 0.4829629131445341,
-        1 => 0.8365163037378079,
-        2 => 0.2241438680420134,
-        3 => -0.1294095225512604,
-        _ => 0.0,
-    }
-}
-fn hk(k: usize) -> f32 {
-    match k {
-        0 => -0.1294095225512604,
-        1 => -0.2241438680420134,
-        2 => 0.8365163037378079,
-        3 => -0.4829629131445341,
-        _ => 0.0,
-    }
 }
 /// Batch db2 forward transform
 pub fn db2_forward_batch(inputs: &[Vec<f32>]) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
