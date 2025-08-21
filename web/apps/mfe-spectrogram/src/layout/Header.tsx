@@ -41,6 +41,40 @@ export const Header: React.FC = () => {
     [audioFile],
   );
 
+/**
+ * Builds the header's class string from layout tokens. Centralising this logic
+ * guarantees every theme shares the same structural rules and keeps tests
+ * straightforward.
+ */
+export function getHeaderClasses(theme: Theme, isMobile: boolean): string {
+  return cn(
+    'bg-neutral-900 border-b border-neutral-800',
+    'flex items-center justify-between',
+    SPACING[theme],
+    TYPOGRAPHY[theme],
+    GRID[theme],
+    'transition-colors duration-300',
+    isMobile ? 'h-14' : 'h-12',
+  )
+}
+
+export const Header: React.FC = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { metadataPanelOpen, playlistPanelOpen, setMetadataPanelOpen, setPlaylistPanelOpen, setSettingsPanelOpen } = useUIStore()
+  const { isMicrophoneActive } = useAudioStore()
+  const { isMobile, isTablet } = useScreenSize()
+  const theme = useSettingsStore((s) => s.theme)
+  const audioFile = useAudioFile()
+  const microphone = useMicrophone()
+
+  const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (files && files.length > 0) {
+      await audioFile.loadAudioFiles(Array.from(files))
+    }
+    event.target.value = ''
+  }, [audioFile])
+
   const openFileDialog = useCallback(() => {
     fileInputRef.current?.click();
   }, []);

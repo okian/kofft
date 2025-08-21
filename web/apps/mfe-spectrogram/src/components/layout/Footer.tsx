@@ -26,6 +26,25 @@ import {
   NEXT_WINDOW_SEC,
   SIZE_SWAP_DURATION_MS,
 } from "@/shared/config";
+import { useSettingsStore } from "@/shared/stores/settingsStore";
+import { SPACING, BORDER_RADIUS, TYPOGRAPHY, GRID } from "@/shared/layout";
+import type { Theme } from "@/shared/types";
+
+/**
+ * Generates the footer's base classes using design tokens. Encapsulating this
+ * logic avoids scattering spacing/typography decisions throughout the
+ * component and enables simple unit tests.
+ */
+export function getFooterClasses(theme: Theme, height: string): string {
+  return cn(
+    "footer-controls",
+    SPACING[theme],
+    BORDER_RADIUS[theme],
+    TYPOGRAPHY[theme],
+    GRID[theme],
+    height,
+  );
+}
 
 export const Footer: React.FC = () => {
   const volumeSliderRef = useRef<HTMLInputElement>(null);
@@ -49,6 +68,7 @@ export const Footer: React.FC = () => {
   } = useAudioStore();
 
   const { isMobile, isTablet } = useScreenSize();
+  const theme = useSettingsStore((s) => s.theme);
   const audioFile = useAudioFile();
 
   const hasUpcomingTrack =
@@ -326,7 +346,7 @@ export const Footer: React.FC = () => {
 
   return (
     <footer
-      className={cn("footer-controls", layoutConfig.footerHeight)}
+      className={getFooterClasses(theme, layoutConfig.footerHeight)}
       data-testid="footer"
       role="contentinfo"
       aria-label="Playback controls"
