@@ -1,11 +1,13 @@
 use kofft::fft::{Complex32, FftError, ScalarFftImpl};
-use kofft::rfft::{rfft_stack, RfftPlanner, STRIDE};
+use kofft::rfft::{rfft_stack, RfftPlanner, MAX_CACHE_ENTRIES, STRIDE};
 
 /// Helper to build a zero-filled complex buffer of length `n`.
 fn zero_complex(len: usize) -> Vec<Complex32> {
     vec![Complex32::new(0.0, 0.0); len]
 }
 
+/// Ensure RFFT fails when input length isn't divisible by [`STRIDE`],
+/// validating early rejection of invalid sizes.
 #[test]
 fn rejects_odd_length() {
     let fft = ScalarFftImpl::<f32>::default();
@@ -19,6 +21,8 @@ fn rejects_odd_length() {
     assert_eq!(err, FftError::InvalidValue);
 }
 
+/// Confirm RFFT handles the smallest valid input length by round-tripping
+/// through forward and inverse transforms.
 #[test]
 fn handles_min_length() {
     let fft = ScalarFftImpl::<f32>::default();
@@ -38,6 +42,8 @@ fn handles_min_length() {
     }
 }
 
+/// Validate RFFT correctness on a large buffer by round-tripping and
+/// checking that reconstruction remains accurate.
 #[test]
 fn handles_large_input() {
     const N: usize = 1 << 14; // 16384 samples
@@ -59,6 +65,8 @@ fn handles_large_input() {
 }
 
 #[cfg(feature = "internal-tests")]
+/// Verify the planner evicts cache entries beyond [`MAX_CACHE_ENTRIES`]
+/// to prevent unbounded memory growth.
 #[test]
 fn planner_cache_eviction() {
     let fft = ScalarFftImpl::<f32>::default();
@@ -76,6 +84,8 @@ fn planner_cache_eviction() {
     assert!(planner.pack_cache_len() <= MAX_CACHE_ENTRIES);
 }
 
+/// Ensure the stack-based RFFT helper rejects lengths not divisible by
+/// [`STRIDE`].
 #[test]
 fn rfft_stack_rejects_odd_length() {
     const N: usize = 3;
