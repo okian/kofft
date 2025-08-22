@@ -23,8 +23,10 @@ fn fft_non_power_of_two_roundtrip() {
     ];
     let original = data.clone();
     let fft = ScalarFftImpl::<f32>::default();
-    fft.fft(&mut data).unwrap();
-    fft.ifft(&mut data).unwrap();
+    fft.fft(&mut data)
+        .expect("Invariant: operation should succeed");
+    fft.ifft(&mut data)
+        .expect("Invariant: operation should succeed");
     assert_eq!(data.len(), original.len());
 }
 
@@ -37,8 +39,10 @@ fn fft_large_roundtrip() {
         .collect();
     let original = data.clone();
     let fft = ScalarFftImpl::<f32>::default();
-    fft.fft(&mut data).unwrap();
-    fft.ifft(&mut data).unwrap();
+    fft.fft(&mut data)
+        .expect("Invariant: operation should succeed");
+    fft.ifft(&mut data)
+        .expect("Invariant: operation should succeed");
     assert_eq!(data.len(), original.len());
 }
 
@@ -51,9 +55,11 @@ fn parallel_fft_thread_bound_and_race_free() {
     let mut data: Vec<Complex32> = (0..512).map(|i| Complex32::new(i as f32, 0.0)).collect();
     let original = data.clone();
     let fft = ScalarFftImpl::<f32>::default();
-    fft.ifft(&mut data).unwrap();
+    fft.ifft(&mut data)
+        .expect("Invariant: operation should succeed");
     assert_eq!(__test_parallel_pool_thread_count(), 2);
     let mut data2 = original.clone();
-    fft.ifft(&mut data2).unwrap();
+    fft.ifft(&mut data2)
+        .expect("Invariant: operation should succeed");
     assert_eq!(data, data2);
 }

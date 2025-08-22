@@ -16,10 +16,12 @@ fn parallel_matches_sequential() {
     let fft = ScalarFftImpl::<f32>::default();
 
     set_parallel_fft_threshold(1);
-    fft.fft(&mut input_par).unwrap();
+    fft.fft(&mut input_par)
+        .expect("Invariant: operation should succeed");
 
     set_parallel_fft_threshold(usize::MAX);
-    fft.fft(&mut input_seq).unwrap();
+    fft.fft(&mut input_seq)
+        .expect("Invariant: operation should succeed");
 
     set_parallel_fft_threshold(0);
 

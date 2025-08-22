@@ -9,7 +9,8 @@ const TWO: usize = 2;
 /// Flattening an empty 2D matrix should yield no data and zero dimensions.
 #[test]
 fn flatten_2d_empty() {
-    let (flat, rows, cols) = flatten_2d::<f32>(Vec::new()).unwrap();
+    let (flat, rows, cols) =
+        flatten_2d::<f32>(Vec::new()).expect("Invariant: operation should succeed");
     assert!(flat.is_empty());
     assert_eq!(rows, EMPTY);
     assert_eq!(cols, EMPTY);
@@ -28,7 +29,8 @@ fn flatten_2d_non_rectangular() {
 /// Flattening an empty 3D volume should produce no data and zero dimensions.
 #[test]
 fn flatten_3d_empty() {
-    let (flat, d, r, c) = flatten_3d::<f32>(Vec::new()).unwrap();
+    let (flat, d, r, c) =
+        flatten_3d::<f32>(Vec::new()).expect("Invariant: operation should succeed");
     assert!(flat.is_empty());
     assert_eq!((d, r, c), (EMPTY, EMPTY, EMPTY));
 }
@@ -69,7 +71,8 @@ fn fft2d_inplace_empty_dims() {
     let mut data: Vec<Complex<f32>> = Vec::new();
     let mut scratch: Vec<Complex<f32>> = Vec::new();
     let fft = ScalarFftImpl::<f32>::default();
-    fft2d_inplace(&mut data, EMPTY, EMPTY, &fft, &mut scratch).unwrap();
+    fft2d_inplace(&mut data, EMPTY, EMPTY, &fft, &mut scratch)
+        .expect("Invariant: operation should succeed");
 }
 
 /// Mismatched data length must produce an error.

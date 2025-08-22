@@ -23,7 +23,7 @@ fn simd_align_is_64() {
 /// Validate that misaligned buffers fall back to the scalar implementation for IRFFT.
 #[test]
 fn irfft_misaligned_falls_back() {
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     let fft = ScalarFftImpl::<f32>::default();
     // Generate frequency data using a scalar forward transform.
     let mut time = (0..SIZE).map(|i| (i as f32).cos()).collect::<Vec<_>>();
@@ -31,7 +31,7 @@ fn irfft_misaligned_falls_back() {
     let mut scratch = vec![Complex32::new(0.0, 0.0); SIZE / 2];
     planner
         .rfft_with_scratch(&fft, &mut time, &mut freq, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     // Misalign frequency input and output buffers.
     let mut freq_buf = vec![Complex32::new(0.0, 0.0); SIZE / 2 + 2];
     freq_buf[1..(SIZE / 2 + 2)].copy_from_slice(&freq);
@@ -41,7 +41,7 @@ fn irfft_misaligned_falls_back() {
     let mut scratch = vec![Complex32::new(0.0, 0.0); SIZE / 2];
     planner
         .irfft_with_scratch(&fft, input, &mut output, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     for (a, b) in output.iter().zip(time.iter()) {
         assert!((a - b).abs() < EPSILON);
     }
@@ -50,7 +50,7 @@ fn irfft_misaligned_falls_back() {
 /// Validate that misaligned buffers fall back to the scalar implementation for RFFT.
 #[test]
 fn rfft_misaligned_falls_back() {
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     let fft = ScalarFftImpl::<f32>::default();
     let mut time = (0..SIZE).map(|i| (i as f32).cos()).collect::<Vec<_>>();
     // Aligned frequency result for comparison.
@@ -58,7 +58,7 @@ fn rfft_misaligned_falls_back() {
     let mut scratch = vec![Complex32::new(0.0, 0.0); SIZE / 2];
     planner
         .rfft_with_scratch(&fft, &mut time, &mut expected, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     // Misalign output buffer to trigger scalar fallback.
     let mut out_buf = vec![Complex32::new(0.0, 0.0); SIZE / 2 + 2];
     let output = &mut out_buf[1..(SIZE / 2 + 2)];
@@ -66,7 +66,7 @@ fn rfft_misaligned_falls_back() {
     let mut scratch2 = vec![Complex32::new(0.0, 0.0); SIZE / 2];
     planner
         .rfft_with_scratch(&fft, &mut time, output, &mut scratch2)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     for (a, b) in output.iter().zip(expected.iter()) {
         assert!((a.re - b.re).abs() < EPSILON);
         assert!((a.im - b.im).abs() < EPSILON);
@@ -76,7 +76,7 @@ fn rfft_misaligned_falls_back() {
 /// Verify round-trip transforms operate correctly when buffers are 64-byte aligned.
 #[test]
 fn rfft_irfft_aligned_round_trip() {
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     let fft = ScalarFftImpl::<f32>::default();
     let baseline: Vec<f32> = (0..SIZE).map(|i| (i as f32).cos()).collect();
 
@@ -109,7 +109,7 @@ fn rfft_irfft_aligned_round_trip() {
 
     planner
         .rfft_with_scratch(&fft, time, freq, scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
 
     // Allocate aligned buffers for the inverse transform.
     let mut out_storage = vec![0.0f32; SIZE + extra];
@@ -124,7 +124,7 @@ fn rfft_irfft_aligned_round_trip() {
     let scratch2 = &mut scratch2_storage[start_s2..start_s2 + SIZE / 2];
     planner
         .irfft_with_scratch(&fft, freq, output, scratch2)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
 
     for (a, b) in output.iter().zip(baseline.iter()) {
         assert!((a - b).abs() < EPSILON);

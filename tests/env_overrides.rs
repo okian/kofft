@@ -10,18 +10,18 @@ fn print_threshold() {
 
 #[test]
 fn env_par_fft_per_core_work_changes_threshold() {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("Invariant: operation should succeed");
     let output = Command::new(&exe)
         .env("KOFFT_PAR_FFT_THRESHOLD", "32")
         .args(["--exact", "print_threshold", "--nocapture"])
         .output()
         .expect("run threshold test");
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("Invariant: operation should succeed");
     let t1: usize = stdout
         .lines()
         .rev()
         .find_map(|l| l.trim().parse().ok())
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     assert_eq!(t1, 32);
 
     let output = Command::new(&exe)
@@ -29,18 +29,18 @@ fn env_par_fft_per_core_work_changes_threshold() {
         .args(["--exact", "print_threshold", "--nocapture"])
         .output()
         .expect("run threshold test");
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("Invariant: operation should succeed");
     let t2: usize = stdout
         .lines()
         .rev()
         .find_map(|l| l.trim().parse().ok())
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     assert_eq!(t2, 64);
 }
 
 #[test]
 fn invalid_env_value_exits_with_error() {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("Invariant: operation should succeed");
     let output = Command::new(&exe)
         .env("KOFFT_PAR_FFT_THRESHOLD", "not-a-number")
         .args(["--exact", "print_threshold", "--nocapture"])

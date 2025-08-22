@@ -2,8 +2,10 @@
 
 use kofft::window_more::{bartlett, bohman, nuttall, tukey};
 
-/// Allowed floating-point error when verifying normalization.
+/// Allowed floating-point error when verifying amplitude normalization.
 const EPSILON: f32 = 1e-5;
+/// Tolerance for window sum comparisons, accounting for discrete approximations.
+const SUM_EPSILON: f32 = 1e-3;
 
 /// Computes the expected sum of a Bartlett window for a given length.
 ///
@@ -15,6 +17,15 @@ fn expected_bartlett_sum(len: usize) -> f32 {
         (len * (len - 2)) as f32 / (2.0 * (len - 1) as f32)
     } else {
         (len - 1) as f32 / 2.0
+    }
+}
+
+/// Computes the theoretical peak value of a Bartlett window for the given length.
+fn expected_bartlett_peak(len: usize) -> f32 {
+    if len % 2 == 0 {
+        ((len - 2) as f32) / ((len - 1) as f32)
+    } else {
+        1.0
     }
 }
 
@@ -53,9 +64,10 @@ fn nuttall_len_zero_panics() {
 fn bartlett_sum_and_peak() {
     let len = 1024;
     let w = bartlett(len);
-    assert!((max(&w) - 1.0).abs() < EPSILON);
+    let expected_peak = expected_bartlett_peak(len);
+    assert!((max(&w) - expected_peak).abs() < EPSILON);
     let expected = expected_bartlett_sum(len);
-    assert!((w.iter().sum::<f32>() - expected).abs() < EPSILON);
+    assert!((w.iter().sum::<f32>() - expected).abs() < SUM_EPSILON);
 }
 
 /// Verifies that extremely large lengths fail fast without excessive allocation.

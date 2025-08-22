@@ -34,10 +34,16 @@ struct SyncFft(Mutex<ScalarFftImpl<f32>>);
 
 impl FftImpl<f32> for SyncFft {
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        self.0.lock().unwrap().fft(input)
+        self.0
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .fft(input)
     }
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        self.0.lock().unwrap().ifft(input)
+        self.0
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .ifft(input)
     }
     fn fft_strided(
         &self,
@@ -45,7 +51,10 @@ impl FftImpl<f32> for SyncFft {
         stride: usize,
         scratch: &mut [Complex32],
     ) -> Result<(), FftError> {
-        self.0.lock().unwrap().fft_strided(input, stride, scratch)
+        self.0
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .fft_strided(input, stride, scratch)
     }
     fn ifft_strided(
         &self,
@@ -53,7 +62,10 @@ impl FftImpl<f32> for SyncFft {
         stride: usize,
         scratch: &mut [Complex32],
     ) -> Result<(), FftError> {
-        self.0.lock().unwrap().ifft_strided(input, stride, scratch)
+        self.0
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .ifft_strided(input, stride, scratch)
     }
     fn fft_out_of_place_strided(
         &self,
@@ -64,7 +76,7 @@ impl FftImpl<f32> for SyncFft {
     ) -> Result<(), FftError> {
         self.0
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .fft_out_of_place_strided(input, in_stride, output, out_stride)
     }
     fn ifft_out_of_place_strided(
@@ -76,7 +88,7 @@ impl FftImpl<f32> for SyncFft {
     ) -> Result<(), FftError> {
         self.0
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .ifft_out_of_place_strided(input, in_stride, output, out_stride)
     }
     fn fft_with_strategy(
@@ -84,7 +96,10 @@ impl FftImpl<f32> for SyncFft {
         input: &mut [Complex32],
         strategy: FftStrategy,
     ) -> Result<(), FftError> {
-        self.0.lock().unwrap().fft_with_strategy(input, strategy)
+        self.0
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .fft_with_strategy(input, strategy)
     }
 }
 
@@ -103,7 +118,7 @@ fn inverse_parallel_matches_istft() {
     let window = hann(win_len);
     let fft = SyncFft::default();
     let mut frames = vec![vec![]; signal.len().div_ceil(hop)];
-    stft(&signal, &window, hop, &mut frames, &fft).unwrap();
+    stft(&signal, &window, hop, &mut frames, &fft).expect("Invariant: operation should succeed");
     let expected = (frames.len() - 1) * hop + win_len;
     let mut out_seq = vec![0.0; expected];
     let mut scratch = vec![0.0; expected];
@@ -115,9 +130,10 @@ fn inverse_parallel_matches_istft() {
         &mut scratch,
         &fft,
     )
-    .unwrap();
+    .expect("Invariant: operation should succeed");
     let mut out_par = vec![0.0; expected];
-    inverse_parallel(&frames, &window, hop, &mut out_par, &fft).unwrap();
+    inverse_parallel(&frames, &window, hop, &mut out_par, &fft)
+        .expect("Invariant: operation should succeed");
     for (a, b) in out_seq.iter().zip(out_par.iter()) {
         assert!((a - b).abs() < 1e-5);
     }
@@ -139,9 +155,11 @@ fn inverse_parallel_large_batch_allocation() {
     let mut out = vec![0.0f32; out_len];
     let fft = SyncFft::default();
     // Warm up to populate FFT plans before measuring allocations.
-    inverse_parallel(&frames, &window, HOP, &mut out, &fft).unwrap();
+    inverse_parallel(&frames, &window, HOP, &mut out, &fft)
+        .expect("Invariant: operation should succeed");
     reset_alloc();
-    inverse_parallel(&frames, &window, HOP, &mut out, &fft).unwrap();
+    inverse_parallel(&frames, &window, HOP, &mut out, &fft)
+        .expect("Invariant: operation should succeed");
     let per_frame = allocs() as f32 / FRAMES_COUNT as f32;
     // Threshold chosen empirically: allows minor internal buffers while remaining efficient.
     assert!(per_frame < MAX_ALLOCS_PER_FRAME);

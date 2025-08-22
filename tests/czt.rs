@@ -27,7 +27,7 @@ fn large_m_produces_correct_length() {
         (-2.0 * core::f32::consts::PI / m as f32).sin(),
     );
     let a = (1.0, 0.0);
-    let result = czt_f32(&input, m, w, a).unwrap();
+    let result = czt_f32(&input, m, w, a).expect("Invariant: operation should succeed");
     assert_eq!(result.len(), m);
 }
 
@@ -39,7 +39,7 @@ fn czt_matches_fft() {
 
     // FFT reference result
     let mut cv = ComplexVec::new(input.to_vec(), vec![0.0; n]);
-    fft_complex_vec(&mut cv).unwrap();
+    fft_complex_vec(&mut cv).expect("Invariant: operation should succeed");
     let fft_out = cv.to_complex_vec();
 
     // CZT with parameters equivalent to an N-point DFT
@@ -48,7 +48,7 @@ fn czt_matches_fft() {
         (-2.0 * core::f32::consts::PI / n as f32).sin(),
     );
     let a = (1.0, 0.0);
-    let czt_out = czt_f32(&input, n, w, a).unwrap();
+    let czt_out = czt_f32(&input, n, w, a).expect("Invariant: operation should succeed");
 
     for k in 0..n {
         assert!((czt_out[k].0 - fft_out[k].re).abs() < EPSILON);

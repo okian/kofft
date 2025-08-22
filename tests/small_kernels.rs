@@ -24,7 +24,8 @@ fn stockham_small_kernels() {
             .map(|i| Complex32::new(i as f32, -(i as f32) * 0.5))
             .collect();
         let expected = dft(&data);
-        fft.stockham_fft(&mut data).unwrap();
+        fft.stockham_fft(&mut data)
+            .expect("Invariant: operation should succeed");
         for (a, b) in data.iter().zip(expected.iter()) {
             assert!((a.re - b.re).abs() < 1e-2);
             assert!((a.im - b.im).abs() < 1e-2);

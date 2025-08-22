@@ -37,12 +37,18 @@ impl FftImpl<f32> for CountingFft {
     /// Forward FFT while incrementing the call counter.
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.inner.lock().unwrap().fft(input)
+        self.inner
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .fft(input)
     }
     /// Inverse FFT while incrementing the call counter.
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.inner.lock().unwrap().ifft(input)
+        self.inner
+            .lock()
+            .expect("Invariant: operation should succeed")
+            .ifft(input)
     }
     /// Delegate strided FFT and count the call.
     fn fft_strided(
@@ -54,7 +60,7 @@ impl FftImpl<f32> for CountingFft {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.inner
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .fft_strided(input, stride, scratch)
     }
     /// Delegate strided inverse FFT and count the call.
@@ -67,7 +73,7 @@ impl FftImpl<f32> for CountingFft {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.inner
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .ifft_strided(input, stride, scratch)
     }
     /// Delegate out-of-place strided FFT and count the call.
@@ -81,7 +87,7 @@ impl FftImpl<f32> for CountingFft {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.inner
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .fft_out_of_place_strided(input, in_stride, output, out_stride)
     }
     /// Delegate out-of-place strided inverse FFT and count the call.
@@ -95,7 +101,7 @@ impl FftImpl<f32> for CountingFft {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.inner
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .ifft_out_of_place_strided(input, in_stride, output, out_stride)
     }
     /// Delegate FFT with strategy and count the call.
@@ -107,7 +113,7 @@ impl FftImpl<f32> for CountingFft {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.inner
             .lock()
-            .unwrap()
+            .expect("Invariant: operation should succeed")
             .fft_with_strategy(input, strategy)
     }
 }
@@ -123,7 +129,8 @@ fn parallel_uses_supplied_fft() {
     let frame_count = SIGNAL_LEN.div_ceil(HOP);
     let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; frame_count];
     let fft = CountingFft::new();
-    parallel(&signal, &window, HOP, &mut frames, &fft).unwrap();
+    parallel(&signal, &window, HOP, &mut frames, &fft)
+        .expect("Invariant: operation should succeed");
     assert_eq!(fft.count(), frame_count);
     for frame in frames {
         assert_eq!(frame.len(), WIN_LEN);

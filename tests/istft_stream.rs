@@ -12,16 +12,23 @@ fn istft_stream_reconstructs_and_flushes() {
     let window = vec![1.0f32; win_len];
     let fft = ScalarFftImpl::<f32>::default();
 
-    let mut stft_stream = StftStream::new(&signal, &window, hop, &fft).unwrap();
-    let mut istft_stream = IstftStream::new(win_len, hop, &window, &fft).unwrap();
+    let mut stft_stream =
+        StftStream::new(&signal, &window, hop, &fft).expect("Invariant: operation should succeed");
+    let mut istft_stream =
+        IstftStream::new(win_len, hop, &window, &fft).expect("Invariant: operation should succeed");
     let mut frame = vec![Complex32::new(0.0, 0.0); win_len];
     let mut output_stream = Vec::new();
     let mut frames = Vec::new();
 
-    while stft_stream.next_frame(&mut frame).unwrap() {
+    while stft_stream
+        .next_frame(&mut frame)
+        .expect("Invariant: operation should succeed")
+    {
         frames.push(frame.clone());
         let mut frame_copy = frame.clone();
-        let out = istft_stream.push_frame(&mut frame_copy).unwrap();
+        let out = istft_stream
+            .push_frame(&mut frame_copy)
+            .expect("Invariant: operation should succeed");
         output_stream.extend_from_slice(out);
     }
     let tail = istft_stream.flush();
@@ -39,7 +46,7 @@ fn istft_stream_reconstructs_and_flushes() {
         &mut scratch,
         &fft,
     )
-    .unwrap();
+    .expect("Invariant: operation should succeed");
 
     // Check main reconstruction
     assert_eq!(

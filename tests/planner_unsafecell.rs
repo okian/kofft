@@ -9,8 +9,10 @@ fn planner_allows_sequential_mutation_without_refcell_overhead() {
         .collect();
     let original = data.clone();
 
-    fft.fft(&mut data).unwrap();
-    fft.ifft(&mut data).unwrap();
+    fft.fft(&mut data)
+        .expect("Invariant: operation should succeed");
+    fft.ifft(&mut data)
+        .expect("Invariant: operation should succeed");
 
     for (a, b) in data.iter().zip(original.iter()) {
         assert!((a.re - b.re).abs() < 1e-5);

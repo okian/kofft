@@ -33,8 +33,10 @@ fn spectrograms_match() -> Result<(), Box<dyn Error>> {
             "--example",
             "spectrogram",
             "--",
-            wav_path.to_str().unwrap(),
-            out1.to_str().unwrap(),
+            wav_path
+                .to_str()
+                .expect("Invariant: operation should succeed"),
+            out1.to_str().expect("Invariant: operation should succeed"),
             "--floor",
             "-120",
             "--palette",
@@ -51,8 +53,10 @@ fn spectrograms_match() -> Result<(), Box<dyn Error>> {
             "sanity-check",
             "--quiet",
             "--",
-            wav_path.to_str().unwrap(),
-            out2.to_str().unwrap(),
+            wav_path
+                .to_str()
+                .expect("Invariant: operation should succeed"),
+            out2.to_str().expect("Invariant: operation should succeed"),
             "--colormap",
             "fire",
             "--win-len",

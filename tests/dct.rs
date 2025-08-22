@@ -42,7 +42,7 @@ fn planner_handles_even_and_odd() {
     let mut input_even = vec![1.0f32, 2.0, 3.0, 4.0];
     let mut out_even = vec![0.0f32; 4];
     let mut plan_even = planner.plan_dct2(4);
-    plan_even(&mut input_even, &mut out_even).unwrap();
+    plan_even(&mut input_even, &mut out_even).expect("Invariant: operation should succeed");
     let expect_even = dct::dct2(&[1.0, 2.0, 3.0, 4.0]);
     for (a, b) in out_even.iter().zip(expect_even.iter()) {
         assert!((a - b).abs() < 1e-4);
@@ -54,7 +54,7 @@ fn planner_handles_even_and_odd() {
     let expect_odd = dct::dct2(&input_odd);
     let mut out_odd = vec![0.0f32; n];
     let mut plan_odd = planner.plan_dct2(n);
-    plan_odd(&mut input_odd, &mut out_odd).unwrap();
+    plan_odd(&mut input_odd, &mut out_odd).expect("Invariant: operation should succeed");
     for (a, b) in out_odd.iter().zip(expect_odd.iter()) {
         assert!((a - b).abs() < 1e-4);
     }

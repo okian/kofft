@@ -16,7 +16,7 @@ fn rfft_matches_scalar() {
     let mut simd_out = vec![Complex32::new(0.0, 0.0); size / 2 + 1];
     let mut scratch = vec![Complex32::new(0.0, 0.0); size / 2];
     let fft_scalar = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     planner
         .rfft_with_scratch(
             &fft_scalar,
@@ -24,14 +24,14 @@ fn rfft_matches_scalar() {
             &mut scalar_out,
             &mut scratch,
         )
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     #[cfg(all(feature = "x86_64", target_arch = "x86_64"))]
     {
         use kofft::fft::SimdFftX86_64Impl;
         let fft_simd = SimdFftX86_64Impl;
         planner
             .rfft_with_scratch(&fft_simd, &mut input.clone(), &mut simd_out, &mut scratch)
-            .unwrap();
+            .expect("Invariant: operation should succeed");
     }
     #[cfg(all(feature = "aarch64", target_arch = "aarch64"))]
     {
@@ -39,7 +39,7 @@ fn rfft_matches_scalar() {
         let fft_simd = SimdFftAarch64Impl;
         planner
             .rfft_with_scratch(&fft_simd, &mut input.clone(), &mut simd_out, &mut scratch)
-            .unwrap();
+            .expect("Invariant: operation should succeed");
     }
     for (a, b) in scalar_out.iter().zip(simd_out.iter()) {
         assert!((a.re - b.re).abs() < 1e-5 && (a.im - b.im).abs() < 1e-5);

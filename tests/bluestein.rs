@@ -56,12 +56,14 @@ fn bluestein_fft_matches_dft_and_reuses_scratch() {
     let planner = FftPlanner::<f32>::new();
     let fft = ScalarFftImpl::with_planner(planner);
     let mut data = input.clone();
-    fft.fft(&mut data).unwrap();
+    fft.fft(&mut data)
+        .expect("Invariant: operation should succeed");
     for (a, b) in data.iter().zip(expected.iter()) {
         assert!((a.re - b.re).abs() < 1e-3 && (a.im - b.im).abs() < 1e-3);
     }
 
     reset_alloc();
-    fft.fft(&mut data).unwrap();
+    fft.fft(&mut data)
+        .expect("Invariant: operation should succeed");
     assert_eq!(allocs(), 0);
 }

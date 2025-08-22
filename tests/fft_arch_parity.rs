@@ -16,25 +16,30 @@ fn fft_matches_scalar() {
     let mut scalar_input = input.clone();
 
     let scalar = ScalarFftImpl::<f32>::default();
-    scalar.fft(&mut scalar_input).unwrap();
+    scalar
+        .fft(&mut scalar_input)
+        .expect("Invariant: operation should succeed");
 
     #[cfg(target_arch = "x86_64")]
     {
         use kofft::fft::SimdFftX86_64Impl;
         let simd = SimdFftX86_64Impl;
-        simd.fft(&mut simd_input).unwrap();
+        simd.fft(&mut simd_input)
+            .expect("Invariant: operation should succeed");
     }
     #[cfg(target_arch = "aarch64")]
     {
         use kofft::fft::SimdFftAarch64Impl;
         let simd = SimdFftAarch64Impl;
-        simd.fft(&mut simd_input).unwrap();
+        simd.fft(&mut simd_input)
+            .expect("Invariant: operation should succeed");
     }
     #[cfg(target_arch = "wasm32")]
     {
         use kofft::fft::SimdFftWasmImpl;
         let simd = SimdFftWasmImpl;
-        simd.fft(&mut simd_input).unwrap();
+        simd.fft(&mut simd_input)
+            .expect("Invariant: operation should succeed");
     }
 
     for (a, b) in scalar_input.iter().zip(simd_input.iter()) {
@@ -49,24 +54,29 @@ fn fft_matches_scalar_non_power_of_two() {
     let mut simd_input = input.clone();
     let mut scalar_input = input.clone();
     let scalar = ScalarFftImpl::<f32>::default();
-    scalar.fft(&mut scalar_input).unwrap();
+    scalar
+        .fft(&mut scalar_input)
+        .expect("Invariant: operation should succeed");
     #[cfg(target_arch = "x86_64")]
     {
         use kofft::fft::SimdFftX86_64Impl;
         let simd = SimdFftX86_64Impl;
-        simd.fft(&mut simd_input).unwrap();
+        simd.fft(&mut simd_input)
+            .expect("Invariant: operation should succeed");
     }
     #[cfg(target_arch = "aarch64")]
     {
         use kofft::fft::SimdFftAarch64Impl;
         let simd = SimdFftAarch64Impl;
-        simd.fft(&mut simd_input).unwrap();
+        simd.fft(&mut simd_input)
+            .expect("Invariant: operation should succeed");
     }
     #[cfg(target_arch = "wasm32")]
     {
         use kofft::fft::SimdFftWasmImpl;
         let simd = SimdFftWasmImpl;
-        simd.fft(&mut simd_input).unwrap();
+        simd.fft(&mut simd_input)
+            .expect("Invariant: operation should succeed");
     }
     for (a, b) in scalar_input.iter().zip(simd_input.iter()) {
         assert!((a.re - b.re).abs() < 1e-5 && (a.im - b.im).abs() < 1e-5);
@@ -98,6 +108,8 @@ fn fft_out_of_place_mismatched_length_errors() {
 fn fft_handles_large_values() {
     let mut data = vec![Complex32::new(EXTREME_SAMPLE, -EXTREME_SAMPLE); 16];
     let scalar = ScalarFftImpl::<f32>::default();
-    scalar.fft(&mut data).unwrap();
+    scalar
+        .fft(&mut data)
+        .expect("Invariant: operation should succeed");
     assert!(data.iter().all(|c| c.re.is_finite() && c.im.is_finite()));
 }

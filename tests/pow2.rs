@@ -24,7 +24,8 @@ fn fft_matches_dft_for_powers_of_two() {
             .map(|i| Complex32::new(i as f32, -(i as f32) * 0.5))
             .collect();
         let expected = dft(&data);
-        fft.fft(&mut data).unwrap();
+        fft.fft(&mut data)
+            .expect("Invariant: operation should succeed");
         for (a, b) in data.iter().zip(expected.iter()) {
             assert!((a.re - b.re).abs() < 1e-2);
             assert!((a.im - b.im).abs() < 1e-2);

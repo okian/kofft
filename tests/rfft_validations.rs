@@ -9,7 +9,7 @@ fn zero_complex(len: usize) -> Vec<Complex32> {
 #[test]
 fn rejects_odd_length() {
     let fft = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     let mut input = vec![1.0f32; 3];
     let mut output = zero_complex(input.len() / STRIDE + 1);
     let mut scratch = zero_complex(input.len() / STRIDE);
@@ -22,17 +22,17 @@ fn rejects_odd_length() {
 #[test]
 fn handles_min_length() {
     let fft = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     let mut input = vec![1.0f32, -1.0];
     let mut output = zero_complex(input.len() / STRIDE + 1);
     let mut scratch = zero_complex(input.len() / STRIDE);
     planner
         .rfft_with_scratch(&fft, &mut input, &mut output, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     let mut time = vec![0.0f32; input.len()];
     planner
         .irfft_with_scratch(&fft, &mut output, &mut time, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     for (a, b) in input.iter().zip(time.iter()) {
         assert!((a - b).abs() < 1e-5);
     }
@@ -42,17 +42,17 @@ fn handles_min_length() {
 fn handles_large_input() {
     const N: usize = 1 << 14; // 16384 samples
     let fft = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     let mut input: Vec<f32> = (0..N).map(|i| (i as f32).sin()).collect();
     let mut output = zero_complex(N / STRIDE + 1);
     let mut scratch = zero_complex(N / STRIDE);
     planner
         .rfft_with_scratch(&fft, &mut input, &mut output, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     let mut time = vec![0.0f32; N];
     planner
         .irfft_with_scratch(&fft, &mut output, &mut time, &mut scratch)
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     for (a, b) in input.iter().zip(time.iter()) {
         assert!((a - b).abs() < 1e-3);
     }
@@ -62,7 +62,7 @@ fn handles_large_input() {
 #[test]
 fn planner_cache_eviction() {
     let fft = ScalarFftImpl::<f32>::default();
-    let mut planner = RfftPlanner::<f32>::new().unwrap();
+    let mut planner = RfftPlanner::<f32>::new().expect("Invariant: operation should succeed");
     for i in 0..(MAX_CACHE_ENTRIES + 10) {
         let n = (i + 1) * STRIDE;
         let mut input = vec![0.0f32; n];
@@ -70,7 +70,7 @@ fn planner_cache_eviction() {
         let mut scratch = zero_complex(n / STRIDE);
         planner
             .rfft_with_scratch(&fft, &mut input, &mut output, &mut scratch)
-            .unwrap();
+            .expect("Invariant: operation should succeed");
     }
     assert!(planner.cache_len() <= MAX_CACHE_ENTRIES);
     assert!(planner.pack_cache_len() <= MAX_CACHE_ENTRIES);

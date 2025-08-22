@@ -65,7 +65,8 @@ fn linear_has_lower_error_than_nearest() {
         .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / dst_rate).sin())
         .collect();
 
-    let linear = linear_resample(&input, src_rate, dst_rate).unwrap();
+    let linear =
+        linear_resample(&input, src_rate, dst_rate).expect("Invariant: operation should succeed");
     let nearest = naive_nearest(&input, src_rate, dst_rate);
 
     let err_linear = mse(&linear, &expected);
@@ -78,7 +79,7 @@ fn linear_has_lower_error_than_nearest() {
 #[test]
 fn linear_resample_handles_trailing_sample() {
     let input = vec![0.0, 1.0, 0.0];
-    let output = linear_resample(&input, 3.0, 6.0).unwrap();
+    let output = linear_resample(&input, 3.0, 6.0).expect("Invariant: operation should succeed");
     assert_eq!(output.last().copied(), input.last().copied());
 }
 
@@ -87,7 +88,7 @@ fn linear_resample_handles_trailing_sample() {
 fn linear_resample_skips_equal_rates() {
     let input = vec![0.0, 1.0, 2.0];
     let rate = 48_000.0;
-    let output = linear_resample(&input, rate, rate).unwrap();
+    let output = linear_resample(&input, rate, rate).expect("Invariant: operation should succeed");
     assert_eq!(output, input);
 }
 
@@ -102,12 +103,14 @@ fn linear_resample_honours_relative_tolerance() {
 
     // Differences within the tolerance should be treated as identical and avoid
     // resampling, yielding an output exactly matching the input.
-    let small_output = linear_resample(&input, src_rate, small_diff).unwrap();
+    let small_output =
+        linear_resample(&input, src_rate, small_diff).expect("Invariant: operation should succeed");
     assert_eq!(small_output, input);
 
     // Larger differences must perform resampling and therefore alter the output
     // length and/or values.
-    let large_output = linear_resample(&input, src_rate, large_diff).unwrap();
+    let large_output =
+        linear_resample(&input, src_rate, large_diff).expect("Invariant: operation should succeed");
     assert_ne!(large_output, input);
 }
 
@@ -119,7 +122,8 @@ fn benchmark_linear_resampler() {
     let input = vec![0.0f32; (src_rate * 2.0) as usize];
 
     let start = Instant::now();
-    let _ = linear_resample(&input, src_rate, dst_rate).unwrap();
+    let _ =
+        linear_resample(&input, src_rate, dst_rate).expect("Invariant: operation should succeed");
     let linear_time = start.elapsed();
 
     let start = Instant::now();
@@ -182,10 +186,17 @@ fn linear_resample_downsamples_and_preserves_bounds() {
     const SRC_RATE: f32 = 48_000.0;
     const DST_RATE: f32 = 16_000.0;
     let input: Vec<f32> = (0..(SRC_RATE as usize)).map(|i| i as f32).collect();
-    let output = linear_resample(&input, SRC_RATE, DST_RATE).unwrap();
+    let output =
+        linear_resample(&input, SRC_RATE, DST_RATE).expect("Invariant: operation should succeed");
     assert_eq!(output.first().copied(), input.first().copied());
-    let last_in = input.last().copied().unwrap();
-    let last_out = output.last().copied().unwrap();
+    let last_in = input
+        .last()
+        .copied()
+        .expect("Invariant: operation should succeed");
+    let last_out = output
+        .last()
+        .copied()
+        .expect("Invariant: operation should succeed");
     assert!(last_out <= last_in && (last_in - last_out) < (SRC_RATE / DST_RATE));
 }
 
@@ -196,9 +207,11 @@ fn linear_resample_channels_up_and_down() {
     const DST_RATE: f32 = 4.0;
     const CHANNELS: usize = 2;
     let input: Vec<f32> = vec![0.0, 1.0, 2.0, 3.0];
-    let up = linear_resample_channels(&input, SRC_RATE, DST_RATE, CHANNELS).unwrap();
+    let up = linear_resample_channels(&input, SRC_RATE, DST_RATE, CHANNELS)
+        .expect("Invariant: operation should succeed");
     assert_eq!(up.len(), 8);
-    let down = linear_resample_channels(&up, DST_RATE, SRC_RATE, CHANNELS).unwrap();
+    let down = linear_resample_channels(&up, DST_RATE, SRC_RATE, CHANNELS)
+        .expect("Invariant: operation should succeed");
     assert_eq!(down, input);
 }
 
@@ -221,7 +234,7 @@ fn linear_resample_errors_on_invalid_channels() {
 #[test]
 fn linear_resample_wasm_feature_path() {
     let input = vec![0.0, 1.0];
-    let output = linear_resample(&input, 1.0, 2.0).unwrap();
+    let output = linear_resample(&input, 1.0, 2.0).expect("Invariant: operation should succeed");
     assert_eq!(output.len(), 4);
 }
 
@@ -252,7 +265,8 @@ fn linear_resample_errors_on_non_finite_rates() {
 fn linear_resample_extreme_upsample() {
     let input = vec![1.0, -1.0];
     let expected_len = (input.len() as f32 * EXTREME_HIGH_RATE / EXTREME_LOW_RATE).ceil() as usize;
-    let output = linear_resample(&input, EXTREME_LOW_RATE, EXTREME_HIGH_RATE).unwrap();
+    let output = linear_resample(&input, EXTREME_LOW_RATE, EXTREME_HIGH_RATE)
+        .expect("Invariant: operation should succeed");
     assert_eq!(output.len(), expected_len);
     assert!(output.iter().all(|v| v.is_finite()));
 }
@@ -261,7 +275,8 @@ fn linear_resample_extreme_upsample() {
 #[test]
 fn linear_resample_extreme_downsample() {
     let input: Vec<f32> = vec![1.0; 1_000];
-    let output = linear_resample(&input, EXTREME_HIGH_RATE, EXTREME_LOW_RATE).unwrap();
+    let output = linear_resample(&input, EXTREME_HIGH_RATE, EXTREME_LOW_RATE)
+        .expect("Invariant: operation should succeed");
     assert!(!output.is_empty());
     assert!(output.iter().all(|v| v.is_finite()));
 }

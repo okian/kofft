@@ -12,18 +12,18 @@ const CUSTOM_WORK: usize = 12345;
 /// Ensure the `KOFFT_PAR_FFT_THREADS` environment variable is capped at the
 /// number of logical cores to prevent oversubscription.
 fn env_thread_override_capped() {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("Invariant: operation should succeed");
     let output = Command::new(&exe)
         .env("KOFFT_PAR_FFT_THREADS", EXCESSIVE_THREADS.to_string())
         .args(["--exact", "print_thread_count", "--nocapture"])
         .output()
         .expect("run thread count test");
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("Invariant: operation should succeed");
     let count: usize = stdout
         .lines()
         .rev()
         .find_map(|l| l.trim().parse().ok())
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     assert_eq!(count, num_cpus::get().max(1));
 }
 
@@ -31,7 +31,7 @@ fn env_thread_override_capped() {
 /// Confirm that `set_parallel_fft_threads` also clamps to the number of
 /// available logical cores.
 fn override_thread_count_capped() {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("Invariant: operation should succeed");
     let output = Command::new(&exe)
         .args([
             "--exact",
@@ -40,30 +40,30 @@ fn override_thread_count_capped() {
         ])
         .output()
         .expect("run override test");
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("Invariant: operation should succeed");
     let count: usize = stdout
         .lines()
         .rev()
         .find_map(|l| l.trim().parse().ok())
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     assert_eq!(count, num_cpus::get().max(1));
 }
 
 #[test]
 /// Verify `KOFFT_PAR_FFT_PER_CORE_WORK` is respected verbatim when provided.
 fn env_per_core_work_respected() {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("Invariant: operation should succeed");
     let output = Command::new(&exe)
         .env("KOFFT_PAR_FFT_PER_CORE_WORK", CUSTOM_WORK.to_string())
         .args(["--exact", "print_env_per_core_work", "--nocapture"])
         .output()
         .expect("run per-core work test");
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("Invariant: operation should succeed");
     let work: usize = stdout
         .lines()
         .rev()
         .find_map(|l| l.trim().parse().ok())
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     assert_eq!(work, CUSTOM_WORK);
 }
 
@@ -71,17 +71,17 @@ fn env_per_core_work_respected() {
 /// Confirm the calibrated per-core work estimate never drops below the
 /// documented minimum.
 fn calibration_minimum_enforced() {
-    let exe = std::env::current_exe().unwrap();
+    let exe = std::env::current_exe().expect("Invariant: operation should succeed");
     let output = Command::new(&exe)
         .args(["--exact", "print_calibrated_work", "--nocapture"])
         .output()
         .expect("run calibration test");
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(output.stdout).expect("Invariant: operation should succeed");
     let work: usize = stdout
         .lines()
         .rev()
         .find_map(|l| l.trim().parse().ok())
-        .unwrap();
+        .expect("Invariant: operation should succeed");
     assert!(work >= kofft::fft::__TEST_MIN_CALIBRATED_WORK);
 }
 

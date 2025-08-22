@@ -20,7 +20,8 @@ fn dht_matches_fft_even_length() {
     let input = [1.0f32, 2.0, 3.0, 4.0];
     let mut fft_data: Vec<Complex32> = input.iter().map(|&x| Complex32::new(x, 0.0)).collect();
     let fft = ScalarFftImpl::<f32>::default();
-    fft.fft(&mut fft_data).unwrap();
+    fft.fft(&mut fft_data)
+        .expect("Invariant: operation should succeed");
     let dht_out = dht(&input);
     for (k, &val) in dht_out.iter().enumerate() {
         let c = fft_data[k];
@@ -41,7 +42,8 @@ fn dht_matches_fft_odd_length() {
     let input = [1.0f32, 2.0, 3.0, 4.0, 5.0];
     let mut fft_data: Vec<Complex32> = input.iter().map(|&x| Complex32::new(x, 0.0)).collect();
     let fft = ScalarFftImpl::<f32>::default();
-    fft.fft(&mut fft_data).unwrap();
+    fft.fft(&mut fft_data)
+        .expect("Invariant: operation should succeed");
     let dht_out = dht(&input);
     for (k, &val) in dht_out.iter().enumerate() {
         let c = fft_data[k];

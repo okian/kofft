@@ -15,10 +15,16 @@ mod sync_fft {
 
     impl FftImpl<f32> for SyncFft {
         fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-            self.0.lock().unwrap().fft(input)
+            self.0
+                .lock()
+                .expect("Invariant: operation should succeed")
+                .fft(input)
         }
         fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-            self.0.lock().unwrap().ifft(input)
+            self.0
+                .lock()
+                .expect("Invariant: operation should succeed")
+                .ifft(input)
         }
         fn fft_strided(
             &self,
@@ -26,7 +32,10 @@ mod sync_fft {
             stride: usize,
             scratch: &mut [Complex32],
         ) -> Result<(), FftError> {
-            self.0.lock().unwrap().fft_strided(input, stride, scratch)
+            self.0
+                .lock()
+                .expect("Invariant: operation should succeed")
+                .fft_strided(input, stride, scratch)
         }
         fn ifft_strided(
             &self,
@@ -34,7 +43,10 @@ mod sync_fft {
             stride: usize,
             scratch: &mut [Complex32],
         ) -> Result<(), FftError> {
-            self.0.lock().unwrap().ifft_strided(input, stride, scratch)
+            self.0
+                .lock()
+                .expect("Invariant: operation should succeed")
+                .ifft_strided(input, stride, scratch)
         }
         fn fft_out_of_place_strided(
             &self,
@@ -45,7 +57,7 @@ mod sync_fft {
         ) -> Result<(), FftError> {
             self.0
                 .lock()
-                .unwrap()
+                .expect("Invariant: operation should succeed")
                 .fft_out_of_place_strided(input, in_stride, output, out_stride)
         }
         fn ifft_out_of_place_strided(
@@ -57,7 +69,7 @@ mod sync_fft {
         ) -> Result<(), FftError> {
             self.0
                 .lock()
-                .unwrap()
+                .expect("Invariant: operation should succeed")
                 .ifft_out_of_place_strided(input, in_stride, output, out_stride)
         }
         fn fft_with_strategy(
@@ -65,7 +77,10 @@ mod sync_fft {
             input: &mut [Complex32],
             strategy: FftStrategy,
         ) -> Result<(), FftError> {
-            self.0.lock().unwrap().fft_with_strategy(input, strategy)
+            self.0
+                .lock()
+                .expect("Invariant: operation should succeed")
+                .fft_with_strategy(input, strategy)
         }
     }
 }
@@ -152,7 +167,8 @@ fn stft_stream_frame_size_mismatch() {
     let window = hann(4);
     let hop = 2;
     let fft = ScalarFftImpl::<f32>::default();
-    let mut stream = StftStream::new(&signal, &window, hop, &fft).unwrap();
+    let mut stream =
+        StftStream::new(&signal, &window, hop, &fft).expect("Invariant: operation should succeed");
     let mut frame = vec![Complex32::new(0.0, 0.0); window.len() - 1];
     let res = stream.next_frame(&mut frame);
     assert!(matches!(res, Err(FftError::MismatchedLengths)));
@@ -174,11 +190,18 @@ fn istft_stream_double_flush_empty() {
     let window = hann(4);
     let hop = 2;
     let fft = ScalarFftImpl::<f32>::default();
-    let mut stft_stream = StftStream::new(&signal, &window, hop, &fft).unwrap();
-    let mut istft_stream = IstftStream::new(window.len(), hop, &window, &fft).unwrap();
+    let mut stft_stream =
+        StftStream::new(&signal, &window, hop, &fft).expect("Invariant: operation should succeed");
+    let mut istft_stream = IstftStream::new(window.len(), hop, &window, &fft)
+        .expect("Invariant: operation should succeed");
     let mut frame = vec![Complex32::new(0.0, 0.0); window.len()];
-    while stft_stream.next_frame(&mut frame).unwrap() {
-        let _ = istft_stream.push_frame(&mut frame).unwrap();
+    while stft_stream
+        .next_frame(&mut frame)
+        .expect("Invariant: operation should succeed")
+    {
+        let _ = istft_stream
+            .push_frame(&mut frame)
+            .expect("Invariant: operation should succeed");
     }
     let tail = istft_stream.flush();
     assert!(!tail.is_empty());

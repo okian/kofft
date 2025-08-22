@@ -9,8 +9,9 @@ fn fft_split_matches_aos_f64() {
     let mut im: Vec<f64> = data.iter().map(|c| c.im).collect();
     let mut aos = data.clone();
     let fft = ScalarFftImpl::<f64>::default();
-    fft.fft(&mut aos).unwrap();
-    fft_split(&mut re, &mut im).unwrap();
+    fft.fft(&mut aos)
+        .expect("Invariant: operation should succeed");
+    fft_split(&mut re, &mut im).expect("Invariant: operation should succeed");
     for i in 0..n {
         assert!((aos[i].re - re[i]).abs() < 1e-10);
         assert!((aos[i].im - im[i]).abs() < 1e-10);
@@ -25,8 +26,9 @@ fn fft_split_non_pow2_f64() {
     let mut im: Vec<f64> = data.iter().map(|c| c.im).collect();
     let fft = ScalarFftImpl::<f64>::default();
     let mut aos = data.clone();
-    fft.fft(&mut aos).unwrap();
-    fft_split(&mut re, &mut im).unwrap();
+    fft.fft(&mut aos)
+        .expect("Invariant: operation should succeed");
+    fft_split(&mut re, &mut im).expect("Invariant: operation should succeed");
     for i in 0..n {
         assert!((aos[i].re - re[i]).abs() < 1e-10);
         assert!((aos[i].im - im[i]).abs() < 1e-10);
@@ -41,8 +43,8 @@ fn ifft_split_roundtrip_f64() {
         .collect();
     let mut re: Vec<f64> = data.iter().map(|c| c.re).collect();
     let mut im: Vec<f64> = data.iter().map(|c| c.im).collect();
-    fft_split(&mut re, &mut im).unwrap();
-    ifft_split(&mut re, &mut im).unwrap();
+    fft_split(&mut re, &mut im).expect("Invariant: operation should succeed");
+    ifft_split(&mut re, &mut im).expect("Invariant: operation should succeed");
     for i in 0..n {
         assert!((data[i].re - re[i]).abs() < 1e-8);
         assert!((data[i].im - im[i]).abs() < 1e-8);

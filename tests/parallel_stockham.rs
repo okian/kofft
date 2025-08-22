@@ -14,11 +14,13 @@ fn stockham_fft_parallel_matches_serial() {
     // Force parallel execution
     set_parallel_fft_threshold(1);
     let fft = ScalarFftImpl::<f32>::default();
-    fft.stockham_fft(&mut input_par).unwrap();
+    fft.stockham_fft(&mut input_par)
+        .expect("Invariant: operation should succeed");
 
     // Force serial execution
     set_parallel_fft_threshold(usize::MAX);
-    fft.stockham_fft(&mut input_ser).unwrap();
+    fft.stockham_fft(&mut input_ser)
+        .expect("Invariant: operation should succeed");
 
     // Reset threshold
     set_parallel_fft_threshold(0);

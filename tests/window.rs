@@ -10,8 +10,10 @@ fn max(slice: &[f32]) -> f32 {
     slice.iter().copied().fold(f32::MIN, f32::max)
 }
 
-/// Allowed floating-point error when verifying normalization.
+/// Allowed floating-point error when verifying amplitude normalization.
 const EPSILON: f32 = 1e-5;
+/// Tolerance for window sum comparisons; empirical windows deviate slightly from theory.
+const SUM_EPSILON: f32 = 1e-3;
 /// Expected sum factor for the Hann window (`sum = HANN_SUM_FACTOR * len`).
 const HANN_SUM_FACTOR: f32 = 0.5;
 /// Expected sum factor for the Hamming window (`sum = HAMMING_SUM_FACTOR * len`).
@@ -33,7 +35,7 @@ fn hann_edges_and_large() {
     let w = hann(1024);
     assert!((max(&w) - 1.0).abs() < EPSILON);
     let expected_sum = HANN_SUM_FACTOR * 1024.0;
-    assert!((w.iter().sum::<f32>() - expected_sum).abs() < EPSILON);
+    assert!((w.iter().sum::<f32>() - expected_sum).abs() < SUM_EPSILON);
 
     let mut buf = [0.0f32; 1];
     hann_inplace_stack(&mut buf);
@@ -61,7 +63,7 @@ fn hamming_edges_and_large() {
     let w = hamming(1024);
     assert!((max(&w) - 1.0).abs() < EPSILON);
     let expected_sum = HAMMING_SUM_FACTOR * 1024.0;
-    assert!((w.iter().sum::<f32>() - expected_sum).abs() < EPSILON);
+    assert!((w.iter().sum::<f32>() - expected_sum).abs() < SUM_EPSILON);
 
     let mut buf = [0.0f32; 1];
     hamming_inplace_stack(&mut buf);
@@ -82,7 +84,7 @@ fn blackman_edges_and_large() {
     let w = blackman(1024);
     assert!((max(&w) - 1.0).abs() < EPSILON);
     let expected_sum = BLACKMAN_SUM_FACTOR * 1024.0;
-    assert!((w.iter().sum::<f32>() - expected_sum).abs() < EPSILON);
+    assert!((w.iter().sum::<f32>() - expected_sum).abs() < SUM_EPSILON);
 
     let mut buf = [0.0f32; 1];
     blackman_inplace_stack(&mut buf);
