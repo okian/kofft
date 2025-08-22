@@ -88,6 +88,8 @@ cargo xtask update-bench-readme
 
 ### Testing
 
+- See [TESTING.md](TESTING.md) for detailed commands to format, lint, test, run
+  specialized checks, and gather coverage.
 - Write unit tests for all new functionality
 - Include property-based tests for mathematical correctness
 - Test both `std` and `no_std` features
