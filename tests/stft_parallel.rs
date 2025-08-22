@@ -119,7 +119,39 @@ fn parallel_uses_supplied_fft() {
     const WIN_LEN: usize = 4;
     const HOP: usize = 2;
     let signal = vec![0.0f32; SIGNAL_LEN];
+    let window = vec![1.0f32; WIN_LEN];
+    let frame_count = SIGNAL_LEN.div_ceil(HOP);
+    let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; frame_count];
+    let fft = CountingFft::new();
+    parallel(&signal, &window, HOP, &mut frames, &fft).unwrap();
+    assert_eq!(fft.count(), frame_count);
+    for frame in frames {
+        assert_eq!(frame.len(), WIN_LEN);
+    }
+}
+
+/// Verify that a zero-length signal yields no frames and returns success.
+#[test]
+fn parallel_handles_empty_signal() {
+    const WIN_LEN: usize = 4;
+    const HOP: usize = 2;
+    let signal: [f32; 0] = [];
     let window = hann(WIN_LEN);
+    let mut frames: Vec<Vec<Complex32>> = Vec::new();
+    let fft = CountingFft::new();
+    parallel(&signal, &window, HOP, &mut frames, &fft).unwrap();
+    assert!(frames.is_empty());
+    assert_eq!(fft.count(), 0);
+}
+
+/// Ensure odd-sized windows are accepted and produce frames of matching length.
+#[test]
+fn parallel_accepts_odd_window_size() {
+    const SIGNAL_LEN: usize = 7;
+    const WIN_LEN: usize = 5;
+    const HOP: usize = 2;
+    let signal = vec![0.0f32; SIGNAL_LEN];
+    let window = vec![1.0f32; WIN_LEN];
     let frame_count = SIGNAL_LEN.div_ceil(HOP);
     let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; frame_count];
     let fft = CountingFft::new();

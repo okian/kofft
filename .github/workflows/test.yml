@@ -41,6 +41,11 @@ jobs:
       - name: Run tests
         shell: bash
         run: cargo nextest run --all ${{ matrix.features }}
+      # Execute standard test suite under the parallel feature to cover threaded paths.
+      - name: Run tests with parallel feature
+        if: ${{ matrix.features == '' }}
+        shell: bash
+        run: cargo test --features parallel
   feature-checks:
     name: Feature checks
     runs-on: ubuntu-latest

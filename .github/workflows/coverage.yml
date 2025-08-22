@@ -13,8 +13,9 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        features: ["", "--all-features"]
+        matrix:
+          # Include parallel builds to track coverage for threaded code.
+          features: ["", "--features parallel", "--all-features"]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust

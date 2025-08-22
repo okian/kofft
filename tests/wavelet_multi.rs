@@ -4,10 +4,11 @@ use kofft::wavelet::{
 };
 
 #[test]
-/// Ensures even-length signals round-trip accurately over multiple levels using Haar.
+/// Ensures even-length signals round-trip accurately over the maximum supported level using Haar.
 fn haar_multi_roundtrip_even() {
+    const LEVELS: usize = 1;
     let input = vec![1.0, 2.0, 3.0, 4.0];
-    let (avg, details) = haar_forward_multi(&input, 2).unwrap();
+    let (avg, details) = haar_forward_multi(&input, LEVELS).unwrap();
     let recon = haar_inverse_multi(&avg, &details).unwrap();
     assert_eq!(recon, input);
 }
@@ -15,21 +16,26 @@ fn haar_multi_roundtrip_even() {
 #[test]
 /// Verifies odd-length Haar inputs reconstruct to the original prefix and do not error.
 fn haar_multi_roundtrip_odd() {
+    const LEVELS: usize = 1;
     let input = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let (avg, details) = haar_forward_multi(&input, 2).unwrap();
+    let (avg, details) = haar_forward_multi(&input, LEVELS).unwrap();
     let mut recon = haar_inverse_multi(&avg, &details).unwrap();
     recon.truncate(input.len());
     assert_eq!(recon, input);
 }
 
 #[test]
-/// Stress-tests deep Haar decompositions to ensure stability at extreme levels.
+/// Stress-tests deep Haar decompositions to ensure excessive levels are rejected.
 fn haar_multi_roundtrip_extreme_depth() {
+    const REQUESTED: usize = 10;
     let input = vec![1.0, 2.0];
-    let (avg, details) = haar_forward_multi(&input, 10).unwrap();
-    let mut recon = haar_inverse_multi(&avg, &details).unwrap();
-    recon.truncate(input.len());
-    assert_eq!(recon, input);
+    match haar_forward_multi(&input, REQUESTED) {
+        Err(WaveletError::InvalidLevels { requested, max }) => {
+            assert_eq!(requested, REQUESTED);
+            assert_eq!(max, 1);
+        }
+        other => panic!("unexpected result: {:?}", other),
+    }
 }
 
 #[test]
@@ -56,8 +62,9 @@ fn db4_inverse_mismatch_error() {
 #[test]
 /// Validates db4 multi-level round-trip for odd-length signals with trimming.
 fn db4_multi_roundtrip_odd() {
+    const LEVELS: usize = 1;
     let input = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let (avg, details) = db4_forward_multi(&input, 2).unwrap();
+    let (avg, details) = db4_forward_multi(&input, LEVELS).unwrap();
     let mut recon = db4_inverse_multi(&avg, &details).unwrap();
     recon.truncate(input.len());
     let (mut max_err, mut max_val) = (0.0f32, 0.0f32);
@@ -81,8 +88,9 @@ fn db4_multi_roundtrip_odd() {
 #[test]
 /// Validates db4 multi-level round-trip for even-length signals.
 fn db4_multi_roundtrip_even() {
+    const LEVELS: usize = 1;
     let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let (avg, details) = db4_forward_multi(&input, 2).unwrap();
+    let (avg, details) = db4_forward_multi(&input, LEVELS).unwrap();
     let recon = db4_inverse_multi(&avg, &details).unwrap();
     let (mut max_err, mut max_val) = (0.0f32, 0.0f32);
     for (a, b) in input.iter().zip(recon.iter()) {

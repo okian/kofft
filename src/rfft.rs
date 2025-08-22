@@ -39,6 +39,7 @@ pub const SIMD_ALIGN: usize = 64;
 ///
 /// Empty slices are considered aligned because no memory access occurs.
 #[inline]
+#[allow(dead_code)]
 fn is_aligned<T>(slice: &[T]) -> bool {
     slice.is_empty() || slice.as_ptr().align_offset(SIMD_ALIGN) == 0
 }
@@ -630,6 +631,7 @@ fn irfft_direct<T: Float, F: FftImpl<T> + ?Sized>(
 ///
 /// This mirrors [`rfft_direct`] but accepts an FFT closure so it can be used
 /// when SIMD prerequisites such as [`SIMD_ALIGN`] alignment are not met.
+#[allow(dead_code)]
 fn rfft_direct_f32_scalar<F>(
     mut fft: F,
     input: &mut [f32],
@@ -691,6 +693,7 @@ where
 /// Used when SIMD alignment checks fail in [`irfft_direct_f32_avx`] or
 /// [`irfft_direct_f32_neon`]. Accepts an IFFT closure identical to
 /// [`irfft_direct`].
+#[allow(dead_code)]
 fn irfft_direct_f32_scalar<F>(
     mut ifft: F,
     input: &mut [Complex32],
