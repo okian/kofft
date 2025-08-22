@@ -10,6 +10,19 @@ use kofft::fft::{Complex32, FftError, FftImpl, FftStrategy, ScalarFftImpl};
 use kofft::stft::parallel;
 use kofft::window::hann;
 
+/// Number of samples in the synthetic input signal for parallel STFT.
+const SIGNAL_LEN: usize = 8;
+/// Length of the window applied to each STFT frame.
+const WIN_LEN: usize = 4;
+/// Hop size determining frame spacing during STFT.
+const HOP_LEN: usize = 2;
+/// Initial sample value for zero-initializing the signal buffer.
+const INIT_SAMPLE: f32 = 0.0;
+/// Initial counter value for FFT call tracking.
+const INITIAL_CALLS: usize = 0;
+/// Amount to increment the call counter for each FFT invocation.
+const CALL_INCREMENT: usize = 1;
+
 /// Thread-safe FFT counting calls to ensure parallel execution uses the provided
 /// instance exactly once per frame.
 struct CountingFft {
@@ -24,7 +37,7 @@ impl CountingFft {
     fn new() -> Self {
         Self {
             inner: Mutex::new(ScalarFftImpl::<f32>::default()),
-            calls: AtomicUsize::new(0),
+            calls: AtomicUsize::new(INITIAL_CALLS),
         }
     }
     /// Retrieve the number of FFT invocations.
@@ -36,12 +49,12 @@ impl CountingFft {
 impl FftImpl<f32> for CountingFft {
     /// Forward FFT while incrementing the call counter.
     fn fft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner.lock().unwrap().fft(input)
     }
     /// Inverse FFT while incrementing the call counter.
     fn ifft(&self, input: &mut [Complex32]) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner.lock().unwrap().ifft(input)
     }
     /// Delegate strided FFT and count the call.
@@ -51,7 +64,7 @@ impl FftImpl<f32> for CountingFft {
         stride: usize,
         scratch: &mut [Complex32],
     ) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner
             .lock()
             .unwrap()
@@ -64,7 +77,7 @@ impl FftImpl<f32> for CountingFft {
         stride: usize,
         scratch: &mut [Complex32],
     ) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner
             .lock()
             .unwrap()
@@ -78,7 +91,7 @@ impl FftImpl<f32> for CountingFft {
         output: &mut [Complex32],
         out_stride: usize,
     ) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner
             .lock()
             .unwrap()
@@ -92,7 +105,7 @@ impl FftImpl<f32> for CountingFft {
         output: &mut [Complex32],
         out_stride: usize,
     ) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner
             .lock()
             .unwrap()
@@ -104,7 +117,7 @@ impl FftImpl<f32> for CountingFft {
         input: &mut [Complex32],
         strategy: FftStrategy,
     ) -> Result<(), FftError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.calls.fetch_add(CALL_INCREMENT, Ordering::SeqCst);
         self.inner
             .lock()
             .unwrap()
@@ -115,15 +128,12 @@ impl FftImpl<f32> for CountingFft {
 /// Ensure the parallel STFT uses the supplied FFT implementation exactly once per frame.
 #[test]
 fn parallel_uses_supplied_fft() {
-    const SIGNAL_LEN: usize = 8;
-    const WIN_LEN: usize = 4;
-    const HOP: usize = 2;
-    let signal = vec![0.0f32; SIGNAL_LEN];
+    let signal = vec![INIT_SAMPLE; SIGNAL_LEN];
     let window = hann(WIN_LEN);
-    let frame_count = SIGNAL_LEN.div_ceil(HOP);
+    let frame_count = SIGNAL_LEN.div_ceil(HOP_LEN);
     let mut frames = vec![vec![Complex32::zero(); WIN_LEN]; frame_count];
     let fft = CountingFft::new();
-    parallel(&signal, &window, HOP, &mut frames, &fft).unwrap();
+    parallel(&signal, &window, HOP_LEN, &mut frames, &fft).unwrap();
     assert_eq!(fft.count(), frame_count);
     for frame in frames {
         assert_eq!(frame.len(), WIN_LEN);
